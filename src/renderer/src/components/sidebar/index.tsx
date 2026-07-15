@@ -3,6 +3,7 @@ import { useAppStore } from '@/store'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { useSidebarResize } from '@/hooks/useSidebarResize'
 import SidebarHeader from './SidebarHeader'
+import MachineStatusPanel from './MachineStatusPanel'
 import SidebarNav from './SidebarNav'
 import SetupScriptPromptCard from './SetupScriptPromptCard'
 import WorktreeList from './WorktreeList'
@@ -143,6 +144,7 @@ function Sidebar({
           <>
             {/* Fixed controls */}
             <SidebarNav />
+            <MachineStatusPanel />
             <SidebarHeader onWorkspaceBoardMenuOpenChange={setWorkspaceBoardMenuOpen} />
 
             <WorktreeList

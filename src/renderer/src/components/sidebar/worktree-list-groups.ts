@@ -240,7 +240,7 @@ function getProjectGroupingForRepo(
   if (!setup || !project) {
     return {
       key: `repo:${repoId}`,
-      label: repo?.displayName ?? 'Unknown',
+      label: repo?.displayName ?? '',
       repo
     }
   }
@@ -951,7 +951,10 @@ export function buildRows(
       const key = grouping.key
       if (!grouped.has(key)) {
         // Why: repos can arrive before worktree scans, but stale IDs passed by
-        // older snapshots must not render an "Unknown" project header.
+        // older snapshots must not render an empty/Unknown project header.
+        if (!grouping.label || grouping.label === 'Unknown') {
+          continue
+        }
         grouped.set(key, {
           label: grouping.label,
           items: [],
