@@ -1989,7 +1989,8 @@ function buildWorktreePurgeState(s: AppState, worktreeIds: string[]): Partial<Ap
         tab === 'source-control' ||
         tab === 'checks' ||
         tab === 'issues' ||
-        tab === 'ports'
+        tab === 'ports' ||
+        tab === 'remote-chat'
       ) {
         out[id] = tab
       } else {

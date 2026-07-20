@@ -205,5 +205,19 @@ export const getIntegrationsPaneSearchEntries = createLocalizedCatalog(() => [
         'disconnect'
       )
     ]
+  },
+  {
+    title: translate('settings.telegramBridge.search.title', 'Telegram bridge'),
+    description: translate(
+      'settings.telegramBridge.search.description',
+      'Mirror Orca agent sessions to Telegram forum topics.'
+    ),
+    keywords: [
+      ...translateSearchKeyword('settings.telegramBridge.search.kw.telegram', 'telegram'),
+      ...translateSearchKeyword('settings.telegramBridge.search.kw.bot', 'bot'),
+      ...translateSearchKeyword('settings.telegramBridge.search.kw.topic', 'topic'),
+      ...translateSearchKeyword('settings.telegramBridge.search.kw.bridge', 'bridge'),
+      ...translateSearchKeyword('settings.telegramBridge.search.kw.remote', 'remote chat')
+    ]
   }
 ])

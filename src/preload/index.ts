@@ -174,6 +174,16 @@ import type {
   AutomationPrecheckResult,
   AutomationUpdateInput
 } from '../shared/automations-types'
+import type {
+  TelegramBridgeEnsureAllTopicsResult,
+  TelegramBridgeEnsureTopicInput,
+  TelegramBridgeEvent,
+  TelegramBridgeInboundResult,
+  TelegramBridgeSendInput,
+  TelegramBridgeSetConfigInput,
+  TelegramBridgeStatus,
+  TelegramRepoTopicMapping
+} from '../shared/telegram-bridge-types'
 import type { KeybindingActionId, KeybindingFileSnapshot } from '../shared/keybindings'
 import type { AiVaultListArgs, AiVaultSubagentListArgs } from '../shared/ai-vault-types'
 import type { AgentType } from '../shared/native-chat-types'
@@ -4198,6 +4208,42 @@ const api = {
         callback(request)
       ipcRenderer.on('automations:dispatchRequested', listener)
       return () => ipcRenderer.removeListener('automations:dispatchRequested', listener)
+    }
+  },
+
+  telegramBridge: {
+    getStatus: (): Promise<TelegramBridgeStatus> => ipcRenderer.invoke('telegramBridge:getStatus'),
+    getEvents: (args?: { limit?: number }): Promise<TelegramBridgeEvent[]> =>
+      ipcRenderer.invoke('telegramBridge:getEvents', args),
+    setConfig: (input: TelegramBridgeSetConfigInput): Promise<TelegramBridgeStatus> =>
+      ipcRenderer.invoke('telegramBridge:setConfig', input),
+    setBotToken: (args: { token: string }): Promise<TelegramBridgeStatus> =>
+      ipcRenderer.invoke('telegramBridge:setBotToken', args),
+    clearBotToken: (): Promise<TelegramBridgeStatus> =>
+      ipcRenderer.invoke('telegramBridge:clearBotToken'),
+    deleteMapping: (args: { id: string }): Promise<void> =>
+      ipcRenderer.invoke('telegramBridge:deleteMapping', args),
+    ensureTopicForRepo: (
+      input: TelegramBridgeEnsureTopicInput
+    ): Promise<TelegramRepoTopicMapping> =>
+      ipcRenderer.invoke('telegramBridge:ensureTopicForRepo', input),
+    ensureTopicsForAllRepos: (): Promise<TelegramBridgeEnsureAllTopicsResult> =>
+      ipcRenderer.invoke('telegramBridge:ensureTopicsForAllRepos'),
+    sendFromOrca: (input: TelegramBridgeSendInput): Promise<TelegramBridgeInboundResult> =>
+      ipcRenderer.invoke('telegramBridge:sendFromOrca', input),
+    start: (): Promise<void> => ipcRenderer.invoke('telegramBridge:start'),
+    stop: (): Promise<void> => ipcRenderer.invoke('telegramBridge:stop'),
+    onStatus: (callback: (status: TelegramBridgeStatus) => void): (() => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, status: TelegramBridgeStatus) =>
+        callback(status)
+      ipcRenderer.on('telegramBridge:status', listener)
+      return () => ipcRenderer.removeListener('telegramBridge:status', listener)
+    },
+    onEvent: (callback: (event: TelegramBridgeEvent) => void): (() => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, event: TelegramBridgeEvent) =>
+        callback(event)
+      ipcRenderer.on('telegramBridge:event', listener)
+      return () => ipcRenderer.removeListener('telegramBridge:event', listener)
     }
   },
 

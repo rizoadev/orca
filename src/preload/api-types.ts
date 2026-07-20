@@ -463,6 +463,16 @@ import type {
   AutomationUpdateInput
 } from '../shared/automations-types'
 import type {
+  TelegramBridgeEnsureAllTopicsResult,
+  TelegramBridgeEnsureTopicInput,
+  TelegramBridgeEvent,
+  TelegramBridgeInboundResult,
+  TelegramBridgeSendInput,
+  TelegramBridgeSetConfigInput,
+  TelegramBridgeStatus,
+  TelegramRepoTopicMapping
+} from '../shared/telegram-bridge-types'
+import type {
   WorkspaceCleanupDismissArgs,
   WorkspaceCleanupLocalProcessArgs,
   WorkspaceCleanupLocalProcessResult,
@@ -3132,6 +3142,21 @@ export type PreloadApi = {
     snapshotWorkspaceName: (args: { workspaceId: string; displayName: string }) => Promise<number>
     rendererReady: () => Promise<void>
     onDispatchRequested: (callback: (request: AutomationDispatchRequest) => void) => () => void
+  }
+  telegramBridge: {
+    getStatus: () => Promise<TelegramBridgeStatus>
+    getEvents: (args?: { limit?: number }) => Promise<TelegramBridgeEvent[]>
+    setConfig: (input: TelegramBridgeSetConfigInput) => Promise<TelegramBridgeStatus>
+    setBotToken: (args: { token: string }) => Promise<TelegramBridgeStatus>
+    clearBotToken: () => Promise<TelegramBridgeStatus>
+    deleteMapping: (args: { id: string }) => Promise<void>
+    ensureTopicForRepo: (input: TelegramBridgeEnsureTopicInput) => Promise<TelegramRepoTopicMapping>
+    ensureTopicsForAllRepos: () => Promise<TelegramBridgeEnsureAllTopicsResult>
+    sendFromOrca: (input: TelegramBridgeSendInput) => Promise<TelegramBridgeInboundResult>
+    start: () => Promise<void>
+    stop: () => Promise<void>
+    onStatus: (callback: (status: TelegramBridgeStatus) => void) => () => void
+    onEvent: (callback: (event: TelegramBridgeEvent) => void) => () => void
   }
   wsl: {
     isAvailable: () => Promise<boolean>

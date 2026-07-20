@@ -16,6 +16,13 @@ describe('normalizeRightSidebarRoute', () => {
     })
   })
 
+  it('preserves the remote chat route', () => {
+    expect(normalizeRightSidebarRoute('remote-chat')).toEqual({
+      rightSidebarTab: 'remote-chat',
+      rightSidebarExplorerView: 'files'
+    })
+  })
+
   it('still normalizes invalid tabs to Explorer files', () => {
     expect(normalizeRightSidebarRoute('missing')).toEqual({
       rightSidebarTab: 'explorer',

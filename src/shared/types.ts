@@ -3120,6 +3120,7 @@ export type RightSidebarTab =
   | 'checks'
   | 'issues'
   | 'ports'
+  | 'remote-chat'
 export type ActiveRightSidebarTab = Exclude<RightSidebarTab, 'search'>
 export type RightSidebarExplorerView = 'files' | 'search'
 

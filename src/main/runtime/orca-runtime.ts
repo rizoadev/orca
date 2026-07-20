@@ -22721,6 +22721,78 @@ export class OrcaRuntimeService {
     return this.getTerminalHandleForPaneKey(paneKey) ?? undefined
   }
 
+  /** Live terminals Telegram/remote inject can target without requiring a ready renderer graph. */
+  listLiveTerminalInjectTargets(): {
+    handle: string
+    worktreeId: string
+    connected: boolean
+    writable: boolean
+    title: string | null
+    lastOutputAt: number | null
+    launchAgent: string | null
+  }[] {
+    const out: {
+      handle: string
+      worktreeId: string
+      connected: boolean
+      writable: boolean
+      title: string | null
+      lastOutputAt: number | null
+      launchAgent: string | null
+    }[] = []
+    const seenHandles = new Set<string>()
+
+    const push = (entry: {
+      handle: string
+      worktreeId: string
+      connected: boolean
+      writable: boolean
+      title: string | null
+      lastOutputAt: number | null
+      launchAgent: string | null
+    }): void => {
+      if (!entry.handle || !entry.worktreeId || seenHandles.has(entry.handle)) {
+        return
+      }
+      seenHandles.add(entry.handle)
+      out.push(entry)
+    }
+
+    // Why: leaf graph is the desktop source of truth for open terminals; include it even when
+    // the PTY map is temporarily empty/stale after reloads.
+    for (const leaf of this.leaves.values()) {
+      if (!leaf.worktreeId || !leaf.connected || !leaf.writable) {
+        continue
+      }
+      const pty = leaf.ptyId ? this.ptysById.get(leaf.ptyId) : undefined
+      push({
+        handle: this.issueHandle(leaf),
+        worktreeId: leaf.worktreeId,
+        connected: leaf.connected,
+        writable: leaf.writable,
+        title: getLatestLeafTitle(leaf, this.tabs.get(leaf.tabId)?.title ?? null),
+        lastOutputAt: leaf.lastOutputAt,
+        launchAgent: pty?.launchAgent ?? pty?.foregroundAgent ?? null
+      })
+    }
+
+    for (const pty of this.ptysById.values()) {
+      if (!pty.connected || !pty.worktreeId) {
+        continue
+      }
+      push({
+        handle: this.issuePtyHandle(pty),
+        worktreeId: pty.worktreeId,
+        connected: true,
+        writable: true,
+        title: getLatestPtyTitle(pty),
+        lastOutputAt: pty.lastOutputAt,
+        launchAgent: pty.launchAgent ?? pty.foregroundAgent ?? null
+      })
+    }
+    return out
+  }
+
   getAgentStatusLaunchConfigForPaneKey(
     paneKey: string,
     args?: { launchToken?: string }

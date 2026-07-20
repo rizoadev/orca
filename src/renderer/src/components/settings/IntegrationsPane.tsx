@@ -7,6 +7,7 @@ import {
 } from './source-control-integration-cards'
 import { JiraIntegrationCard, LinearIntegrationCard } from './task-tracker-integration-cards'
 import { useIntegrationProviderStatusRefresh } from './use-integration-provider-status-refresh'
+import { TelegramBridgeSettingsCard } from './TelegramBridgeSettingsCard'
 import { translate } from '@/i18n/i18n'
 export { getIntegrationsPaneSearchEntries } from './integrations-search'
 
@@ -15,6 +16,21 @@ export function IntegrationsPane(): React.JSX.Element {
 
   return (
     <div className="space-y-5">
+      <section className="space-y-3">
+        <div className="space-y-1">
+          <h3 className="text-sm font-semibold text-foreground">
+            {translate('settings.integrations.remoteChat', 'Remote chat')}
+          </h3>
+          <p className="text-xs text-muted-foreground">
+            {translate(
+              'settings.integrations.remoteChatDescription',
+              'Bridge live Orca agent sessions to external messengers. One Telegram bot, one forum topic per repo.'
+            )}
+          </p>
+        </div>
+        <TelegramBridgeSettingsCard />
+      </section>
+
       <section className="space-y-3">
         <div className="space-y-1">
           <h3 className="text-sm font-semibold text-foreground">

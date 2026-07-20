@@ -167,6 +167,7 @@ import { OffscreenBrowserBackend } from './browser/offscreen-browser-backend'
 import { initializeBrowserSessionsForApp } from './browser/browser-session-startup'
 import { setUnreadDockBadgeCount } from './dock/unread-badge'
 import { AutomationService } from './automations/service'
+import { TelegramBridgeService } from './telegram-bridge/service'
 import { createHeadlessAutomationOutputSnapshotBuffer } from './automations/headless-dispatch'
 import { buildHeadlessAutomationWorktreeCreateArgs } from './automations/headless-workspace-create'
 import { AgentAwakeService } from './agent-awake-service'
@@ -238,6 +239,7 @@ let unsubscribeSystemResumeBroadcast: (() => void) | null = null
 let watcherShutdownPromise: Promise<void> | null = null
 let watcherShutdownDone = false
 let automations: AutomationService | null = null
+let telegramBridge: TelegramBridgeService | null = null
 let keybindings: KeybindingService | null = null
 // Why: a reload intent must not leak to a later load; the recovery reload re-fires did-finish-load, so its flag spares live PTYs from the orphan sweep (#5787).
 const expectedRendererReload = createWebContentsTimedFlag()
@@ -971,10 +973,13 @@ function openMainWindow(): BrowserWindow {
       },
       onOrcaProfileAuthMutation: () => desktopRelayService?.authMutated(),
       onBeforeOrcaProfileSignOut: () => desktopRelayService?.fenceAndCloseNow()
-    }
+    },
+    telegramBridge ?? undefined
   )
   automations.setWebContents(window.webContents)
   automations.start()
+  telegramBridge?.setWebContents(window.webContents)
+  void telegramBridge?.start()
   attachMainWindowServices(
     window,
     store,
@@ -1005,6 +1010,7 @@ function openMainWindow(): BrowserWindow {
     }
     clearExpectedRendererReload(rendererWebContentsId)
     automations?.setWebContents(null)
+    telegramBridge?.setWebContents(null)
     // Why: detach the hook listener on close so the server never fires into destroyed webContents before reopen, and replay runs only on deliberate recreations.
     agentHookServer.setListener(null)
     agentHookServer.setPaneStatusClearListener(null)
@@ -1060,7 +1066,7 @@ function openMainWindow(): BrowserWindow {
       maybeAutoRenameBranchOnFirstWorkFromHook({ paneKey, tabId, worktreeId, payload, isReplay })
       const orchestration = runtime?.getAgentStatusOrchestrationContextForPaneKey(paneKey)
       const terminalHandle = runtime?.getAgentStatusTerminalHandleForPaneKey(paneKey)
-      mainWindow?.webContents.send('agentStatus:set', {
+      const agentStatusPayload = {
         ...payload,
         paneKey,
         ...(launchToken ? { launchToken } : {}),
@@ -1073,7 +1079,10 @@ function openMainWindow(): BrowserWindow {
         ...(providerSession ? { providerSession } : {}),
         ...(promptInteractionKey ? { promptInteractionKey } : {}),
         ...(orchestration ? { orchestration } : {})
-      })
+      }
+      mainWindow?.webContents.send('agentStatus:set', agentStatusPayload)
+      // Why: Telegram outbound mirror shares the same enriched hook row the UI sees.
+      telegramBridge?.handleAgentStatus(agentStatusPayload)
       recordAgentStateCrashBreadcrumb(payload.agentType ?? 'unknown', payload.state)
       // Why: native OSC titles miss some idle/permission frames, so inject hook-derived ones to keep the renderer title tracker in sync.
       const profile = getSyntheticAgentTitleProfile(payload.agentType)
@@ -1800,6 +1809,32 @@ app.whenReady().then(async () => {
   browserManager.setBrowserGuestStateChangedListener((worktreeId) => {
     runtimeService.notifyMobileSessionTabsChanged(worktreeId)
   })
+  telegramBridge = new TelegramBridgeService({
+    getRuntime: () => runtime,
+    getAgentStatusSnapshot: () =>
+      agentHookServer
+        .getStatusSnapshot()
+        .filter((entry) => entry.providerSessionOnly !== true)
+        .map((entry) => {
+          // Why: hook cache rows omit terminalHandle; runtime resolves the live handle for inject.
+          const terminalHandle =
+            entry.terminalHandle ?? runtime?.getAgentStatusTerminalHandleForPaneKey(entry.paneKey)
+          return terminalHandle ? { ...entry, terminalHandle } : entry
+        }),
+    getRepos: () =>
+      (store?.getRepos() ?? []).map((repo) => ({
+        id: repo.id,
+        displayName: repo.displayName,
+        path: repo.path,
+        connectionId: repo.connectionId ?? null
+      })),
+    // Why: same preference source as desktop agent launch (settings.defaultTuiAgent).
+    getDefaultAgent: () => {
+      const agent = store?.getSettings().defaultTuiAgent
+      return typeof agent === 'string' ? agent : null
+    },
+    getDisabledTuiAgents: () => store?.getSettings().disabledTuiAgents ?? null
+  })
   automations = new AutomationService(store, {
     claudeUsage,
     codexUsage,
@@ -2114,6 +2149,8 @@ app.whenReady().then(async () => {
     }
     // Why: headless serve never opens a renderer, so arm scheduled automation dispatch here.
     automations.start()
+    // Why: Telegram long-poll is main-process owned and still works headless for remote inject/mirror.
+    void telegramBridge?.start()
     await printServeReady(serveOptions)
     return
   }
@@ -2204,6 +2241,7 @@ app.on('will-quit', (e) => {
   // Why: stats.flush() must precede killAllPty() so still-running agents emit synthetic agent_stop events (killAllPty skips runtime.onPtyExit()).
   starNag?.stop()
   automations?.stop()
+  telegramBridge?.stop()
   setUnreadDockBadgeCount(0)
   agentHookServer.stop()
   // Why: cancels relay restart/reinstall timers and kills wsl.exe children deterministically, not via stdio-pipe teardown.
