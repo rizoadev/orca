@@ -6,16 +6,20 @@ import { useActiveWorktree, useRepoById } from '@/store/selectors'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
-import { createGitHubWorkItemWorkspaceInBackground } from '@/lib/github-work-item-background-create'
-import type { LinkedWorkItemSummary } from '@/lib/new-workspace'
+import { useConfirmationDialog } from '@/components/confirmation-dialog'
 import type { GitHubWorkItem, GitLabWorkItem, TuiAgent } from '../../../../shared/types'
 import { translate } from '@/i18n/i18n'
 import { launchIssueAiPlanCommenter } from './issues-panel-ai-plan'
+import { confirmCloseIssue } from './issues-panel-close-confirm'
 import { closeRepoIssue, createRepoIssue } from './issues-panel-create-actions'
 import { IssuesPanelCreateDialog, type CreateIssueSubmitInput } from './issues-panel-create-dialog'
 import { IssuesPanelDetailModals } from './issues-panel-detail-modals'
 import { IssuesPanelEmpty } from './issues-panel-empty'
 import { IssuesPanelList } from './issues-panel-list'
+import {
+  startGitHubIssueFromPanel,
+  startGitLabIssueFromPanel
+} from './issues-panel-workspace-actions'
 import { detectRepoIssueProvider } from './repo-issue-provider'
 import {
   getRepoIssueSourceContext,
@@ -31,6 +35,7 @@ export default function IssuesPanel({ isVisible }: { isVisible: boolean }): Reac
   const activeRepo = useRepoById(activeWorktree?.repoId ?? null)
   const fetchWorkItems = useAppStore((s) => s.fetchWorkItems)
   const openModal = useAppStore((s) => s.openModal)
+  const confirm = useConfirmationDialog()
 
   const provider = useMemo(() => detectRepoIssueProvider(activeRepo), [activeRepo])
   const [rows, setRows] = useState<IssueRow[]>([])
@@ -171,6 +176,10 @@ export default function IssuesPanel({ isVisible }: { isVisible: boolean }): Reac
       if (!activeRepo) {
         return
       }
+      const confirmed = await confirmCloseIssue(confirm, row)
+      if (!confirmed) {
+        return
+      }
       setClosingIssueId(row.id)
       try {
         const ok = await closeRepoIssue({ repo: activeRepo, row })
@@ -190,29 +199,7 @@ export default function IssuesPanel({ isVisible }: { isVisible: boolean }): Reac
         setClosingIssueId((current) => (current === row.id ? null : current))
       }
     },
-    [activeRepo, selectedGitHubItem?.id, selectedGitLabItem?.id]
-  )
-
-  const openComposerForGitHubItem = useCallback(
-    (item: GitHubWorkItem) => {
-      if (!activeRepo) {
-        return
-      }
-      const linkedWorkItem: LinkedWorkItemSummary = {
-        type: item.type,
-        number: item.number,
-        title: item.title,
-        url: item.url
-      }
-      openModal('new-workspace-composer', {
-        linkedWorkItem,
-        taskSourceContext: getRepoIssueSourceContext(activeRepo, 'github'),
-        prefilledName: item.title,
-        initialRepoId: item.repoId,
-        telemetrySource: 'sidebar'
-      })
-    },
-    [activeRepo, openModal]
+    [activeRepo, confirm, selectedGitHubItem?.id, selectedGitLabItem?.id]
   )
 
   const handleUseGitHubItem = useCallback(
@@ -220,16 +207,9 @@ export default function IssuesPanel({ isVisible }: { isVisible: boolean }): Reac
       if (!activeRepo) {
         return
       }
-      useAppStore.getState().recordFeatureInteraction?.('github-tasks')
-      void createGitHubWorkItemWorkspaceInBackground({
-        item,
-        repoId: item.repoId,
-        taskSourceContext: getRepoIssueSourceContext(activeRepo, 'github'),
-        telemetrySource: 'sidebar',
-        openModalFallback: () => openComposerForGitHubItem(item)
-      })
+      startGitHubIssueFromPanel(openModal, activeRepo, item)
     },
-    [activeRepo, openComposerForGitHubItem]
+    [activeRepo, openModal]
   )
 
   const handleUseGitLabItem = useCallback(
@@ -237,20 +217,7 @@ export default function IssuesPanel({ isVisible }: { isVisible: boolean }): Reac
       if (!activeRepo) {
         return
       }
-      useAppStore.getState().recordFeatureInteraction?.('gitlab-tasks')
-      const linkedWorkItem: LinkedWorkItemSummary = {
-        type: item.type,
-        number: item.number,
-        title: item.title,
-        url: item.url
-      }
-      openModal('new-workspace-composer', {
-        linkedWorkItem,
-        taskSourceContext: getRepoIssueSourceContext(activeRepo, 'gitlab'),
-        prefilledName: item.title,
-        initialRepoId: item.repoId,
-        telemetrySource: 'sidebar'
-      })
+      startGitLabIssueFromPanel(openModal, activeRepo, item)
     },
     [activeRepo, openModal]
   )
