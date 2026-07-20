@@ -19,7 +19,7 @@ describe('resolveTelegramBridgeSessionTarget', () => {
       [
         entry({
           paneKey: 'a:1',
-          state: 'idle',
+          state: 'done',
           worktreeId: 'repo-a::/tmp/a',
           terminalHandle: 'h-idle',
           receivedAt: 100
@@ -72,7 +72,7 @@ describe('resolveTelegramBridgeSessionTarget', () => {
       [
         {
           paneKey: '',
-          state: 'idle',
+          state: 'done',
           worktreeId: 'repo-a::/tmp/a',
           terminalHandle: 'h-1',
           prompt: '',
