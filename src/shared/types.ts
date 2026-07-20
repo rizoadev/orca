@@ -3236,6 +3236,7 @@ export type RightSidebarTab =
   | 'pr-checks'
   | 'source-control'
   | 'checks'
+  | 'issues'
   | 'ports'
 export type ActiveRightSidebarTab = Exclude<RightSidebarTab, 'search'>
 export type RightSidebarExplorerView = 'files' | 'search'

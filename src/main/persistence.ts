@@ -826,6 +826,7 @@ function normalizeRightSidebarTab(tab: unknown): PersistedState['ui']['rightSide
     tab === 'workspaces' ||
     tab === 'source-control' ||
     tab === 'checks' ||
+    tab === 'issues' ||
     tab === 'ports'
   ) {
     return tab

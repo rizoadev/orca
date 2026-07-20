@@ -2008,6 +2008,7 @@ function buildWorktreePurgeState(s: AppState, worktreeIds: string[]): Partial<Ap
         tab === 'workspaces' ||
         tab === 'source-control' ||
         tab === 'checks' ||
+        tab === 'issues' ||
         tab === 'ports'
       ) {
         out[id] = tab

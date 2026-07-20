@@ -385,6 +385,19 @@ function getDevWebClientIndexPath() {
   return path.join(repoRoot, 'out', 'web', 'web-index.html')
 }
 
+function getDevWebClientPrepareFailurePath() {
+  return path.join(repoRoot, 'out', 'web', '.prepare-failed')
+}
+
+function getDevWebClientSourceMtimeMs() {
+  return Math.max(
+    latestMtimeMs(path.join(repoRoot, 'vite.web.config.ts')),
+    latestMtimeMs(path.join(repoRoot, 'src', 'renderer')),
+    latestMtimeMs(path.join(repoRoot, 'src', 'shared')),
+    latestMtimeMs(path.join(repoRoot, 'src', 'preload', 'api-types.ts'))
+  )
+}
+
 function latestMtimeMs(targetPath) {
   const stat = (() => {
     try {
@@ -414,13 +427,22 @@ function isDevWebClientFresh() {
   if (outputMtime === 0) {
     return false
   }
-  const sourceMtime = Math.max(
-    latestMtimeMs(path.join(repoRoot, 'vite.web.config.ts')),
-    latestMtimeMs(path.join(repoRoot, 'src', 'renderer')),
-    latestMtimeMs(path.join(repoRoot, 'src', 'shared')),
-    latestMtimeMs(path.join(repoRoot, 'src', 'preload', 'api-types.ts'))
-  )
-  return sourceMtime <= outputMtime
+  const sourceMtime = getDevWebClientSourceMtimeMs()
+  if (sourceMtime <= outputMtime) {
+    return true
+  }
+  // Why: if the last prepare already failed for this exact source tree, don't
+  // thrash another multi-GB Vite production build on every `pnpm dev`.
+  // Source edits clear the stamp because getDevWebClientSourceMtimeMs changes.
+  try {
+    const failedFor = Number.parseInt(
+      readFileSync(getDevWebClientPrepareFailurePath(), 'utf8').trim(),
+      10
+    )
+    return Number.isFinite(failedFor) && failedFor === sourceMtime
+  } catch {
+    return false
+  }
 }
 
 function prepareDevWebClient() {
@@ -439,15 +461,49 @@ function prepareDevWebClient() {
     return
   }
   console.error('[orca-dev] Building web client for pairing...')
-  execFileSync(
-    process.execPath,
-    [viteCli, 'build', '--config', path.join(repoRoot, 'vite.web.config.ts')],
-    {
-      cwd: repoRoot,
-      stdio: 'inherit',
-      env: process.env
+  // Why: the pairing web production build can exceed Node's default ~2GB heap
+  // on large renderer trees. Give Vite more room, and never fail `pnpm dev`
+  // just because browser pairing is stale — Electron still boots with the
+  // previous bundle (or without pairing web).
+  const existingNodeOptions = process.env.NODE_OPTIONS ?? ''
+  const hasHeapLimit = /--max-old-space-size=/.test(existingNodeOptions)
+  const nodeOptions = hasHeapLimit
+    ? existingNodeOptions
+    : `${existingNodeOptions} --max-old-space-size=8192`.trim()
+  const sourceMtime = getDevWebClientSourceMtimeMs()
+  try {
+    execFileSync(
+      process.execPath,
+      [viteCli, 'build', '--config', path.join(repoRoot, 'vite.web.config.ts')],
+      {
+        cwd: repoRoot,
+        stdio: 'inherit',
+        env: {
+          ...process.env,
+          NODE_OPTIONS: nodeOptions
+        }
+      }
+    )
+    try {
+      rmSync(getDevWebClientPrepareFailurePath(), { force: true })
+    } catch {
+      // ignore cleanup failures
     }
-  )
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    console.error(
+      `[orca-dev] Web client build failed; continuing Electron dev with the existing pairing bundle. ${message}`
+    )
+    console.error(
+      '[orca-dev] Tip: set ORCA_SKIP_DEV_WEB_PREPARE=1 to skip this step, or run `pnpm run build:web` separately with more memory.'
+    )
+    try {
+      mkdirSync(path.dirname(getDevWebClientPrepareFailurePath()), { recursive: true })
+      writeFileSync(getDevWebClientPrepareFailurePath(), `${sourceMtime}\n`, 'utf8')
+    } catch {
+      // ignore stamp write failures; next `pnpm dev` may retry
+    }
+  }
 }
 
 // Why: every `pn dev` should be attachable from agent-browser/playwright-cli

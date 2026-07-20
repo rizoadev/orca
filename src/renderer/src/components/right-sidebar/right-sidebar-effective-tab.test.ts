@@ -13,7 +13,8 @@ const gitVisibleItems = [
   { id: 'explorer' },
   { id: 'vault' },
   { id: 'source-control' },
-  { id: 'checks' }
+  { id: 'checks' },
+  { id: 'issues' }
 ] satisfies { id: ActiveRightSidebarTab }[]
 
 describe('resolveRightSidebarEffectiveTab', () => {
