@@ -11,7 +11,7 @@ import type { LinkedWorkItemSummary } from '@/lib/new-workspace'
 import type { GitHubWorkItem, GitLabWorkItem, TuiAgent } from '../../../../shared/types'
 import { translate } from '@/i18n/i18n'
 import { launchIssueAiPlanCommenter } from './issues-panel-ai-plan'
-import { createRepoIssue } from './issues-panel-create-actions'
+import { closeRepoIssue, createRepoIssue } from './issues-panel-create-actions'
 import { IssuesPanelCreateDialog, type CreateIssueSubmitInput } from './issues-panel-create-dialog'
 import { IssuesPanelDetailModals } from './issues-panel-detail-modals'
 import { IssuesPanelEmpty } from './issues-panel-empty'
@@ -42,6 +42,7 @@ export default function IssuesPanel({ isVisible }: { isVisible: boolean }): Reac
   const [createOpen, setCreateOpen] = useState(false)
   const [createSubmitting, setCreateSubmitting] = useState(false)
   const [aiPlanningIssueId, setAiPlanningIssueId] = useState<string | null>(null)
+  const [closingIssueId, setClosingIssueId] = useState<string | null>(null)
 
   useEffect(() => {
     let cancelled = false
@@ -118,6 +119,7 @@ export default function IssuesPanel({ isVisible }: { isVisible: boolean }): Reac
     setSelectedGitLabItem(null)
     setCreateOpen(false)
     setAiPlanningIssueId(null)
+    setClosingIssueId(null)
   }, [activeRepo?.id])
 
   const providerLabel =
@@ -162,6 +164,33 @@ export default function IssuesPanel({ isVisible }: { isVisible: boolean }): Reac
       }
     },
     [activeRepo, activeWorktree]
+  )
+
+  const handleCloseIssue = useCallback(
+    async (row: IssueRow) => {
+      if (!activeRepo) {
+        return
+      }
+      setClosingIssueId(row.id)
+      try {
+        const ok = await closeRepoIssue({ repo: activeRepo, row })
+        if (!ok) {
+          return
+        }
+        setRows((current) => current.filter((item) => item.id !== row.id))
+        if (selectedGitHubItem?.id === row.id) {
+          setSelectedGitHubItem(null)
+        }
+        if (selectedGitLabItem?.id === row.id) {
+          setSelectedGitLabItem(null)
+        }
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : String(err))
+      } finally {
+        setClosingIssueId((current) => (current === row.id ? null : current))
+      }
+    },
+    [activeRepo, selectedGitHubItem?.id, selectedGitLabItem?.id]
   )
 
   const openComposerForGitHubItem = useCallback(
@@ -355,9 +384,13 @@ export default function IssuesPanel({ isVisible }: { isVisible: boolean }): Reac
           worktreeId={activeWorktree?.id ?? null}
           connectionId={activeRepo.connectionId}
           aiPlanningIssueId={aiPlanningIssueId}
+          closingIssueId={closingIssueId}
           onOpenIssue={openIssue}
           onAskAiPlan={(row, agent) => {
             void handleAskAiPlan(row, agent)
+          }}
+          onCloseIssue={(row) => {
+            void handleCloseIssue(row)
           }}
         />
       </div>

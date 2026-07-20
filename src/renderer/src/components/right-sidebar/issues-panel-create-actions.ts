@@ -2,7 +2,7 @@ import { toast } from 'sonner'
 import type { GitHubWorkItem, GitLabWorkItem, Repo } from '../../../../shared/types'
 import { translate } from '@/i18n/i18n'
 import type { CreateIssueSubmitInput } from './issues-panel-create-dialog'
-import { getRepoIssueSourceContext } from './issues-panel-rows'
+import { getRepoIssueSourceContext, type IssueRow } from './issues-panel-rows'
 import type { RepoIssueProvider } from './repo-issue-provider'
 
 export type CreatedIssueResult =
@@ -91,4 +91,51 @@ export async function createRepoIssue(args: {
       repoId: args.repo.id
     }
   }
+}
+
+export async function closeRepoIssue(args: { repo: Repo; row: IssueRow }): Promise<boolean> {
+  if (args.row.provider === 'github') {
+    const result = await window.api.gh.updateIssue({
+      repoPath: args.repo.path,
+      repoId: args.repo.id,
+      sourceContext: getRepoIssueSourceContext(args.repo, 'github'),
+      number: args.row.number,
+      updates: { state: 'closed' }
+    })
+    if (!result.ok) {
+      toast.error(
+        result.error ||
+          translate(
+            'auto.components.right.sidebar.issuesPanel.closeFailed',
+            'Failed to close issue.'
+          )
+      )
+      return false
+    }
+  } else {
+    const result = await window.api.gl.updateIssue({
+      repoPath: args.repo.path,
+      repoId: args.repo.id,
+      sourceContext: getRepoIssueSourceContext(args.repo, 'gitlab'),
+      number: args.row.number,
+      updates: { state: 'closed' }
+    })
+    if (!result.ok) {
+      toast.error(
+        result.error ||
+          translate(
+            'auto.components.right.sidebar.issuesPanel.closeFailed',
+            'Failed to close issue.'
+          )
+      )
+      return false
+    }
+  }
+
+  toast.success(
+    translate('auto.components.right.sidebar.issuesPanel.closed', 'Closed issue #{{value0}}', {
+      value0: args.row.number
+    })
+  )
+  return true
 }

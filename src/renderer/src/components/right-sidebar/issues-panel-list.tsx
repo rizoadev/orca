@@ -1,5 +1,5 @@
 import React, { useMemo } from 'react'
-import { CircleDot, ExternalLink, LoaderCircle, Sparkles } from 'lucide-react'
+import { CircleDot, ExternalLink, LoaderCircle, Sparkles, XCircle } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import {
@@ -41,16 +41,20 @@ export function IssuesPanelList({
   worktreeId,
   connectionId,
   aiPlanningIssueId,
+  closingIssueId,
   onOpenIssue,
-  onAskAiPlan
+  onAskAiPlan,
+  onCloseIssue
 }: {
   loading: boolean
   rows: IssueRow[]
   worktreeId: string | null
   connectionId: string | null | undefined
   aiPlanningIssueId: string | null
+  closingIssueId: string | null
   onOpenIssue: (row: IssueRow) => void
   onAskAiPlan: (row: IssueRow, agent: TuiAgent) => void
+  onCloseIssue: (row: IssueRow) => void
 }): React.JSX.Element {
   const defaultAgent = useAppStore((s) => s.settings?.defaultTuiAgent ?? null)
   const disabledAgents = useAppStore((s) => s.settings?.disabledTuiAgents ?? [])
@@ -89,6 +93,7 @@ export function IssuesPanelList({
     <div className="divide-y divide-border/50">
       {rows.map((row) => {
         const planning = aiPlanningIssueId === row.id
+        const closing = closingIssueId === row.id
         return (
           <div
             key={row.id}
@@ -214,6 +219,36 @@ export function IssuesPanelList({
                     )}
                   </DropdownMenuContent>
                 </DropdownMenu>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon-xs"
+                      disabled={closing || planning}
+                      onClick={(event) => {
+                        event.stopPropagation()
+                        onCloseIssue(row)
+                      }}
+                      aria-label={translate(
+                        'auto.components.right.sidebar.issuesPanel.closeIssue',
+                        'Close issue'
+                      )}
+                    >
+                      {closing ? (
+                        <LoaderCircle className="size-3.5 animate-spin" />
+                      ) : (
+                        <XCircle className="size-3.5" />
+                      )}
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent side="left">
+                    {translate(
+                      'auto.components.right.sidebar.issuesPanel.closeIssue',
+                      'Close issue'
+                    )}
+                  </TooltipContent>
+                </Tooltip>
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <Button
