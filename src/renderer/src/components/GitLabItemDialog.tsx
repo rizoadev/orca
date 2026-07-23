@@ -12,14 +12,18 @@
    since they mirror substantial GitHub-side surface area. */
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import {
+  Bot,
   Check,
   CircleDot,
   ExternalLink,
   GitMerge,
   LoaderCircle,
+  MessageSquareReply,
   Pencil,
   RefreshCw,
   Send,
+  Sparkles,
+  ChevronDown,
   X
 } from 'lucide-react'
 import { toast } from 'sonner'
@@ -43,10 +47,22 @@ import type {
   GitLabMRUpdate,
   GitLabWorkItem,
   GitLabWorkItemDetails,
-  MRComment
+  MRComment,
+  Repo,
+  TuiAgent
 } from '../../../shared/types'
 import type { TaskSourceContext } from '../../../shared/task-source-context'
 import { translate } from '@/i18n/i18n'
+import { IssueAiWorkBranchLabel } from '@/components/right-sidebar/issue-ai-work-actions'
+import { launchIssueAiPlanCommenter } from '@/components/right-sidebar/issues-panel-ai-plan'
+import {
+  launchIssueAiWorker,
+  type IssueAiWorkMode
+} from '@/components/right-sidebar/issues-panel-ai-work'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
+import { useDetectedAgents } from '@/hooks/useDetectedAgents'
+import { AgentIcon, getAgentCatalog } from '@/lib/agent-catalog'
+import { filterEnabledTuiAgents } from '../../../shared/tui-agent-selection'
 
 type Props = {
   item: GitLabWorkItem | null
@@ -169,22 +185,178 @@ function dedupeGitLabUsers(users: readonly GitLabAssignableUser[]): GitLabAssign
   return Array.from(byKey.values()).sort((a, b) => a.username.localeCompare(b.username))
 }
 
+function groupCommentsByThread(comments: MRComment[]): {
+  threadId: string
+  comments: MRComment[]
+}[] {
+  const groups = new Map<string, MRComment[]>()
+  for (const comment of comments) {
+    const key = comment.threadId?.trim() || `note:${comment.id}`
+    const list = groups.get(key)
+    if (list) {
+      list.push(comment)
+    } else {
+      groups.set(key, [comment])
+    }
+  }
+  return Array.from(groups.entries()).map(([threadId, threadComments]) => ({
+    threadId,
+    comments: threadComments
+  }))
+}
+
+function orderAgentsForThread(
+  defaultAgent: TuiAgent | 'blank' | null | undefined,
+  detected: TuiAgent[]
+): TuiAgent[] {
+  const catalogOrder = getAgentCatalog()
+    .filter((entry) => detected.includes(entry.id))
+    .map((entry) => entry.id)
+  if (!defaultAgent || defaultAgent === 'blank' || !catalogOrder.includes(defaultAgent)) {
+    return catalogOrder
+  }
+  return [defaultAgent, ...catalogOrder.filter((id) => id !== defaultAgent)]
+}
+
+function ThreadAgentMenu({
+  title,
+  icon,
+  agents,
+  detectingAgents,
+  disabled,
+  sections,
+  onPick
+}: {
+  title: string
+  icon: 'plan' | 'work'
+  agents: TuiAgent[]
+  detectingAgents: boolean
+  disabled: boolean
+  sections: { id: string; label: string; mode?: IssueAiWorkMode }[]
+  onPick: (agent: TuiAgent, mode?: IssueAiWorkMode) => void
+}): React.JSX.Element {
+  const [open, setOpen] = useState(false)
+  const defaultAgent = useAppStore((s) => s.settings?.defaultTuiAgent ?? null)
+  return (
+    <Popover open={open} onOpenChange={setOpen} modal={false}>
+      <PopoverTrigger asChild>
+        <Button
+          type="button"
+          variant="ghost"
+          size="xs"
+          className="h-6 gap-1 px-1.5 text-xs"
+          disabled={disabled}
+        >
+          {disabled ? (
+            <LoaderCircle className="size-3 animate-spin" />
+          ) : icon === 'work' ? (
+            <Bot className="size-3" />
+          ) : (
+            <Sparkles className="size-3" />
+          )}
+          {title}
+          <ChevronDown className="size-3 opacity-60" />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent
+        align="start"
+        sideOffset={4}
+        className="z-[80] w-52 p-1"
+        onOpenAutoFocus={(event) => event.preventDefault()}
+      >
+        {detectingAgents && agents.length === 0 ? (
+          <div className="px-2 py-1.5 text-xs text-muted-foreground">
+            {translate(
+              'auto.components.right.sidebar.issuesPanel.detectingAgents',
+              'Detecting agents…'
+            )}
+          </div>
+        ) : agents.length === 0 ? (
+          <div className="px-2 py-1.5 text-xs text-muted-foreground">
+            {translate(
+              'auto.components.right.sidebar.issuesPanel.noAgent',
+              'No AI agent is available.'
+            )}
+          </div>
+        ) : (
+          sections.map((section) => (
+            <div key={section.id} className="mb-1 last:mb-0">
+              <div className="px-2 py-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                {section.label}
+              </div>
+              {agents.map((agent) => (
+                <button
+                  key={`${section.id}:${agent}`}
+                  type="button"
+                  className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-xs hover:bg-muted"
+                  onClick={() => {
+                    setOpen(false)
+                    onPick(agent, section.mode)
+                  }}
+                >
+                  <AgentIcon agent={agent} size={14} />
+                  <span className="truncate">{agent}</span>
+                  {defaultAgent === agent ? (
+                    <span className="ml-auto text-[11px] text-muted-foreground">
+                      {translate('auto.components.right.sidebar.issuesPanel.default', 'default')}
+                    </span>
+                  ) : null}
+                </button>
+              ))}
+            </div>
+          ))
+        )}
+      </PopoverContent>
+    </Popover>
+  )
+}
+
 function CommentCard({
   comment,
+  isReply = false,
   canResolve,
   resolving,
-  onResolve
+  onResolve,
+  replyOpen,
+  replyDraft,
+  replySubmitting,
+  onToggleReply,
+  onReplyDraftChange,
+  onSubmitReply,
+  onPlanWithAi,
+  onWorkWithAi,
+  agents,
+  detectingAgents,
+  aiBusy
 }: {
   comment: MRComment
+  isReply?: boolean
   canResolve?: boolean
   resolving?: boolean
   onResolve?: (threadId: string, resolved: boolean) => void
+  replyOpen?: boolean
+  replyDraft?: string
+  replySubmitting?: boolean
+  onToggleReply?: () => void
+  onReplyDraftChange?: (value: string) => void
+  onSubmitReply?: () => void
+  onPlanWithAi?: (agent: TuiAgent) => void
+  onWorkWithAi?: (agent: TuiAgent, mode: IssueAiWorkMode) => void
+  agents?: TuiAgent[]
+  detectingAgents?: boolean
+  aiBusy?: boolean
 }): React.JSX.Element {
   const hasThread = Boolean(comment.threadId)
+  const canSubmitReply = hasBoundedCommentBodyText(replyDraft ?? '')
   return (
-    <div className="rounded-md border border-border/40 bg-muted/30 p-3">
+    <div
+      className={cn(
+        'rounded-md border border-border/40 bg-muted/20 p-2.5',
+        isReply && 'ml-5 border-border/30 bg-muted/10'
+      )}
+    >
       <div className="mb-1.5 flex items-center justify-between gap-2 text-xs text-muted-foreground">
-        <div className="flex items-center gap-2">
+        <div className="flex min-w-0 items-center gap-1.5">
           {comment.authorAvatarUrl ? (
             <img
               src={comment.authorAvatarUrl}
@@ -195,14 +367,14 @@ function CommentCard({
               }}
             />
           ) : null}
-          <span className="font-medium text-foreground">{comment.author}</span>
+          <span className="truncate text-sm font-medium text-foreground">{comment.author}</span>
           {comment.isResolved ? (
-            <span className="rounded-full bg-emerald-500/15 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700 dark:text-emerald-300">
+            <span className="rounded-full bg-emerald-500/15 px-1.5 py-0.5 text-[11px] font-medium text-emerald-700 dark:text-emerald-300">
               {translate('auto.components.GitLabItemDialog.f23ea85341', 'resolved')}
             </span>
           ) : null}
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex shrink-0 items-center gap-1">
           {canResolve && hasThread && onResolve ? (
             <Button
               type="button"
@@ -210,7 +382,7 @@ function CommentCard({
               size="xs"
               disabled={resolving}
               onClick={() => onResolve(comment.threadId ?? '', !comment.isResolved)}
-              className="h-6"
+              className="h-6 px-1.5 text-xs"
             >
               {resolving ? <LoaderCircle className="size-3 animate-spin" /> : null}
               {comment.isResolved
@@ -222,12 +394,123 @@ function CommentCard({
         </div>
       </div>
       {comment.path ? (
-        <div className="mb-1.5 font-mono text-[11px] text-muted-foreground">
+        <div className="mb-1 font-mono text-xs text-muted-foreground">
           {comment.path}
           {comment.line ? `:${comment.line}` : ''}
         </div>
       ) : null}
-      <CommentMarkdown content={comment.body} />
+      <div className="text-sm leading-relaxed text-foreground [&_p]:my-1.5 [&_pre]:text-xs">
+        <CommentMarkdown content={comment.body} />
+      </div>
+      <div className="mt-2 flex flex-wrap items-center gap-1 border-t border-border/30 pt-1.5">
+        {onToggleReply ? (
+          <Button
+            type="button"
+            variant="ghost"
+            size="xs"
+            className="h-6 gap-1 px-1.5 text-xs"
+            onClick={onToggleReply}
+          >
+            <MessageSquareReply className="size-3" />
+            {translate('auto.components.GitLabItemDialog.reply', 'Reply')}
+          </Button>
+        ) : null}
+        {onPlanWithAi && agents ? (
+          <ThreadAgentMenu
+            title={translate('auto.components.GitLabItemDialog.planWithAi', 'Plan')}
+            icon="plan"
+            agents={agents}
+            detectingAgents={Boolean(detectingAgents)}
+            disabled={Boolean(aiBusy)}
+            sections={[
+              {
+                id: 'plan',
+                label: translate(
+                  'auto.components.right.sidebar.issuesPanel.chooseAgent',
+                  'Plan with agent'
+                )
+              }
+            ]}
+            onPick={(agent) => onPlanWithAi(agent)}
+          />
+        ) : null}
+        {onWorkWithAi && agents ? (
+          <ThreadAgentMenu
+            title={translate('auto.components.GitLabItemDialog.workWithAi', 'Work')}
+            icon="work"
+            agents={agents}
+            detectingAgents={Boolean(detectingAgents)}
+            disabled={Boolean(aiBusy)}
+            sections={[
+              {
+                id: 'bg',
+                label: translate(
+                  'auto.components.right.sidebar.issuesPanel.workInBackground',
+                  'Work in background'
+                ),
+                mode: 'background'
+              },
+              {
+                id: 'watch',
+                label: translate(
+                  'auto.components.right.sidebar.issuesPanel.workAndWatch',
+                  'Work & watch (open terminal)'
+                ),
+                mode: 'watch'
+              }
+            ]}
+            onPick={(agent, mode) => onWorkWithAi(agent, mode ?? 'background')}
+          />
+        ) : null}
+      </div>
+      {replyOpen ? (
+        <div className="mt-1.5 space-y-1.5">
+          <textarea
+            value={replyDraft ?? ''}
+            onChange={(event) => onReplyDraftChange?.(event.target.value)}
+            rows={2}
+            disabled={replySubmitting}
+            placeholder={translate(
+              'auto.components.GitLabItemDialog.replyPlaceholder',
+              'Reply to @{{value0}}…',
+              { value0: comment.author }
+            )}
+            className="min-h-10 w-full resize-none rounded-md border border-input bg-transparent px-2.5 py-1.5 text-sm shadow-xs focus:border-ring focus:outline-none focus:ring-[3px] focus:ring-ring/50"
+            onKeyDown={(e) => {
+              if (isScreenSubmitShortcut(e) && canSubmitReply && !replySubmitting) {
+                e.preventDefault()
+                onSubmitReply?.()
+              }
+            }}
+          />
+          <div className="flex justify-end gap-1">
+            <Button
+              type="button"
+              variant="ghost"
+              size="xs"
+              className="h-6 px-1.5 text-xs"
+              disabled={replySubmitting}
+              onClick={onToggleReply}
+            >
+              {translate('auto.components.GitLabItemDialog.f72fad3b16', 'Cancel')}
+            </Button>
+            <Button
+              type="button"
+              size="xs"
+              className="h-6 gap-1 px-1.5 text-xs"
+              disabled={!canSubmitReply || replySubmitting}
+              onClick={() => onSubmitReply?.()}
+            >
+              {replySubmitting ? (
+                <LoaderCircle className="size-3 animate-spin" />
+              ) : (
+                <Send className="size-3" />
+              )}
+              {translate('auto.components.GitLabItemDialog.84012fa8fb', 'Comment')}
+            </Button>
+          </div>
+        </div>
+      ) : null}
     </div>
   )
 }
@@ -359,6 +642,10 @@ export default function GitLabItemDialog({
   }
   const [commentSubmitting, setCommentSubmitting] = useState(false)
   const [resolvingThreadId, setResolvingThreadId] = useState<string | null>(null)
+  const [replyingCommentId, setReplyingCommentId] = useState<number | null>(null)
+  const [replyDraftByCommentId, setReplyDraftByCommentId] = useState<Record<number, string>>({})
+  const [replySubmittingCommentId, setReplySubmittingCommentId] = useState<number | null>(null)
+  const [threadAiBusy, setThreadAiBusy] = useState(false)
   const [editingDetails, setEditingDetails] = useState(false)
   const [titleDraft, setTitleDraft] = useState('')
   const [bodyDraft, setBodyDraft] = useState('')
@@ -389,6 +676,30 @@ export default function GitLabItemDialog({
       ...(sourceContext ? { sourceContext } : {})
     }
   }, [repoId, repoPath, sourceContext])
+
+  const dialogRepo = useMemo<Repo | null>(() => {
+    if (!repoId && !repoPath) {
+      return null
+    }
+    return (
+      useAppStore
+        .getState()
+        .repos.find((repo) => (repoId ? repo.id === repoId : repo.path === repoPath)) ?? null
+    )
+  }, [repoId, repoPath])
+  const { detectedIds: detectedAgentIds, isLoading: detectingAgents } = useDetectedAgents(
+    dialogRepo?.connectionId ?? null
+  )
+  const defaultTuiAgent = useAppStore((s) => s.settings?.defaultTuiAgent ?? null)
+  const disabledTuiAgents = useAppStore((s) => s.settings?.disabledTuiAgents ?? [])
+  const threadAgents = useMemo(
+    () =>
+      orderAgentsForThread(
+        defaultTuiAgent,
+        filterEnabledTuiAgents(detectedAgentIds ?? [], disabledTuiAgents)
+      ),
+    [defaultTuiAgent, detectedAgentIds, disabledTuiAgents]
+  )
   const updateCommentDraft = useCallback(
     (value: string): void => {
       setCommentDraftState({ itemId, value })
@@ -905,6 +1216,175 @@ export default function GitLabItemDialog({
     }
   }, [item, repoSelector, mountedRef, handleRefresh])
 
+  const handleSubmitThreadReply = useCallback(
+    async (comment: MRComment): Promise<void> => {
+      if (!item || !repoSelector) {
+        return
+      }
+      const draft = replyDraftByCommentId[comment.id] ?? ''
+      const bodyState = getCommentBodySubmitState(draft)
+      if (bodyState.status === 'empty') {
+        return
+      }
+      if (bodyState.status === 'too-large-leading-whitespace') {
+        toast.error(
+          translate(
+            'auto.components.GitLabItemDialog.commentTooLarge',
+            'Comment is too large to submit safely.'
+          )
+        )
+        return
+      }
+      setReplySubmittingCommentId(comment.id)
+      try {
+        const discussionId = comment.threadId?.trim()
+        const res = discussionId
+          ? await window.api.gl.addDiscussionNote({
+              ...repoSelector,
+              type: item.type === 'mr' ? 'mr' : 'issue',
+              iid: item.number,
+              discussionId,
+              body: bodyState.body
+            })
+          : item.type === 'mr'
+            ? await window.api.gl.addMRComment({
+                ...repoSelector,
+                iid: item.number,
+                body: `@${comment.author} ${bodyState.body}`
+              })
+            : await window.api.gl.addIssueComment({
+                ...repoSelector,
+                number: item.number,
+                body: `@${comment.author} ${bodyState.body}`
+              })
+        if (res.ok) {
+          if (mountedRef.current) {
+            setReplyDraftByCommentId((current) => {
+              const next = { ...current }
+              delete next[comment.id]
+              return next
+            })
+            setReplyingCommentId(null)
+            useAppStore.getState().recordFeatureInteraction('gitlab-tasks')
+            handleRefresh()
+          }
+        } else if (mountedRef.current) {
+          toast.error(res.error)
+        }
+      } catch (err) {
+        if (mountedRef.current) {
+          toast.error(err instanceof Error ? err.message : String(err))
+        }
+      } finally {
+        if (mountedRef.current) {
+          setReplySubmittingCommentId(null)
+        }
+      }
+    },
+    [handleRefresh, item, mountedRef, replyDraftByCommentId, repoSelector]
+  )
+
+  const focusFromComment = useCallback((comment: MRComment) => {
+    return {
+      author: comment.author,
+      body: comment.body,
+      ...(comment.createdAt ? { createdAt: comment.createdAt } : {}),
+      ...(comment.path ? { path: comment.path } : {}),
+      ...(typeof comment.line === 'number' ? { line: comment.line } : {})
+    }
+  }, [])
+
+  const handleThreadPlan = useCallback(
+    async (comment: MRComment, agent: TuiAgent): Promise<void> => {
+      if (!item || !dialogRepo) {
+        toast.error(
+          translate(
+            'auto.components.right.sidebar.issuesPanel.noActiveWorktree',
+            'Select a worktree first.'
+          )
+        )
+        return
+      }
+      const activeWorktreeId = useAppStore.getState().activeWorktreeId
+      if (!activeWorktreeId) {
+        toast.error(
+          translate(
+            'auto.components.right.sidebar.issuesPanel.noActiveWorktree',
+            'Select a worktree first.'
+          )
+        )
+        return
+      }
+      setThreadAiBusy(true)
+      try {
+        await launchIssueAiPlanCommenter({
+          worktreeId: activeWorktreeId,
+          repo: dialogRepo,
+          agent,
+          issue: {
+            provider: 'gitlab',
+            number: item.number,
+            title: item.title,
+            url: item.url,
+            body: details?.body,
+            focusComment: focusFromComment(comment)
+          }
+        })
+      } finally {
+        if (mountedRef.current) {
+          setThreadAiBusy(false)
+        }
+      }
+    },
+    [details?.body, dialogRepo, focusFromComment, item, mountedRef]
+  )
+
+  const handleThreadWork = useCallback(
+    async (comment: MRComment, agent: TuiAgent, mode: IssueAiWorkMode): Promise<void> => {
+      if (!item || !dialogRepo) {
+        toast.error(
+          translate(
+            'auto.components.right.sidebar.issuesPanel.noActiveWorktree',
+            'Select a worktree first.'
+          )
+        )
+        return
+      }
+      const activeWorktreeId = useAppStore.getState().activeWorktreeId
+      if (!activeWorktreeId) {
+        toast.error(
+          translate(
+            'auto.components.right.sidebar.issuesPanel.noActiveWorktree',
+            'Select a worktree first.'
+          )
+        )
+        return
+      }
+      setThreadAiBusy(true)
+      try {
+        await launchIssueAiWorker({
+          worktreeId: activeWorktreeId,
+          repo: dialogRepo,
+          agent,
+          mode,
+          issue: {
+            provider: 'gitlab',
+            number: item.number,
+            title: item.title,
+            url: item.url,
+            body: details?.body,
+            focusComment: focusFromComment(comment)
+          }
+        })
+      } finally {
+        if (mountedRef.current) {
+          setThreadAiBusy(false)
+        }
+      }
+    },
+    [details?.body, dialogRepo, focusFromComment, item, mountedRef]
+  )
+
   const handleSubmitComment = useCallback(async (): Promise<void> => {
     const bodyState = getCommentBodySubmitState(commentDraft)
     if (bodyState.status === 'empty' || !item || !repoSelector) {
@@ -1032,17 +1512,26 @@ export default function GitLabItemDialog({
         <div className="flex items-start gap-3">
           <Icon className="mt-0.5 size-5 text-muted-foreground" />
           <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-2 text-xs text-muted-foreground">
+            <div className="flex min-w-0 items-center gap-2 text-xs text-muted-foreground">
               <span className="font-mono">
                 {prefix}
                 {item.number}
               </span>
               <StateBadge state={item.state} />
               {item.author ? (
-                <span>
+                <span className="truncate">
                   {translate('auto.components.GitLabItemDialog.9bfb4a24d7', 'by')}
                   {item.author}
                 </span>
+              ) : null}
+              {/* Why: keep the AI branch chip on the author meta row, right-aligned next to "by …". */}
+              {!isMR && repoId ? (
+                <IssueAiWorkBranchLabel
+                  provider="gitlab"
+                  repoId={repoId}
+                  issueNumber={item.number}
+                  className="ml-auto"
+                />
               ) : null}
             </div>
             <h2 className="mt-1.5 text-lg font-semibold leading-tight text-foreground">
@@ -1067,7 +1556,7 @@ export default function GitLabItemDialog({
             aria-label={translate('auto.components.GitLabItemDialog.b3c156dd51', 'Refresh')}
             disabled={loading}
             onClick={handleRefresh}
-            className="size-7"
+            className="size-7 shrink-0"
           >
             {loading ? (
               <LoaderCircle className="size-3.5 animate-spin" />
@@ -1078,21 +1567,21 @@ export default function GitLabItemDialog({
         </div>
       </header>
 
-      <Tabs defaultValue="description" className="flex min-h-0 flex-1 flex-col">
-        <div className="mx-5 mt-3 flex flex-wrap items-center gap-2">
-          <TabsList className="self-start">
-            <TabsTrigger value="description">
-              {translate('auto.components.GitLabItemDialog.908d8d2a73', 'Description')}
-            </TabsTrigger>
-            <TabsTrigger value="conversation">
-              {translate('auto.components.GitLabItemDialog.c996e2962c', 'Conversation')}
-              {details?.comments?.length ? (
-                <span className="ml-1.5 rounded-full bg-muted px-1.5 text-[10px] font-medium">
-                  {details.comments.length}
-                </span>
-              ) : null}
-            </TabsTrigger>
-            {isMR ? (
+      {isMR ? (
+        <Tabs defaultValue="description" className="flex min-h-0 flex-1 flex-col">
+          <div className="mx-5 mt-3 flex flex-wrap items-center gap-2">
+            <TabsList className="self-start">
+              <TabsTrigger value="description">
+                {translate('auto.components.GitLabItemDialog.908d8d2a73', 'Description')}
+              </TabsTrigger>
+              <TabsTrigger value="conversation">
+                {translate('auto.components.GitLabItemDialog.c996e2962c', 'Conversation')}
+                {details?.comments?.length ? (
+                  <span className="ml-1.5 rounded-full bg-muted px-1.5 text-[10px] font-medium">
+                    {details.comments.length}
+                  </span>
+                ) : null}
+              </TabsTrigger>
               <TabsTrigger value="files">
                 {translate('auto.components.GitLabItemDialog.be3d291837', 'Files')}
                 {details?.files?.length ? (
@@ -1101,8 +1590,6 @@ export default function GitLabItemDialog({
                   </span>
                 ) : null}
               </TabsTrigger>
-            ) : null}
-            {isMR ? (
               <TabsTrigger value="pipeline">
                 {translate('auto.components.GitLabItemDialog.02cbe2de44', 'Pipeline')}
                 {details?.pipelineJobs?.length ? (
@@ -1111,327 +1598,353 @@ export default function GitLabItemDialog({
                   </span>
                 ) : null}
               </TabsTrigger>
+            </TabsList>
+            {tabBarTrailingSlot ? (
+              <div className="ml-auto flex flex-wrap items-center gap-1.5">
+                {tabBarTrailingSlot}
+              </div>
             ) : null}
-          </TabsList>
-          {tabBarTrailingSlot ? (
-            <div className="ml-auto flex flex-wrap items-center gap-1.5">{tabBarTrailingSlot}</div>
-          ) : null}
-        </div>
+          </div>
 
-        <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4 scrollbar-sleek">
-          {error ? (
-            <div className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
-              {error}
-            </div>
-          ) : null}
+          <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4 scrollbar-sleek">
+            {error ? (
+              <div className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
+                {error}
+              </div>
+            ) : null}
 
-          <TabsContent value="description" className="mt-0">
-            {!loading && details && isMR ? (
-              <div className="mb-4 rounded-md border border-border/50 bg-muted/20 p-3">
-                <div className="flex items-center justify-between gap-2">
-                  <div>
-                    <div className="text-xs font-medium text-foreground">
-                      {translate('auto.components.GitLabItemDialog.4f9313984d', 'Reviewers')}
-                    </div>
-                    {approvalState ? (
-                      <div className="mt-0.5 text-[11px] text-muted-foreground">
-                        {approvalState.approvalsLeft === 0
-                          ? translate('auto.components.GitLabItemDialog.22511537d2', 'Approved')
-                          : translate(
-                              'auto.components.GitLabItemDialog.40c56b95e2',
-                              '{{value0}} approval{{value1}} remaining',
-                              {
-                                value0: approvalState.approvalsLeft ?? 0,
-                                value1: approvalState.approvalsLeft === 1 ? '' : 's'
-                              }
-                            )}
-                        {typeof approvalState.approvalsRequired === 'number'
-                          ? translate(
-                              'auto.components.GitLabItemDialog.00f3bab87b',
-                              ' of {{value0}} required',
-                              { value0: approvalState.approvalsRequired }
-                            )
-                          : ''}
+            <TabsContent value="description" className="mt-0">
+              {!loading && details && isMR ? (
+                <div className="mb-4 rounded-md border border-border/50 bg-muted/20 p-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <div>
+                      <div className="text-xs font-medium text-foreground">
+                        {translate('auto.components.GitLabItemDialog.4f9313984d', 'Reviewers')}
                       </div>
-                    ) : null}
-                  </div>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="xs"
-                    disabled={reviewerOptionsLoading}
-                    onClick={() => void loadGitLabReviewerOptions()}
-                  >
-                    {reviewerOptionsLoading ? (
-                      <LoaderCircle className="size-3 animate-spin" />
-                    ) : null}
-                    {translate('auto.components.GitLabItemDialog.cb55b0390f', 'Manage')}
-                  </Button>
-                </div>
-                <div className="mt-2 flex flex-wrap gap-1.5">
-                  {currentReviewers.length > 0 ? (
-                    currentReviewers.map((reviewer) => (
-                      <span
-                        key={gitLabUserKey(reviewer)}
-                        className="inline-flex h-6 items-center gap-1 rounded-full border border-border/50 bg-background px-2 text-[11px] text-foreground"
-                      >
-                        {reviewer.username}
-                        <button
-                          type="button"
-                          disabled={reviewerUpdating}
-                          onClick={() =>
-                            void handleSetReviewers(
-                              currentReviewers.filter(
-                                (row) => gitLabUserKey(row) !== gitLabUserKey(reviewer)
-                              )
-                            )
-                          }
-                          className="rounded-full p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-50"
-                          aria-label={translate(
-                            'auto.components.GitLabItemDialog.1b19cdc510',
-                            'Remove reviewer {{value0}}',
-                            { value0: reviewer.username }
-                          )}
-                        >
-                          <X className="size-3" />
-                        </button>
-                      </span>
-                    ))
-                  ) : (
-                    <span className="text-[11px] text-muted-foreground">
-                      {translate('auto.components.GitLabItemDialog.474b50d988', 'No reviewers.')}
-                    </span>
-                  )}
-                </div>
-                {reviewerOptions ? (
-                  <div className="mt-2 flex items-center gap-2">
-                    <select
-                      value={reviewerDraftId}
-                      disabled={reviewerUpdating || reviewerOptionRows.length === 0}
-                      onChange={(event) => setReviewerDraftId(event.target.value)}
-                      className="h-8 min-w-0 flex-1 rounded-md border border-input bg-background px-2 text-xs text-foreground"
-                    >
-                      <option value="">
-                        {translate('auto.components.GitLabItemDialog.05939e977d', 'Add reviewer')}
-                      </option>
-                      {reviewerOptionRows.map((reviewer) => (
-                        <option key={gitLabUserKey(reviewer)} value={gitLabUserKey(reviewer)}>
-                          {reviewer.username}
-                        </option>
-                      ))}
-                    </select>
-                    <Button
-                      type="button"
-                      size="xs"
-                      disabled={!reviewerDraftId || reviewerUpdating}
-                      onClick={() => {
-                        const reviewer = reviewerOptionRows.find(
-                          (user) => gitLabUserKey(user) === reviewerDraftId
-                        )
-                        if (reviewer) {
-                          void handleSetReviewers([...currentReviewers, reviewer])
-                        }
-                      }}
-                    >
-                      {reviewerUpdating ? <LoaderCircle className="size-3 animate-spin" /> : null}
-                      {translate('auto.components.GitLabItemDialog.7a2117129a', 'Add')}
-                    </Button>
-                  </div>
-                ) : null}
-                {approvalState?.rules.length ? (
-                  <div className="mt-2 space-y-1 border-t border-border/40 pt-2">
-                    {approvalState.rules.map((rule) => (
-                      <div
-                        key={rule.id}
-                        className="flex items-center justify-between gap-2 text-[11px] text-muted-foreground"
-                      >
-                        <span className="min-w-0 truncate">{rule.name}</span>
-                        <span>
-                          {rule.approved
+                      {approvalState ? (
+                        <div className="mt-0.5 text-[11px] text-muted-foreground">
+                          {approvalState.approvalsLeft === 0
                             ? translate('auto.components.GitLabItemDialog.22511537d2', 'Approved')
                             : translate(
-                                'auto.components.GitLabItemDialog.6de8ce0cc6',
-                                '{{value0}} required',
-                                { value0: rule.approvalsRequired }
+                                'auto.components.GitLabItemDialog.40c56b95e2',
+                                '{{value0}} approval{{value1}} remaining',
+                                {
+                                  value0: approvalState.approvalsLeft ?? 0,
+                                  value1: approvalState.approvalsLeft === 1 ? '' : 's'
+                                }
                               )}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                ) : null}
-              </div>
-            ) : null}
-            {loading && !details ? (
-              <div className="flex items-center justify-center py-12">
-                <LoaderCircle className="size-5 animate-spin text-muted-foreground" />
-              </div>
-            ) : editingDetails ? (
-              <div className="space-y-3">
-                <div>
-                  <label className="mb-1 block text-xs font-medium text-muted-foreground">
-                    {translate('auto.components.GitLabItemDialog.89f3f19368', 'Title')}
-                  </label>
-                  <input
-                    value={titleDraft}
-                    onChange={(event) => setTitleDraft(event.target.value)}
-                    disabled={detailsSaving}
-                    className="h-9 w-full rounded-md border border-input bg-transparent px-2.5 text-sm shadow-xs focus:border-ring focus:outline-none focus:ring-[3px] focus:ring-ring/50"
-                  />
-                </div>
-                <div>
-                  <label className="mb-1 block text-xs font-medium text-muted-foreground">
-                    {translate('auto.components.GitLabItemDialog.908d8d2a73', 'Description')}
-                  </label>
-                  <textarea
-                    value={bodyDraft}
-                    onChange={(event) => setBodyDraft(event.target.value)}
-                    rows={8}
-                    disabled={detailsSaving}
-                    className="min-h-40 w-full resize-y rounded-md border border-input bg-transparent px-2.5 py-2 text-sm shadow-xs focus:border-ring focus:outline-none focus:ring-[3px] focus:ring-ring/50"
-                  />
-                </div>
-                <div>
-                  <label className="mb-1 block text-xs font-medium text-muted-foreground">
-                    {translate('auto.components.GitLabItemDialog.dde24ade55', 'Labels')}
-                  </label>
-                  <input
-                    value={labelDraft}
-                    onChange={(event) => setLabelDraft(event.target.value)}
-                    disabled={detailsSaving}
-                    placeholder={translate(
-                      'auto.components.GitLabItemDialog.3c0b6ccca7',
-                      'bug, backend'
-                    )}
-                    className="h-9 w-full rounded-md border border-input bg-transparent px-2.5 text-sm shadow-xs focus:border-ring focus:outline-none focus:ring-[3px] focus:ring-ring/50"
-                  />
-                  {labelOptionsLoading || labelSuggestionOptions.length > 0 ? (
-                    <div className="mt-2 flex flex-wrap gap-1.5">
-                      {labelOptionsLoading ? (
-                        <span className="inline-flex h-6 items-center gap-1 rounded-full border border-border/50 px-2 text-[11px] text-muted-foreground">
-                          <LoaderCircle className="size-3 animate-spin" />
-                          {translate(
-                            'auto.components.GitLabItemDialog.717b706849',
-                            'Loading labels'
-                          )}
-                        </span>
+                          {typeof approvalState.approvalsRequired === 'number'
+                            ? translate(
+                                'auto.components.GitLabItemDialog.00f3bab87b',
+                                ' of {{value0}} required',
+                                { value0: approvalState.approvalsRequired }
+                              )
+                            : ''}
+                        </div>
                       ) : null}
-                      {labelSuggestionOptions.map((label) => {
-                        const selected = parseGitLabLabelDraft(labelDraft).some(
-                          (item) => item.toLowerCase() === label.toLowerCase()
-                        )
-                        return (
+                    </div>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="xs"
+                      disabled={reviewerOptionsLoading}
+                      onClick={() => void loadGitLabReviewerOptions()}
+                    >
+                      {reviewerOptionsLoading ? (
+                        <LoaderCircle className="size-3 animate-spin" />
+                      ) : null}
+                      {translate('auto.components.GitLabItemDialog.cb55b0390f', 'Manage')}
+                    </Button>
+                  </div>
+                  <div className="mt-2 flex flex-wrap gap-1.5">
+                    {currentReviewers.length > 0 ? (
+                      currentReviewers.map((reviewer) => (
+                        <span
+                          key={gitLabUserKey(reviewer)}
+                          className="inline-flex h-6 items-center gap-1 rounded-full border border-border/50 bg-background px-2 text-[11px] text-foreground"
+                        >
+                          {reviewer.username}
                           <button
-                            key={label}
                             type="button"
-                            disabled={detailsSaving}
-                            onClick={() => setLabelDraft(toggleGitLabLabelDraft(labelDraft, label))}
-                            className={cn(
-                              'inline-flex h-6 items-center gap-1 rounded-full border px-2 text-[11px] transition-colors',
-                              selected
-                                ? 'border-primary/40 bg-primary/10 text-primary'
-                                : 'border-border/50 bg-muted/30 text-muted-foreground hover:bg-muted/60'
+                            disabled={reviewerUpdating}
+                            onClick={() =>
+                              void handleSetReviewers(
+                                currentReviewers.filter(
+                                  (row) => gitLabUserKey(row) !== gitLabUserKey(reviewer)
+                                )
+                              )
+                            }
+                            className="rounded-full p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-50"
+                            aria-label={translate(
+                              'auto.components.GitLabItemDialog.1b19cdc510',
+                              'Remove reviewer {{value0}}',
+                              { value0: reviewer.username }
                             )}
                           >
-                            {selected ? <Check className="size-3" /> : null}
-                            {label}
+                            <X className="size-3" />
                           </button>
-                        )
-                      })}
+                        </span>
+                      ))
+                    ) : (
+                      <span className="text-[11px] text-muted-foreground">
+                        {translate('auto.components.GitLabItemDialog.474b50d988', 'No reviewers.')}
+                      </span>
+                    )}
+                  </div>
+                  {reviewerOptions ? (
+                    <div className="mt-2 flex items-center gap-2">
+                      <select
+                        value={reviewerDraftId}
+                        disabled={reviewerUpdating || reviewerOptionRows.length === 0}
+                        onChange={(event) => setReviewerDraftId(event.target.value)}
+                        className="h-8 min-w-0 flex-1 rounded-md border border-input bg-background px-2 text-xs text-foreground"
+                      >
+                        <option value="">
+                          {translate('auto.components.GitLabItemDialog.05939e977d', 'Add reviewer')}
+                        </option>
+                        {reviewerOptionRows.map((reviewer) => (
+                          <option key={gitLabUserKey(reviewer)} value={gitLabUserKey(reviewer)}>
+                            {reviewer.username}
+                          </option>
+                        ))}
+                      </select>
+                      <Button
+                        type="button"
+                        size="xs"
+                        disabled={!reviewerDraftId || reviewerUpdating}
+                        onClick={() => {
+                          const reviewer = reviewerOptionRows.find(
+                            (user) => gitLabUserKey(user) === reviewerDraftId
+                          )
+                          if (reviewer) {
+                            void handleSetReviewers([...currentReviewers, reviewer])
+                          }
+                        }}
+                      >
+                        {reviewerUpdating ? <LoaderCircle className="size-3 animate-spin" /> : null}
+                        {translate('auto.components.GitLabItemDialog.7a2117129a', 'Add')}
+                      </Button>
+                    </div>
+                  ) : null}
+                  {approvalState?.rules.length ? (
+                    <div className="mt-2 space-y-1 border-t border-border/40 pt-2">
+                      {approvalState.rules.map((rule) => (
+                        <div
+                          key={rule.id}
+                          className="flex items-center justify-between gap-2 text-[11px] text-muted-foreground"
+                        >
+                          <span className="min-w-0 truncate">{rule.name}</span>
+                          <span>
+                            {rule.approved
+                              ? translate('auto.components.GitLabItemDialog.22511537d2', 'Approved')
+                              : translate(
+                                  'auto.components.GitLabItemDialog.6de8ce0cc6',
+                                  '{{value0}} required',
+                                  { value0: rule.approvalsRequired }
+                                )}
+                          </span>
+                        </div>
+                      ))}
                     </div>
                   ) : null}
                 </div>
-                <div className="flex justify-end gap-2">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    disabled={detailsSaving}
-                    onClick={handleCancelDetailsEdit}
-                  >
-                    <X className="size-3.5" />
-                    {translate('auto.components.GitLabItemDialog.f72fad3b16', 'Cancel')}
-                  </Button>
-                  <Button
-                    type="button"
-                    size="sm"
-                    disabled={detailsSaving || !titleDraft.trim()}
-                    onClick={() => void handleSaveDetails()}
-                  >
-                    {detailsSaving ? (
-                      <LoaderCircle className="size-3.5 animate-spin" />
-                    ) : (
-                      <Check className="size-3.5" />
-                    )}
-                    {translate('auto.components.GitLabItemDialog.93f79a3fc1', 'Save')}
-                  </Button>
+              ) : null}
+              {loading && !details ? (
+                <div className="flex items-center justify-center py-12">
+                  <LoaderCircle className="size-5 animate-spin text-muted-foreground" />
                 </div>
-              </div>
-            ) : details?.body ? (
-              <div>
-                {isMR && details ? (
-                  <div className="mb-3 flex justify-end">
+              ) : editingDetails ? (
+                <div className="space-y-3">
+                  <div>
+                    <label className="mb-1 block text-xs font-medium text-muted-foreground">
+                      {translate('auto.components.GitLabItemDialog.89f3f19368', 'Title')}
+                    </label>
+                    <input
+                      value={titleDraft}
+                      onChange={(event) => setTitleDraft(event.target.value)}
+                      disabled={detailsSaving}
+                      className="h-9 w-full rounded-md border border-input bg-transparent px-2.5 text-sm shadow-xs focus:border-ring focus:outline-none focus:ring-[3px] focus:ring-ring/50"
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-xs font-medium text-muted-foreground">
+                      {translate('auto.components.GitLabItemDialog.908d8d2a73', 'Description')}
+                    </label>
+                    <textarea
+                      value={bodyDraft}
+                      onChange={(event) => setBodyDraft(event.target.value)}
+                      rows={8}
+                      disabled={detailsSaving}
+                      className="min-h-40 w-full resize-y rounded-md border border-input bg-transparent px-2.5 py-2 text-sm shadow-xs focus:border-ring focus:outline-none focus:ring-[3px] focus:ring-ring/50"
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-xs font-medium text-muted-foreground">
+                      {translate('auto.components.GitLabItemDialog.dde24ade55', 'Labels')}
+                    </label>
+                    <input
+                      value={labelDraft}
+                      onChange={(event) => setLabelDraft(event.target.value)}
+                      disabled={detailsSaving}
+                      placeholder={translate(
+                        'auto.components.GitLabItemDialog.3c0b6ccca7',
+                        'bug, backend'
+                      )}
+                      className="h-9 w-full rounded-md border border-input bg-transparent px-2.5 text-sm shadow-xs focus:border-ring focus:outline-none focus:ring-[3px] focus:ring-ring/50"
+                    />
+                    {labelOptionsLoading || labelSuggestionOptions.length > 0 ? (
+                      <div className="mt-2 flex flex-wrap gap-1.5">
+                        {labelOptionsLoading ? (
+                          <span className="inline-flex h-6 items-center gap-1 rounded-full border border-border/50 px-2 text-[11px] text-muted-foreground">
+                            <LoaderCircle className="size-3 animate-spin" />
+                            {translate(
+                              'auto.components.GitLabItemDialog.717b706849',
+                              'Loading labels'
+                            )}
+                          </span>
+                        ) : null}
+                        {labelSuggestionOptions.map((label) => {
+                          const selected = parseGitLabLabelDraft(labelDraft).some(
+                            (item) => item.toLowerCase() === label.toLowerCase()
+                          )
+                          return (
+                            <button
+                              key={label}
+                              type="button"
+                              disabled={detailsSaving}
+                              onClick={() =>
+                                setLabelDraft(toggleGitLabLabelDraft(labelDraft, label))
+                              }
+                              className={cn(
+                                'inline-flex h-6 items-center gap-1 rounded-full border px-2 text-[11px] transition-colors',
+                                selected
+                                  ? 'border-primary/40 bg-primary/10 text-primary'
+                                  : 'border-border/50 bg-muted/30 text-muted-foreground hover:bg-muted/60'
+                              )}
+                            >
+                              {selected ? <Check className="size-3" /> : null}
+                              {label}
+                            </button>
+                          )
+                        })}
+                      </div>
+                    ) : null}
+                  </div>
+                  <div className="flex justify-end gap-2">
                     <Button
                       type="button"
                       variant="outline"
                       size="sm"
-                      onClick={handleStartDetailsEdit}
-                      className="gap-1.5"
+                      disabled={detailsSaving}
+                      onClick={handleCancelDetailsEdit}
                     >
-                      <Pencil className="size-3.5" />
-                      {translate('auto.components.GitLabItemDialog.da4174b00f', 'Edit')}
+                      <X className="size-3.5" />
+                      {translate('auto.components.GitLabItemDialog.f72fad3b16', 'Cancel')}
                     </Button>
-                  </div>
-                ) : null}
-                <CommentMarkdown content={details.body} />
-              </div>
-            ) : (
-              <div>
-                {isMR && details ? (
-                  <div className="mb-3 flex justify-end">
                     <Button
                       type="button"
-                      variant="outline"
                       size="sm"
-                      onClick={handleStartDetailsEdit}
-                      className="gap-1.5"
+                      disabled={detailsSaving || !titleDraft.trim()}
+                      onClick={() => void handleSaveDetails()}
                     >
-                      <Pencil className="size-3.5" />
-                      {translate('auto.components.GitLabItemDialog.da4174b00f', 'Edit')}
+                      {detailsSaving ? (
+                        <LoaderCircle className="size-3.5 animate-spin" />
+                      ) : (
+                        <Check className="size-3.5" />
+                      )}
+                      {translate('auto.components.GitLabItemDialog.93f79a3fc1', 'Save')}
                     </Button>
                   </div>
-                ) : null}
-                <p className="text-sm text-muted-foreground">
-                  {translate('auto.components.GitLabItemDialog.14423484db', 'No description.')}
+                </div>
+              ) : details?.body ? (
+                <div>
+                  {isMR && details ? (
+                    <div className="mb-3 flex justify-end">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={handleStartDetailsEdit}
+                        className="gap-1.5"
+                      >
+                        <Pencil className="size-3.5" />
+                        {translate('auto.components.GitLabItemDialog.da4174b00f', 'Edit')}
+                      </Button>
+                    </div>
+                  ) : null}
+                  <CommentMarkdown content={details.body} />
+                </div>
+              ) : (
+                <div>
+                  {isMR && details ? (
+                    <div className="mb-3 flex justify-end">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={handleStartDetailsEdit}
+                        className="gap-1.5"
+                      >
+                        <Pencil className="size-3.5" />
+                        {translate('auto.components.GitLabItemDialog.da4174b00f', 'Edit')}
+                      </Button>
+                    </div>
+                  ) : null}
+                  <p className="text-sm text-muted-foreground">
+                    {translate('auto.components.GitLabItemDialog.14423484db', 'No description.')}
+                  </p>
+                </div>
+              )}
+            </TabsContent>
+            <TabsContent value="conversation" className="mt-0 space-y-3">
+              {loading && !details ? (
+                <div className="flex items-center justify-center py-12">
+                  <LoaderCircle className="size-5 animate-spin text-muted-foreground" />
+                </div>
+              ) : details?.comments?.length ? (
+                <div className="space-y-3 text-sm">
+                  {groupCommentsByThread(details.comments).map((thread) => (
+                    <div key={thread.threadId} className="space-y-2.5">
+                      {thread.comments.map((c, index) => (
+                        <CommentCard
+                          key={c.id}
+                          comment={c}
+                          isReply={index > 0}
+                          canResolve={isMR}
+                          resolving={resolvingThreadId === c.threadId}
+                          onResolve={(threadId, resolved) =>
+                            void handleResolveDiscussion(threadId, resolved)
+                          }
+                          replyOpen={replyingCommentId === c.id}
+                          replyDraft={replyDraftByCommentId[c.id] ?? ''}
+                          replySubmitting={replySubmittingCommentId === c.id}
+                          agents={threadAgents}
+                          detectingAgents={detectingAgents}
+                          aiBusy={threadAiBusy}
+                          onToggleReply={() =>
+                            setReplyingCommentId((current) => (current === c.id ? null : c.id))
+                          }
+                          onReplyDraftChange={(value) =>
+                            setReplyDraftByCommentId((current) => ({
+                              ...current,
+                              [c.id]: value
+                            }))
+                          }
+                          onSubmitReply={() => void handleSubmitThreadReply(c)}
+                          onPlanWithAi={(agent) => void handleThreadPlan(c, agent)}
+                          onWorkWithAi={(agent, mode) => void handleThreadWork(c, agent, mode)}
+                        />
+                      ))}
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-xs text-muted-foreground">
+                  {translate('auto.components.GitLabItemDialog.85a8170279', 'No comments yet.')}
                 </p>
-              </div>
-            )}
-          </TabsContent>
+              )}
+            </TabsContent>
 
-          <TabsContent value="conversation" className="mt-0 space-y-3">
-            {loading && !details ? (
-              <div className="flex items-center justify-center py-12">
-                <LoaderCircle className="size-5 animate-spin text-muted-foreground" />
-              </div>
-            ) : details?.comments?.length ? (
-              details.comments.map((c) => (
-                <CommentCard
-                  key={c.id}
-                  comment={c}
-                  canResolve={isMR}
-                  resolving={resolvingThreadId === c.threadId}
-                  onResolve={(threadId, resolved) =>
-                    void handleResolveDiscussion(threadId, resolved)
-                  }
-                />
-              ))
-            ) : (
-              <p className="text-sm text-muted-foreground">
-                {translate('auto.components.GitLabItemDialog.85a8170279', 'No comments yet.')}
-              </p>
-            )}
-          </TabsContent>
-
-          {isMR ? (
             <TabsContent value="files" className="mt-0 space-y-3">
               {loading && !details ? (
                 <div className="flex items-center justify-center py-12">
@@ -1542,9 +2055,6 @@ export default function GitLabItemDialog({
                 </p>
               )}
             </TabsContent>
-          ) : null}
-
-          {isMR ? (
             <TabsContent value="pipeline" className="mt-0">
               {loading && !details ? (
                 <div className="flex items-center justify-center py-12">
@@ -1573,9 +2083,112 @@ export default function GitLabItemDialog({
                 </p>
               )}
             </TabsContent>
+          </div>
+        </Tabs>
+      ) : (
+        <div className="flex min-h-0 flex-1 flex-col">
+          {tabBarTrailingSlot ? (
+            <div className="mx-5 mt-3 flex flex-wrap items-center gap-2">
+              <div className="min-h-7 flex-1" />
+              <div className="ml-auto flex flex-wrap items-center gap-1.5">
+                {tabBarTrailingSlot}
+              </div>
+            </div>
           ) : null}
+          <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4 scrollbar-sleek">
+            {error ? (
+              <div className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
+                {error}
+              </div>
+            ) : null}
+            {/* Why: issue modal is one continuous page — description then thread — not two tabs. */}
+            <div className="space-y-5">
+              <section className="space-y-2">
+                <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  {translate('auto.components.GitLabItemDialog.908d8d2a73', 'Description')}
+                </h3>
+                {loading && !details ? (
+                  <div className="flex items-center justify-center py-8">
+                    <LoaderCircle className="size-5 animate-spin text-muted-foreground" />
+                  </div>
+                ) : details?.body ? (
+                  <div className="rounded-lg border border-border/50 bg-card/50 px-4 py-4 shadow-xs">
+                    <CommentMarkdown content={details.body} />
+                  </div>
+                ) : (
+                  <p className="text-sm text-muted-foreground">
+                    {translate('auto.components.GitLabItemDialog.14423484db', 'No description.')}
+                  </p>
+                )}
+              </section>
+
+              <section className="space-y-3">
+                <div className="flex items-center gap-2 border-t border-border/40 pt-4">
+                  <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                    {translate('auto.components.GitLabItemDialog.c996e2962c', 'Conversation')}
+                  </h3>
+                  {details?.comments?.length ? (
+                    <span className="rounded-full bg-muted px-1.5 text-[11px] font-medium text-muted-foreground">
+                      {details.comments.length}
+                    </span>
+                  ) : null}
+                </div>
+                {loading && !details ? (
+                  <div className="flex items-center justify-center py-8">
+                    <LoaderCircle className="size-4 animate-spin text-muted-foreground" />
+                  </div>
+                ) : details?.comments?.length ? (
+                  <div className="relative space-y-0 pl-6 text-sm">
+                    {/* Why: vertical rail makes comments read as one timeline thread. */}
+                    <div
+                      aria-hidden
+                      className="absolute bottom-3 left-[11px] top-3 w-px bg-border/60"
+                    />
+                    {groupCommentsByThread(details.comments).map((thread) => (
+                      <div key={thread.threadId} className="relative space-y-2.5 pb-4 last:pb-0">
+                        <div
+                          aria-hidden
+                          className="absolute left-[-13px] top-4 size-2.5 rounded-full border border-border bg-background"
+                        />
+                        {thread.comments.map((c, index) => (
+                          <CommentCard
+                            key={c.id}
+                            comment={c}
+                            isReply={index > 0}
+                            canResolve={false}
+                            replyOpen={replyingCommentId === c.id}
+                            replyDraft={replyDraftByCommentId[c.id] ?? ''}
+                            replySubmitting={replySubmittingCommentId === c.id}
+                            agents={threadAgents}
+                            detectingAgents={detectingAgents}
+                            aiBusy={threadAiBusy}
+                            onToggleReply={() =>
+                              setReplyingCommentId((current) => (current === c.id ? null : c.id))
+                            }
+                            onReplyDraftChange={(value) =>
+                              setReplyDraftByCommentId((current) => ({
+                                ...current,
+                                [c.id]: value
+                              }))
+                            }
+                            onSubmitReply={() => void handleSubmitThreadReply(c)}
+                            onPlanWithAi={(agent) => void handleThreadPlan(c, agent)}
+                            onWorkWithAi={(agent, mode) => void handleThreadWork(c, agent, mode)}
+                          />
+                        ))}
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-sm text-muted-foreground">
+                    {translate('auto.components.GitLabItemDialog.85a8170279', 'No comments yet.')}
+                  </p>
+                )}
+              </section>
+            </div>
+          </div>
         </div>
-      </Tabs>
+      )}
 
       <footer className="flex-none space-y-3 border-t border-border/40 px-5 py-3">
         {/* Why: comment composer at the top of the footer so the

@@ -74,6 +74,7 @@ import {
   DropdownMenuTrigger
 } from '@/components/ui/dropdown-menu'
 import CommentMarkdown from '@/components/sidebar/CommentMarkdown'
+import { IssueAiWorkBranchLabel } from '@/components/right-sidebar/issue-ai-work-actions'
 import { detectLanguage } from '@/lib/language-detect'
 import { cn } from '@/lib/utils'
 import { DiffSectionItem } from '@/components/editor/DiffSectionItem'
@@ -7340,7 +7341,7 @@ export default function GitHubItemDialog({
                   ? translate('auto.components.GitHubItemDialog.ab050dffec', 'Closed')
                   : translate('auto.components.GitHubItemDialog.dc1ca081a8', 'Open')}
               </span>
-              <span className="flex flex-wrap items-center gap-1.5">
+              <span className="flex min-w-0 flex-wrap items-center gap-1.5">
                 <span className="font-semibold text-foreground">
                   {workItem.author ??
                     translate('auto.components.GitHubItemDialog.773ff70035', 'unknown')}
@@ -7363,6 +7364,15 @@ export default function GitHubItemDialog({
                   <FolderKanban className="size-3.5 shrink-0" />
                   <span className="truncate">{issueAttachedWorkspaceLabel}</span>
                 </span>
+              ) : null}
+              {/* Why: AI branch chip sits on the author meta row, right-aligned next to byline. */}
+              {effectiveRepoId ? (
+                <IssueAiWorkBranchLabel
+                  provider="github"
+                  repoId={effectiveRepoId}
+                  issueNumber={workItem.number}
+                  className="ml-auto"
+                />
               ) : null}
             </div>
           </div>

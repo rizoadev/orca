@@ -1,7 +1,5 @@
 import { toast } from 'sonner'
-import { launchAgentInNewTab } from '@/lib/launch-agent-in-new-tab'
-import { getAgentLaunchPlatformForRepo } from '@/lib/agent-launch-platform'
-import { getLocalProjectExecutionRuntimeContext } from '@/lib/local-preflight-context'
+import { launchAgentBackgroundSession } from '@/lib/launch-agent-background-session'
 import { pickSourceControlLaunchAgent } from '@/lib/source-control-launch-agent-selection'
 import { useAppStore } from '@/store'
 import type { Repo, TuiAgent } from '../../../../shared/types'
@@ -14,6 +12,14 @@ export type IssuePlanCommentTarget = {
   title: string
   url: string
   body?: string
+  /** Optional thread comment the agent should plan against / reply to. */
+  focusComment?: {
+    author: string
+    body: string
+    createdAt?: string
+    path?: string
+    line?: number
+  }
 }
 
 export function buildIssueAiPlanPrompt(args: {
@@ -23,6 +29,7 @@ export function buildIssueAiPlanPrompt(args: {
   url: string
   body?: string
   repoDisplayName?: string
+  focusComment?: IssuePlanCommentTarget['focusComment']
 }): string {
   const providerLabel = args.provider === 'github' ? 'GitHub' : 'GitLab'
   const body = args.body?.trim()
@@ -30,19 +37,44 @@ export function buildIssueAiPlanPrompt(args: {
     args.provider === 'github'
       ? `gh issue comment ${args.number} --body "...plan..."`
       : `glab issue note ${args.number} --message "...plan..."`
+  const focus = args.focusComment
+  const focusBody = focus?.body?.trim()
+  const focusLoc =
+    focus?.path != null
+      ? `${focus.path}${typeof focus.line === 'number' ? `:${focus.line}` : ''}`
+      : null
 
   return [
-    `You are attached as a planning commenter on ${providerLabel} issue #${args.number}.`,
+    focus
+      ? `You are planning a reply/solution for a specific discussion thread on ${providerLabel} issue #${args.number}.`
+      : `You are attached as a planning commenter on ${providerLabel} issue #${args.number}.`,
     args.repoDisplayName ? `Repository: ${args.repoDisplayName}` : null,
     `Issue: ${args.title}`,
     `URL: ${args.url}`,
     body ? `Issue body:\n${body}` : 'Issue body: (empty)',
+    focus
+      ? [
+          '',
+          'Focus thread comment:',
+          `Author: @${focus.author}`,
+          focusLoc ? `Location: ${focusLoc}` : null,
+          focus.createdAt ? `When: ${focus.createdAt}` : null,
+          focusBody ? `Comment:\n${focusBody}` : 'Comment: (empty)'
+        ]
+          .filter((line): line is string => line !== null)
+          .join('\n')
+      : null,
     '',
     'Task:',
-    '1. Inspect the current worktree and issue context.',
-    '2. Produce a concrete implementation plan to solve this issue.',
+    focus
+      ? '1. Read the focused thread comment and the surrounding issue context.'
+      : '1. Inspect the current worktree and issue context.',
+    focus
+      ? '2. Produce a concrete plan that answers or resolves that thread.'
+      : '2. Produce a concrete implementation plan to solve this issue.',
     '3. Keep the plan actionable: goals, steps, files likely to change, risks, and verification.',
     `4. Post the plan as a comment on the issue using: ${commentCommand}`,
+    focus ? '   Mention the focused author with @ and quote the key concern briefly.' : null,
     '5. Do not implement the fix yet unless the user explicitly asks after the plan is posted.',
     '',
     'Write the comment in markdown. Start with a short summary, then numbered steps.'
@@ -97,35 +129,50 @@ export async function launchIssueAiPlanCommenter(args: {
     title: args.issue.title,
     url: args.issue.url,
     body: args.issue.body,
-    repoDisplayName: args.repo.displayName
+    repoDisplayName: args.repo.displayName,
+    focusComment: args.issue.focusComment
   })
-  const launchPlatform = getAgentLaunchPlatformForRepo(
-    args.repo,
-    args.repo.connectionId
-      ? undefined
-      : getLocalProjectExecutionRuntimeContext(store, args.worktreeId)
-  )
-  const result = launchAgentInNewTab({
-    agent,
-    worktreeId: args.worktreeId,
-    prompt,
-    promptDelivery: 'submit-after-ready',
-    launchSource: 'sidebar',
-    launchPlatform
-  })
-  if (!result) {
-    toast.error(
-      translate(
-        'auto.components.right.sidebar.issuesPanel.agentLaunchFailed',
-        'Failed to launch AI planner for this issue.'
+
+  // Why: planning should not yank focus into a new terminal tab — run as a
+  // background session (same pattern as "Work in background") so the user
+  // stays on the issue and just sees a toast + eventual plan comment.
+  try {
+    const result = await launchAgentBackgroundSession({
+      agent,
+      worktreeId: args.worktreeId,
+      prompt,
+      launchSource: 'sidebar',
+      title: translate(
+        'auto.components.right.sidebar.issuesPanel.aiPlanTabTitle',
+        'AI plan · #{{value0}}',
+        { value0: args.issue.number }
       )
+    })
+    if (!result) {
+      toast.error(
+        translate(
+          'auto.components.right.sidebar.issuesPanel.agentLaunchFailed',
+          'Failed to launch AI planner for this issue.'
+        )
+      )
+      return false
+    }
+  } catch (err) {
+    toast.error(
+      err instanceof Error
+        ? err.message
+        : translate(
+            'auto.components.right.sidebar.issuesPanel.agentLaunchFailed',
+            'Failed to launch AI planner for this issue.'
+          )
     )
     return false
   }
+
   toast.success(
     translate(
-      'auto.components.right.sidebar.issuesPanel.aiPlanStarted',
-      'AI is drafting a plan comment on #{{value0}}',
+      'auto.components.right.sidebar.issuesPanel.aiPlanStartedBackground',
+      'AI is drafting a plan comment on #{{value0}} in the background.',
       { value0: args.issue.number }
     )
   )

@@ -373,6 +373,7 @@ export function IssueDetailActionBar(props: DetailActionBarProps): React.JSX.Ele
         provider={props.provider}
         repoId={props.repo.id}
         issueNumber={props.issueNumber}
+        showBranchLabel={false}
       />
     </div>
   )

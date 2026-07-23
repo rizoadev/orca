@@ -3,6 +3,7 @@ import { ExternalLink, GitPullRequest, Loader2, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { useConfirmationDialog } from '@/components/confirmation-dialog'
+import { cn } from '@/lib/utils'
 import { useAppStore } from '@/store'
 import { translate } from '@/i18n/i18n'
 import { clearIssueAiWork, useIssueAiWorkEntry } from './issue-ai-work-registry'
@@ -43,14 +44,49 @@ function openSourceControlForWorktree(worktreeId: string): void {
   store.setRightSidebarOpen(true)
 }
 
-export function IssueAiWorkActions({
+/** Compact branch chip for issue modal headers (right side). */
+export function IssueAiWorkBranchLabel({
   provider,
   repoId,
-  issueNumber
+  issueNumber,
+  className
 }: {
   provider: RepoIssueProvider
   repoId: string
   issueNumber: number
+  className?: string
+}): React.JSX.Element | null {
+  const entry = useIssueAiWorkEntry(issueAiWorkRegistryKey(provider, repoId, issueNumber))
+  if (!entry?.branchName) {
+    return null
+  }
+  return (
+    <span
+      className={cn(
+        'inline-flex max-w-[min(280px,40vw)] items-center truncate rounded-md border border-border/50 bg-muted/40 px-2 py-0.5 font-mono text-[10px] text-muted-foreground',
+        className
+      )}
+      title={entry.branchName}
+      onClick={(event) => event.stopPropagation()}
+    >
+      {translate('auto.components.right.sidebar.issuesPanel.branchLabel', 'Branch: {{value0}}', {
+        value0: entry.branchName
+      })}
+    </span>
+  )
+}
+
+export function IssueAiWorkActions({
+  provider,
+  repoId,
+  issueNumber,
+  /** When false, omit the branch chip (e.g. modal header already shows it). */
+  showBranchLabel = true
+}: {
+  provider: RepoIssueProvider
+  repoId: string
+  issueNumber: number
+  showBranchLabel?: boolean
 }): React.JSX.Element | null {
   const entry = useIssueAiWorkEntry(issueAiWorkRegistryKey(provider, repoId, issueNumber))
   const setActiveWorktree = useAppStore((s) => s.setActiveWorktree)
@@ -103,11 +139,20 @@ export function IssueAiWorkActions({
       className="mt-1 flex flex-wrap items-center gap-1 text-[10px]"
       onClick={(event) => event.stopPropagation()}
     >
-      <span className="mr-1 truncate text-muted-foreground">
-        {translate('auto.components.right.sidebar.issuesPanel.branchLabel', 'Branch: {{value0}}', {
-          value0: entry.branchName
-        })}
-      </span>
+      {showBranchLabel ? (
+        <span
+          className="mr-1 max-w-[min(220px,40vw)] truncate text-muted-foreground"
+          title={entry.branchName}
+        >
+          {translate(
+            'auto.components.right.sidebar.issuesPanel.branchLabel',
+            'Branch: {{value0}}',
+            {
+              value0: entry.branchName
+            }
+          )}
+        </span>
+      ) : null}
       <Button
         type="button"
         variant="outline"
