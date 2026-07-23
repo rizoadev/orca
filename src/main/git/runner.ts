@@ -21,9 +21,11 @@ import {
   classifyGhRateLimitBucket,
   createGhRateLimitBlockedError,
   getGhRateLimitBlockedUntilMs,
+  ghRateLimitScopeKey,
   isGhPrimaryRateLimitStderr,
   isGhRateLimitProbe,
-  notifyGhPrimaryRateLimit
+  notifyGhPrimaryRateLimit,
+  type GhRateLimitBucket
 } from './gh-rate-limit-breaker'
 import { getDefaultWslDistro, parseWslPath, toWindowsWslPath, type WslPathInfo } from '../wsl'
 import { addWslEnvKeys } from '../wsl-env'
@@ -31,6 +33,7 @@ import {
   appendGitConfigEnv,
   gitCredentialPromptGuardEnv
 } from '../../shared/git-credential-prompt-env'
+import { GrowingByteBuffer } from '../../shared/growing-byte-buffer'
 import { getSpawnArgsForWindows, isWindowsBatchScript, resolveWindowsCommand } from '../win32-utils'
 import {
   buildWslLoginShellCommand,
@@ -111,6 +114,17 @@ function argsUseGhApiPlaceholders(args: string[]): boolean {
   )
 }
 
+function hasExplicitRepoViewTarget(args: string[]): boolean {
+  const target = args[2]
+  return (
+    args[0] === 'repo' &&
+    args[1] === 'view' &&
+    typeof target === 'string' &&
+    !target.startsWith('-') &&
+    target.includes('/')
+  )
+}
+
 function canRunGitHubCliWithoutRepoCwd(args: string[]): boolean {
   if (hasExplicitRepoArg(args)) {
     return true
@@ -118,7 +132,7 @@ function canRunGitHubCliWithoutRepoCwd(args: string[]): boolean {
   if (args[0] === 'api') {
     return !argsUseGhApiPlaceholders(args)
   }
-  return args[0] === 'auth'
+  return args[0] === 'auth' || hasExplicitRepoViewTarget(args)
 }
 
 function isMissingCommandInWsl(stderr: string, command: string): boolean {
@@ -484,6 +498,7 @@ async function spawnCommandCapture(
   args: string[],
   options: CommandExecOptions
 ): Promise<{ stdout: string; stderr: string }> {
+  const maxBuffer = options.maxBuffer ?? DEFAULT_GIT_MAX_BUFFER
   const { spawnCmd, spawnArgs } = getSpawnArgsForWindows(command, args)
   return new Promise((resolve, reject) => {
     if (options.signal?.aborted) {
@@ -491,10 +506,8 @@ async function spawnCommandCapture(
       return
     }
     let settled = false
-    let stdout = ''
-    let stderr = ''
-    let stdoutBytes = 0
-    let stderrBytes = 0
+    const stdout = new GrowingByteBuffer()
+    const stderr = new GrowingByteBuffer()
     const spawnStartedAt = performance.now()
     const child = spawn(spawnCmd, spawnArgs, {
       cwd: options.cwd,
@@ -525,11 +538,15 @@ async function spawnCommandCapture(
       }
       settled = true
       cleanupListeners()
+      const stdoutText = stdout.toString(options.encoding ?? 'utf-8')
+      const stderrText = stderr.toString(options.encoding ?? 'utf-8')
+      stdout.clear()
+      stderr.clear()
       if (error) {
-        reject(Object.assign(error, { stdout, stderr }))
+        reject(Object.assign(error, { stdout: stdoutText, stderr: stderrText }))
         return
       }
-      resolve({ stdout, stderr })
+      resolve({ stdout: stdoutText, stderr: stderrText })
     }
     timer = options.timeout
       ? setTimeout(() => {
@@ -539,22 +556,20 @@ async function spawnCommandCapture(
       : null
     options.signal?.addEventListener('abort', onAbort, { once: true })
     function onStdoutData(chunk: Buffer): void {
-      stdoutBytes += chunk.byteLength
-      if (options.maxBuffer && stdoutBytes > options.maxBuffer) {
+      if (stdout.byteLength + chunk.byteLength > maxBuffer) {
         void killSpawnedCommandTree(child)
         finish(new Error(`${command} stdout exceeded maxBuffer.`))
         return
       }
-      stdout += chunk.toString(options.encoding ?? 'utf-8')
+      stdout.append(chunk)
     }
     function onStderrData(chunk: Buffer): void {
-      stderrBytes += chunk.byteLength
-      if (options.maxBuffer && stderrBytes > options.maxBuffer) {
+      if (stderr.byteLength + chunk.byteLength > maxBuffer) {
         void killSpawnedCommandTree(child)
         finish(new Error(`${command} stderr exceeded maxBuffer.`))
         return
       }
-      stderr += chunk.toString(options.encoding ?? 'utf-8')
+      stderr.append(chunk)
     }
     function onError(error: Error): void {
       finish(error)
@@ -959,11 +974,9 @@ export async function gitStreamStdout(
       let settled = false
       let stoppedEarly = false
       let stdoutBytes = 0
-      let stderr = ''
-      let stderrBytes = 0
+      const stderr = new GrowingByteBuffer()
       // Why: decode statefully so a multibyte UTF-8 char split across chunks isn't corrupted into replacement chars.
       const stdoutDecoder = new StringDecoder('utf8')
-      const stderrDecoder = new StringDecoder('utf8')
 
       const cleanup = (): void => {
         child.stdout?.off('data', onStdoutData)
@@ -973,7 +986,6 @@ export async function gitStreamStdout(
         options.signal?.removeEventListener('abort', onAbort)
         // Flush any bytes the decoders were holding for an incomplete sequence.
         stdoutDecoder.end()
-        stderrDecoder.end()
       }
       const finish = (error: Error | null): void => {
         if (settled) {
@@ -981,8 +993,10 @@ export async function gitStreamStdout(
         }
         settled = true
         cleanup()
+        const stderrText = stderr.toString()
+        stderr.clear()
         if (error) {
-          reject(Object.assign(error, { stderr }))
+          reject(Object.assign(error, { stderr: stderrText }))
           return
         }
         resolve({ stoppedEarly })
@@ -1016,13 +1030,12 @@ export async function gitStreamStdout(
         }
       }
       function onStderrData(chunk: Buffer): void {
-        stderrBytes += chunk.byteLength
-        if (stderrBytes > maxBuffer) {
+        if (stderr.byteLength + chunk.byteLength > maxBuffer) {
           void killSpawnedCommandTree(child)
           finish(new Error('git stderr exceeded maxBuffer.'))
           return
         }
-        stderr += stderrDecoder.write(chunk)
+        stderr.append(chunk)
       }
       function onError(error: Error): void {
         finish(error)
@@ -1032,9 +1045,13 @@ export async function gitStreamStdout(
           finish(null)
           return
         }
-        finish(new Error(`git exited with ${code}: ${stderr}`))
+        finish(new Error(`git exited with ${code}: ${stderr.toString()}`))
       }
       function onAbort(): void {
+        if (!child.pid) {
+          // Why: failed spawn reports ENOENT after abort cleanup; retain a listener so it cannot crash main.
+          child.once('error', () => {})
+        }
         void killSpawnedCommandTree(child)
         finish(createAbortError())
       }
@@ -1116,6 +1133,11 @@ type GhExecOptions = Omit<GitExecOptions, 'cwd'> & {
   cwd?: string
   wslDistro?: string
   idempotent?: boolean
+  // Why: `gh api` and `--repo OWNER/REPO` shorthand resolve against gh's
+  // default host, not the repo's remote. Carrying the host here lets the
+  // runner qualify every spawn once, so call sites can't silently fall back
+  // to github.com for GHES repos; it also scopes the rate-limit breaker.
+  host?: string
 }
 
 const NON_IDEMPOTENT_METHODS = new Set(['POST', 'PATCH', 'PUT', 'DELETE'])
@@ -1253,6 +1275,128 @@ function nonInteractiveGhEnv(env: NodeJS.ProcessEnv = process.env): NodeJS.Proce
   }
 }
 
+function hasGhHostnameFlag(args: readonly string[]): boolean {
+  return args.some((arg) => arg === '--hostname' || arg.startsWith('--hostname='))
+}
+
+function hostQualifiedGhRepoValue(value: string, host: string): string {
+  // URLs and already-qualified HOST/OWNER/REPO values pass through untouched.
+  if (value.includes('://') || value.split('/').length !== 2) {
+    return value
+  }
+  return `${host}/${value}`
+}
+
+/**
+ * Host-qualify a gh invocation from `options.host`: `--hostname` for `api`
+ * calls, `HOST/OWNER/REPO` for `--repo`/`-R` shorthand. SSH-backed repos run
+ * gh with no cwd, so this is their only host signal (#8312).
+ *
+ * @internal exported for tests.
+ */
+export function applyGhHostToArgs(args: string[], host?: string): string[] {
+  if (!host) {
+    return args
+  }
+  let result = args
+  if (result[0] === 'api' && !hasGhHostnameFlag(result)) {
+    result = ['api', '--hostname', host, ...result.slice(1)]
+  }
+  // Why: bare OWNER/REPO shorthand resolves against gh's default host — GH_HOST
+  // when set — so github.com must be qualified too, not just GHES, or a
+  // process-level GH_HOST redirects pinned github.com commands.
+  // Combined short forms (`-Ra/b`, `-R=a/b`) are deliberately not rewritten:
+  // no call site uses them, and prefix-matching `-R` corrupts free-text values
+  // of other flags (e.g. a --title that happens to start with `-R`).
+  const qualified: string[] = []
+  for (let i = 0; i < result.length; i += 1) {
+    const arg = result[i]
+    if (arg === '--repo' || arg === '-R') {
+      qualified.push(arg)
+      const value = result[i + 1]
+      if (value !== undefined) {
+        qualified.push(hostQualifiedGhRepoValue(value, host))
+        i += 1
+      }
+      continue
+    }
+    if (arg.startsWith('--repo=')) {
+      qualified.push(`--repo=${hostQualifiedGhRepoValue(arg.slice('--repo='.length), host)}`)
+      continue
+    }
+    qualified.push(arg)
+  }
+  return qualified
+}
+
+function explicitGhHostname(args: readonly string[]): string | undefined {
+  for (let i = 0; i < args.length; i += 1) {
+    if (args[i] === '--hostname') {
+      const value = args[i + 1]?.trim()
+      return value || undefined
+    }
+    if (args[i].startsWith('--hostname=')) {
+      const value = args[i].slice('--hostname='.length).trim()
+      return value || undefined
+    }
+  }
+  return undefined
+}
+
+function explicitGhRepoHostname(args: readonly string[]): string | undefined {
+  for (let i = 0; i < args.length; i += 1) {
+    let value: string | undefined
+    if (args[i] === '--repo' || args[i] === '-R') {
+      value = args[i + 1]
+    } else if (args[i].startsWith('--repo=')) {
+      value = args[i].slice('--repo='.length)
+    }
+    const parts = value?.trim().split('/')
+    if (parts?.length === 3 && parts.every(Boolean)) {
+      return parts[0]
+    }
+  }
+  return undefined
+}
+
+function ghRateLimitScope(
+  args: readonly string[],
+  options: GhExecOptions,
+  resolved: ResolvedCommand
+): string {
+  const runtime = resolved.wsl ? `wsl:${resolved.wsl.distro.toLowerCase()}` : 'native'
+  // Why: an explicit argv hostname controls the actual gh request even when
+  // GH_HOST or options.host disagree, so breaker state must follow that host.
+  const host =
+    explicitGhHostname(args) ??
+    options.host ??
+    explicitGhRepoHostname(args) ??
+    options.env?.GH_HOST ??
+    process.env.GH_HOST ??
+    'github.com'
+  return ghRateLimitScopeKey(runtime, host)
+}
+
+function assertGhRateLimitScopeAvailable(
+  args: readonly string[],
+  options: GhExecOptions,
+  resolved: ResolvedCommand,
+  bucket: GhRateLimitBucket,
+  exemptProbe: boolean
+): void {
+  if (exemptProbe) {
+    return
+  }
+  const blockedUntilMs = getGhRateLimitBlockedUntilMs(
+    bucket,
+    Date.now(),
+    ghRateLimitScope(args, options, resolved)
+  )
+  if (blockedUntilMs !== null) {
+    throw createGhRateLimitBlockedError(bucket, blockedUntilMs)
+  }
+}
+
 /**
  * Async gh CLI execution. Drop-in replacement for
  * `execFileAsync('gh', args, { cwd, encoding, ... })`.
@@ -1264,15 +1408,15 @@ export async function ghExecFileAsync(
   args: string[],
   options: GhExecOptions = {}
 ): Promise<{ stdout: string; stderr: string }> {
-  // Why: while a bucket is rate-limited every spawn returns 403 — fail fast; the probe is exempt so the breaker can learn the reset.
-  const rateLimitBucket = classifyGhRateLimitBucket(args)
-  if (!isGhRateLimitProbe(args)) {
-    const blockedUntilMs = getGhRateLimitBlockedUntilMs(rateLimitBucket)
-    if (blockedUntilMs !== null) {
-      throw createGhRateLimitBlockedError(rateLimitBucket, blockedUntilMs)
-    }
-  }
+  // Why: retry safety must reflect the original call even when fallbacks replace the resolved command.
+  const idempotent = options.idempotent ?? argsLookIdempotent(args)
+  args = applyGhHostToArgs(args, options.host)
   let resolved = resolveCommand('gh', args, options.cwd, options.wslDistro)
+  // Why: while a bucket is rate-limited every spawn returns 403 — fail fast; the probe is exempt so the breaker can learn the reset.
+  // Why: scope by runtime and host so unrelated github.com, GHES, and WSL quotas cannot block each other.
+  const rateLimitBucket = classifyGhRateLimitBucket(args)
+  const rateLimitProbe = isGhRateLimitProbe(args)
+  assertGhRateLimitScopeAvailable(args, options, resolved, rateLimitBucket, rateLimitProbe)
   let lastError: unknown
   let attemptedHostFallback = false
   let attemptedDefaultWslFallback = false
@@ -1291,7 +1435,7 @@ export async function ghExecFileAsync(
       lastError = err
       const { stderr } = extractExecError(err)
       if (isGhPrimaryRateLimitStderr(stderr)) {
-        notifyGhPrimaryRateLimit(rateLimitBucket)
+        notifyGhPrimaryRateLimit(rateLimitBucket, ghRateLimitScope(args, options, resolved))
       }
       if (
         process.platform === 'win32' &&
@@ -1306,6 +1450,7 @@ export async function ghExecFileAsync(
           // Why: WSL-only Windows installs have no host gh.exe, and global calls (rate_limit/auth) carry no cwd to route by.
           resolved = wslResolved
           attemptedDefaultWslFallback = true
+          assertGhRateLimitScopeAvailable(args, options, resolved, rateLimitBucket, rateLimitProbe)
           attempt = -1
           continue
         }
@@ -1313,12 +1458,11 @@ export async function ghExecFileAsync(
       if (!attemptedHostFallback && canFallBackToHostGitHubCli('gh', args, resolved, stderr)) {
         resolved = resolveHostGitHubCli('gh', args)
         attemptedHostFallback = true
+        assertGhRateLimitScopeAvailable(args, options, resolved, rateLimitBucket, rateLimitProbe)
         attempt = -1
         continue
       }
       const isLastAttempt = attempt >= GH_RETRY_DELAYS_MS.length
-      // Why: only retry idempotent calls; a transient error can arrive after a write already applied, so retrying would duplicate it.
-      const idempotent = options.idempotent ?? argsLookIdempotent(args)
       if (idempotent && !isLastAttempt && isTransientGhError(stderr)) {
         // Why: honor the server's Retry-After over our backoff (a shorter sleep just re-fails); cap so a huge hint can't stall IPC.
         const retryAfterMs = parseRetryAfterMs(stderr)

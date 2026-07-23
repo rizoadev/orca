@@ -10,9 +10,7 @@ import {
   deriveSharedKey,
   publicKeyFromBase64,
   publicKeyToBase64,
-  encrypt,
-  decrypt,
-  decryptBytes
+  decrypt
 } from './e2ee'
 import {
   handleTerminalBinaryFrame,
@@ -28,8 +26,15 @@ import {
   updateTerminalSubscriptionViewport as updateCachedTerminalSubscriptionViewport
 } from './rpc-client-terminal-subscription'
 import { describeSocketEvent } from './socket-event-debug'
+import { markRpcDeliveryUnknown } from './rpc-delivery-ambiguity'
 import { isRpcResponse } from './rpc-response-shape'
-import { websocketPayloadToUint8 } from './websocket-payload-bytes'
+import { createMobileInboundFrameQueue } from './mobile-inbound-frame-queue'
+import { createMobileDirectRpcOutbound } from './mobile-direct-rpc-outbound'
+import { createMobileDirectRpcSender } from './mobile-direct-rpc-sender'
+import { handleMobileRpcSocketBinaryMessage } from './mobile-rpc-binary-frame-handler'
+import { processMobileOutboundMemoryBudget } from './mobile-outbound-memory-budget'
+import { redactedWebSocketEndpoint } from './redacted-websocket-endpoint'
+import { tryParseMobileJsonTextWithinLimits } from './mobile-json-text-admission'
 
 type PendingRequest = {
   resolve: (response: RpcResponse) => void
@@ -97,6 +102,8 @@ const GIVE_UP_AFTER_ATTEMPTS = 12
 const TRICKLE_RECONNECT_DELAY_MS = 90_000
 // Why: one unauthorized isn't proof the pairing is dead (issue #5200) — retry the handshake this many times before latching auth-failed.
 const AUTH_RETRY_BUDGET = 3
+// Why: a desktop that regenerated its E2EE keypair sends an e2ee_error we can't decrypt — the 4001 close code is the only surviving auth-failure signal.
+const UNAUTHORIZED_CLOSE_CODE = 4001
 const REQUEST_TIMEOUT_MS = 30_000
 const CONNECT_TIMEOUT_MS = 12_000
 const HANDSHAKE_TIMEOUT_MS = 5_000
@@ -139,6 +146,7 @@ export function connect(
     })
   }
   let ws: WebSocket | null = null
+  let outbound: ReturnType<typeof createMobileDirectRpcOutbound> | null = null
   let state: ConnectionState = 'disconnected'
   let requestCounter = 0
   let reconnectAttempt = 0
@@ -201,7 +209,7 @@ export function connect(
       to: next,
       dweltMs: dwelt,
       attempt: reconnectAttempt,
-      endpoint: redactedEndpoint(endpoint)
+      endpoint: redactedWebSocketEndpoint(endpoint)
     })
     if (next === 'connected') {
       lastConnectedAt = Date.now()
@@ -220,16 +228,6 @@ export function connect(
     }
     for (const listener of stateListeners) {
       listener(next)
-    }
-  }
-
-  // Why: keep device tokens / full URLs out of log scrolls — truncate to host:port.
-  function redactedEndpoint(ep: string): string {
-    try {
-      const m = ep.match(/^wss?:\/\/([^/]+)/i)
-      return m ? m[1] : 'unknown'
-    } catch {
-      return 'unknown'
     }
   }
 
@@ -267,6 +265,11 @@ export function connect(
     return `rpc-${++requestCounter}-${Date.now()}`
   }
 
+  function disposeActiveOutbound(): void {
+    outbound?.dispose()
+    outbound = null
+  }
+
   function openConnection() {
     if (intentionallyClosed) {
       return
@@ -276,7 +279,7 @@ export function connect(
     wsConstructionCounter++
     console.log('[net] openConnection', {
       attempt: reconnectAttempt,
-      endpoint: redactedEndpoint(endpoint),
+      endpoint: redactedWebSocketEndpoint(endpoint),
       // Why: diagnostic for RN/OkHttp pool corruption — high wsCount + repeated 1006 closes means process-state stuck.
       wsCount: wsConstructionCounter,
       msSinceLastConnected: lastConnectedAt != null ? now - lastConnectedAt : null,
@@ -290,11 +293,37 @@ export function connect(
     emitLog(
       'info',
       reconnectAttempt > 0 ? `Reconnecting (attempt ${reconnectAttempt + 1})` : 'Opening WebSocket',
-      endpoint
+      redactedWebSocketEndpoint(endpoint)
     )
+
+    if (!processMobileOutboundMemoryBudget.canRegisterBufferedAmount()) {
+      emitLog('error', 'WebSocket reconnect deferred', 'Retired socket buffers are still draining')
+      setState('reconnecting')
+      scheduleReconnect()
+      return
+    }
 
     ws = new WebSocket(endpoint)
     const openingWs = ws
+    const closeForOverload = (direction: 'Inbound' | 'Outbound', detail: string): void => {
+      emitLog('error', `${direction} WebSocket overload`, detail)
+      openingWs.close()
+      if (ws === openingWs) {
+        handleSocketClosed(openingWs)
+      }
+    }
+    const openingOutbound = createMobileDirectRpcOutbound({
+      socket: openingWs,
+      isActive: () => ws === openingWs,
+      onOverflow: () => closeForOverload('Outbound', 'Mobile RPC outbound buffer overflow')
+    })
+    outbound = openingOutbound
+    const inboundQueue = createMobileInboundFrameQueue({
+      process: handleSocketMessage,
+      onError: (error) => closeForOverload('Inbound', error.message),
+      overflowMessage: 'Mobile RPC inbound buffer overflow',
+      frameTooLargeMessage: 'Mobile RPC inbound frame too large'
+    })
     const ignoreStaleSocketEvent = (eventName: string): boolean => {
       if (ws === openingWs) {
         return false
@@ -370,10 +399,10 @@ export function connect(
       if (ignoreStaleSocketEvent('message')) {
         return
       }
-      void handleSocketMessage(event.data)
+      void inboundQueue.enqueue(event.data)
     }
 
-    async function handleSocketMessage(rawData: unknown) {
+    function handleSocketMessage(rawData: unknown): Promise<void> | void {
       lastInboundAt = Date.now()
       const raw = typeof rawData === 'string' ? rawData : null
 
@@ -382,15 +411,11 @@ export function connect(
         if (raw === null) {
           return
         }
-        try {
-          const msg = JSON.parse(raw)
-          if (msg.type === 'e2ee_ready') {
-            emitLog('success', 'Received e2ee_ready', 'Sending device token')
-            sendEncrypted({ type: 'e2ee_auth', deviceToken })
-            return
-          }
-        } catch {
-          // Not plaintext JSON — fall through and try encrypted handshake messages.
+        const plaintextControl = tryParseMobileJsonTextWithinLimits<Record<string, unknown>>(raw)
+        if (plaintextControl?.type === 'e2ee_ready') {
+          emitLog('success', 'Received e2ee_ready', 'Sending device token')
+          sendEncrypted({ type: 'e2ee_auth', deviceToken })
+          return
         }
 
         if (!sharedKey || sharedKey.length !== 32) {
@@ -402,9 +427,10 @@ export function connect(
           return
         }
 
-        try {
-          const msg = JSON.parse(plaintext)
+        const msg = tryParseMobileJsonTextWithinLimits<Record<string, unknown>>(plaintext)
+        if (msg) {
           if (msg.type === 'e2ee_authenticated') {
+            openingOutbound.acknowledgeAuthentication()
             if (handshakeTimer) {
               clearTimeout(handshakeTimer)
               handshakeTimer = null
@@ -438,7 +464,11 @@ export function connect(
                 removeStreamListener(id)
               }
             }
-          } else if (msg.type === 'e2ee_error' || (!msg.ok && msg.error?.code === 'unauthorized')) {
+          } else if (
+            msg.type === 'e2ee_error' ||
+            (!msg.ok && (msg.error as { code?: unknown } | undefined)?.code === 'unauthorized')
+          ) {
+            openingOutbound.acknowledgeAuthentication()
             console.log('[net] e2ee auth FAILED', { msgType: msg.type, error: msg.error })
             if (handshakeTimer) {
               clearTimeout(handshakeTimer)
@@ -446,8 +476,6 @@ export function connect(
             }
             handleAuthRejection('Unauthorized — pairing may be revoked')
           }
-        } catch {
-          // Not JSON — ignore during handshake.
         }
         return
       }
@@ -458,19 +486,12 @@ export function connect(
       }
 
       if (raw === null) {
-        const bytes = await websocketPayloadToUint8(rawData)
-        if (ws !== openingWs) {
-          return
-        }
-        if (!bytes) {
-          return
-        }
-        const plaintextBytes = decryptBytes(bytes, sharedKey)
-        if (!plaintextBytes) {
-          return
-        }
-        handleBinaryFrame(plaintextBytes)
-        return
+        return handleMobileRpcSocketBinaryMessage({
+          rawData,
+          key: sharedKey,
+          isCurrent: () => ws === openingWs,
+          onFrame: handleBinaryFrame
+        })
       }
 
       const plaintext = decrypt(raw, sharedKey)
@@ -478,15 +499,14 @@ export function connect(
         return
       }
 
-      let response: unknown
-      try {
-        response = JSON.parse(plaintext)
-      } catch {
+      const response = tryParseMobileJsonTextWithinLimits(plaintext)
+      if (response === null) {
         return
       }
       if (!isRpcResponse(response)) {
         return
       }
+      openingOutbound.acknowledge(response.id)
       recordValidatedInboundTraffic()
 
       // Why: a mid-session unauthorized may be transient (issue #5200) — handleAuthRejection retries before latching auth-failed.
@@ -577,6 +597,11 @@ export function connect(
     }
 
     ws.onclose = (event) => {
+      inboundQueue.dispose()
+      openingOutbound.socketClosed()
+      if (outbound === openingOutbound) {
+        disposeActiveOutbound()
+      }
       const e = event as { code?: number; reason?: string; wasClean?: boolean } | undefined
       const closeAt = Date.now()
       // Why: time-since-construct classifies the failure — instant close = RST/unreachable, slow = SYN timeout/packet loss.
@@ -593,7 +618,7 @@ export function connect(
         state,
         attempt: reconnectAttempt,
         intentionallyClosed,
-        endpoint: redactedEndpoint(endpoint),
+        endpoint: redactedWebSocketEndpoint(endpoint),
         constructToCloseMs,
         aliveMs,
         inboundIdleMs,
@@ -602,7 +627,7 @@ export function connect(
       })
       lastWsClosedAt = closeAt
       currentWsOpenedAt = null
-      handleSocketClosed(openingWs)
+      handleSocketClosed(openingWs, { closeCode: e?.code })
     }
 
     ws.onerror = (event) => {
@@ -622,7 +647,10 @@ export function connect(
     }
   }
 
-  function handleSocketClosed(closedWs: WebSocket, opts: { timedOut?: boolean } = {}) {
+  function handleSocketClosed(
+    closedWs: WebSocket,
+    opts: { timedOut?: boolean; closeCode?: number } = {}
+  ) {
     if (ws !== closedWs) {
       console.log('[net] handleSocketClosed STALE — ignoring (ws already swapped)', {
         state,
@@ -631,6 +659,7 @@ export function connect(
       return
     }
     clearConnectTimer()
+    disposeActiveOutbound()
     ws = null
     sharedKey = null
     activeBrowserScreencastRequestId = null
@@ -644,7 +673,17 @@ export function connect(
     if (intentionallyClosed) {
       console.log('[net] handleSocketClosed — intentional close')
       setState('disconnected')
-      rejectAllPending('Connection closed')
+      rejectAllPending('Connection closed', { deliveryUnknown: true })
+      return
+    }
+    // Why: a bare 4001 close means the desktop rejected our pairing but the encrypted
+    // e2ee_error never arrived (or was undecryptable) — count it against the auth
+    // retry budget instead of looping the generic reconnect forever.
+    if (opts.closeCode === UNAUTHORIZED_CLOSE_CODE) {
+      console.log('[net] handleSocketClosed — unauthorized close code', {
+        attempt: reconnectAttempt
+      })
+      handleAuthRejection('Unauthorized — pairing may be revoked')
       return
     }
     console.log('[net] handleSocketClosed → reconnect', {
@@ -654,7 +693,7 @@ export function connect(
       attempt: reconnectAttempt
     })
     emitLog('warn', 'WebSocket closed', 'Will attempt to reconnect')
-    rejectAllPending('Connection interrupted')
+    rejectAllPending('Connection interrupted', { deliveryUnknown: true })
     setState('reconnecting')
     scheduleReconnect()
   }
@@ -668,7 +707,7 @@ export function connect(
       console.log('[net] auth rejected — retrying handshake', {
         attempt: authRejectionCount,
         budget: AUTH_RETRY_BUDGET,
-        endpoint: redactedEndpoint(endpoint)
+        endpoint: redactedWebSocketEndpoint(endpoint)
       })
       emitLog(
         'warn',
@@ -677,6 +716,7 @@ export function connect(
       )
       // Why: close without setting intentionallyClosed so handleSocketClosed routes to reconnect and retries the handshake.
       const closing = ws
+      disposeActiveOutbound()
       ws = null
       sharedKey = null
       // Why: close cleanup stale-bails here, so mark active streams for replay.
@@ -691,9 +731,10 @@ export function connect(
     }
     console.log('[net] auth rejected — budget exhausted, latching auth-failed', {
       attempt: authRejectionCount,
-      endpoint: redactedEndpoint(endpoint)
+      endpoint: redactedWebSocketEndpoint(endpoint)
     })
     intentionallyClosed = true
+    disposeActiveOutbound()
     ws?.close()
     ws = null
     setState('auth-failed')
@@ -788,8 +829,12 @@ export function connect(
     }
   }
 
-  function rejectAllPending(reason: string) {
-    const error = new Error(reason)
+  function rejectAllPending(reason: string, options?: { deliveryUnknown?: boolean }) {
+    // Why: pending entries only exist after a successful socket write, so a close
+    // here means the host may have processed them — mark the ambiguity for callers.
+    const error = options?.deliveryUnknown
+      ? markRpcDeliveryUnknown(new Error(reason))
+      : new Error(reason)
     for (const [id, req] of pending) {
       pending.delete(id)
       queueMicrotask(() => req.reject(error))
@@ -909,26 +954,13 @@ export function connect(
     stream.onBinaryFrame?.(frame)
   }
 
-  function sendEncrypted(request: unknown): boolean {
-    if (ws && ws.readyState === WebSocket.OPEN && sharedKey) {
-      ws.send(encrypt(JSON.stringify(request), sharedKey))
-      return true
-    }
-    console.log('[net] sendEncrypted FAILED — channel not ready', {
-      hasWs: !!ws,
-      readyState: ws?.readyState,
-      hasKey: !!sharedKey,
-      state
-    })
-    // Why: RN can drop onclose, leaving state 'connected' over a dead socket; force reconnect or every send silently fails forever.
-    if (state === 'connected' && ws && ws.readyState !== WebSocket.OPEN) {
-      console.log('[net] sendEncrypted detected ws desync — forcing reconnect', {
-        readyState: ws.readyState
-      })
-      handleSocketClosed(ws, { timedOut: false })
-    }
-    return false
-  }
+  const sendEncrypted = createMobileDirectRpcSender({
+    getOutbound: () => outbound,
+    getSharedKey: () => sharedKey,
+    getSocket: () => ws,
+    getState: () => state,
+    onSocketDesync: (socket) => handleSocketClosed(socket, { timedOut: false })
+  })
 
   function sendBrowserScreencastUnsubscribe(subscriptionId: string): void {
     sendEncrypted({
@@ -985,7 +1017,8 @@ export function connect(
             timeoutMs,
             state
           })
-          reject(new Error(`Request timed out: ${method}`))
+          // Why: the frame was written 30s ago — the host may have processed it.
+          reject(markRpcDeliveryUnknown(new Error(`Request timed out: ${method}`)))
         }, timeoutMs)
 
         pending.set(id, {
@@ -1138,13 +1171,15 @@ export function connect(
         handshakeTimer = null
       }
       stopActivityProbe()
+      disposeActiveOutbound()
       if (ws) {
         ws.close()
         ws = null
       }
       sharedKey = null
       setState('disconnected')
-      rejectAllPending('Client closed')
+      // Why: closing the client cannot retract request frames already written.
+      rejectAllPending('Client closed', { deliveryUnknown: true })
     }
   }
 }

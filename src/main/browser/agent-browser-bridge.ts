@@ -1,11 +1,19 @@
 /* eslint-disable max-lines */
 import { execFile, type ChildProcess } from 'node:child_process'
-import { existsSync, accessSync, chmodSync, readFileSync, constants } from 'node:fs'
+import { existsSync, accessSync, chmodSync, constants } from 'node:fs'
 import { join } from 'node:path'
 import { platform, arch } from 'node:os'
 import { app, type WebContents } from 'electron'
 import { CdpWsProxy } from './cdp-ws-proxy'
 import { captureFullPageScreenshot } from './cdp-screenshot'
+import { assertCdpPdfWithinMemoryLimit } from './cdp-print-to-pdf'
+import {
+  assertBrowserScreenshotGeometry,
+  BROWSER_SCREENSHOT_BUSY_ERROR,
+  BROWSER_SCREENSHOT_MEMORY_LIMIT_ERROR
+} from './browser-screenshot-limits'
+import { readBrowserScreenshotFile } from './browser-screenshot-file-reader'
+import { BROWSER_PDF_BUSY_ERROR, startBrowserPdfPrint } from './browser-pdf-admission'
 import { acquireElectronDebugger } from './electron-debugger-lease'
 import type { BrowserManager } from './browser-manager'
 import { BrowserError } from './cdp-bridge'
@@ -48,6 +56,7 @@ import type {
   BrowserCookie
 } from '../../shared/runtime-types'
 import { assertClipboardTextWriteWithinLimitWithYield } from '../../shared/clipboard-text'
+import { normalizeBrowserNavigationUrl } from '../../shared/browser-url'
 import { iterateBrowserTextInsertionChunks } from './browser-text-insertion'
 
 // Why: must exceed agent-browser's internal timeouts (goto 30s, wait 60s) so the bridge never kills a command before its own timeout fires.
@@ -55,8 +64,11 @@ const EXEC_TIMEOUT_MS = 90_000
 const CONSECUTIVE_TIMEOUT_LIMIT = 3
 const WAIT_PROCESS_TIMEOUT_GRACE_MS = 1_000
 const STALE_SESSION_CLOSE_TIMEOUT_MS = 3_000
+const EMBEDDED_NAVIGATION_TIMEOUT_MS = 30_000
 export const AGENT_BROWSER_TEXT_ARGUMENT_MAX_BYTES = 8 * 1024
 export const AGENT_BROWSER_CLIPBOARD_WRITE_MAX_BYTES = AGENT_BROWSER_TEXT_ARGUMENT_MAX_BYTES
+export const AGENT_BROWSER_MAX_QUEUED_COMMANDS_PER_SESSION = 64
+const AGENT_BROWSER_MAX_QUEUED_COMMANDS_TOTAL = 512
 
 type SessionState = {
   proxy: CdpWsProxy
@@ -260,6 +272,75 @@ function classifyErrorCode(message: string): string {
     return 'browser_stale_ref'
   }
   return 'browser_error'
+}
+
+function isAbortedNavigationError(error: unknown): boolean {
+  if (!error || typeof error !== 'object') {
+    return false
+  }
+  const { code, errno } = error as { code?: unknown; errno?: unknown }
+  return code === 'ERR_ABORTED' || errno === -3
+}
+
+function isWebContentsLoading(wc: WebContents): boolean {
+  try {
+    return wc.isLoading()
+  } catch {
+    // Why: destruction races are resolved against the authoritative page registration after the wait.
+    return false
+  }
+}
+
+function waitForAbortedNavigationReplacement(
+  wc: WebContents,
+  browserPageId: string,
+  timeoutMs: number
+): Promise<void> {
+  if (!isWebContentsLoading(wc)) {
+    return Promise.resolve()
+  }
+
+  return new Promise((resolve, reject) => {
+    let settled = false
+    let timeout: ReturnType<typeof setTimeout> | null = null
+    const finish = (error?: BrowserError): void => {
+      if (settled) {
+        return
+      }
+      settled = true
+      wc.removeListener('did-stop-loading', onDidStopLoading)
+      wc.removeListener('destroyed', onDestroyed)
+      if (timeout) {
+        clearTimeout(timeout)
+      }
+      if (error) {
+        reject(error)
+      } else {
+        resolve()
+      }
+    }
+    const onDidStopLoading = (): void => finish()
+    const onDestroyed = (): void => finish()
+
+    wc.on('did-stop-loading', onDidStopLoading)
+    wc.on('destroyed', onDestroyed)
+    timeout = setTimeout(
+      () =>
+        finish(
+          new BrowserError(
+            'browser_error',
+            `Failed to navigate browser page ${browserPageId}: Browser navigation timed out after ${EMBEDDED_NAVIGATION_TIMEOUT_MS}ms`
+          )
+        ),
+      timeoutMs
+    )
+    timeout.unref?.()
+
+    // Why: the replacement can finish between loadURL rejecting and listener attachment.
+    if (!isWebContentsLoading(wc)) {
+      finish()
+    }
+  })
 }
 
 function isTabClosedTransportError(message: string): boolean {
@@ -504,6 +585,9 @@ export class AgentBrowserBridge {
   private readonly sessions = new Map<string, SessionState>()
   private readonly commandQueues = new Map<string, QueuedCommand[]>()
   private readonly processingQueues = new Set<string>()
+  private queuedCommandCount = 0
+  private readonly pendingEnqueueCounts = new Map<string, number>()
+  private pendingEnqueueCount = 0
   // Why: screenshot prep mutates shared paintability across tabs; serialize globally so concurrent captures don't blank each other.
   private screenshotTurn: Promise<void> = Promise.resolve()
   private readonly agentBrowserBin: string
@@ -766,9 +850,90 @@ export class AgentBrowserBridge {
   }
 
   async goto(url: string, worktreeId?: string, browserPageId?: string): Promise<BrowserGotoResult> {
-    return this.enqueueTargetedCommand(worktreeId, browserPageId, async (sessionName) => {
-      return (await this.execAgentBrowser(sessionName, ['goto', url])) as BrowserGotoResult
-    })
+    return this.enqueueTargetedCommand(
+      worktreeId,
+      browserPageId,
+      async (_sessionName, target) => {
+        const wc = this.requireTargetWebContents(target)
+        const navigationUrl = normalizeBrowserNavigationUrl(url)
+        if (!navigationUrl) {
+          throw new BrowserError('invalid_argument', `Unsupported browser URL: ${url}`)
+        }
+        const navigationState: { preventUnloadEvent: Electron.Event | null } = {
+          preventUnloadEvent: null
+        }
+        const onWillPreventUnload = (event: Electron.Event): void => {
+          navigationState.preventUnloadEvent = event
+        }
+        wc.on('will-prevent-unload', onWillPreventUnload)
+        let navigationAborted = false
+        const navigationDeadline = Date.now() + EMBEDDED_NAVIGATION_TIMEOUT_MS
+        let navigationTimeout: ReturnType<typeof setTimeout> | null = null
+        try {
+          await Promise.race([
+            wc.loadURL(navigationUrl),
+            new Promise<never>((_resolve, reject) => {
+              navigationTimeout = setTimeout(
+                () =>
+                  reject(
+                    new Error(
+                      `Browser navigation timed out after ${EMBEDDED_NAVIGATION_TIMEOUT_MS}ms`
+                    )
+                  ),
+                EMBEDDED_NAVIGATION_TIMEOUT_MS
+              )
+              navigationTimeout.unref?.()
+            })
+          ])
+        } catch (error) {
+          if (navigationTimeout) {
+            clearTimeout(navigationTimeout)
+            navigationTimeout = null
+          }
+          if (!this.getWebContents(target.webContentsId)) {
+            throw this.createPageUnavailableError(`orca-tab-${target.browserPageId}`)
+          }
+          // Why: ERR_ABORTED also covers a page vetoing unload; that navigation did not succeed.
+          if (
+            !isAbortedNavigationError(error) ||
+            (navigationState.preventUnloadEvent !== null &&
+              !navigationState.preventUnloadEvent.defaultPrevented)
+          ) {
+            throw new BrowserError(
+              'browser_error',
+              `Failed to navigate browser page ${target.browserPageId}: ${error instanceof Error ? error.message : String(error)}`
+            )
+          }
+          navigationAborted = true
+          // Why: a superseding navigation rejects the first load before its replacement has landed.
+          await waitForAbortedNavigationReplacement(
+            wc,
+            target.browserPageId,
+            Math.max(0, navigationDeadline - Date.now())
+          )
+        } finally {
+          wc.removeListener('will-prevent-unload', onWillPreventUnload)
+          if (navigationTimeout) {
+            clearTimeout(navigationTimeout)
+          }
+        }
+
+        // Why: cross-process navigation can replace the guest while retaining the same authoritative page id.
+        const navigatedTarget = this.resolveCommandTarget(worktreeId, target.browserPageId)
+        const navigatedWebContents = this.requireTargetWebContents(navigatedTarget)
+        const loadError = navigationAborted
+          ? this.browserManager.getBrowserPageLoadError(target.browserPageId)
+          : null
+        if (loadError) {
+          throw new BrowserError(
+            'browser_error',
+            `Failed to navigate browser page ${target.browserPageId}: ${loadError.description} (${loadError.code})`
+          )
+        }
+        return { url: navigatedWebContents.getURL(), title: navigatedWebContents.getTitle() }
+      },
+      { ensureSession: false }
+    )
   }
 
   async fill(
@@ -1331,7 +1496,17 @@ export class AgentBrowserBridge {
     if (!existsSync(parsed.path)) {
       throw new BrowserError('browser_error', `Screenshot file not found: ${parsed.path}`)
     }
-    const data = readFileSync(parsed.path).toString('base64')
+    let bytes: Buffer
+    try {
+      bytes = readBrowserScreenshotFile(parsed.path)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unable to read screenshot file'
+      if (message !== BROWSER_SCREENSHOT_MEMORY_LIMIT_ERROR) {
+        throw new BrowserError('browser_error', message)
+      }
+      throw new BrowserError('browser_screenshot_too_large', BROWSER_SCREENSHOT_MEMORY_LIMIT_ERROR)
+    }
+    const data = bytes.toString('base64')
     return { data, format: format === 'jpeg' ? 'jpeg' : 'png' } as BrowserScreenshotResult
   }
 
@@ -1377,7 +1552,17 @@ export class AgentBrowserBridge {
         }
         return await captureFullPageScreenshot(wc, format)
       } catch (error) {
-        throw new BrowserError('browser_error', (error as Error).message)
+        if (error instanceof BrowserError) {
+          throw error
+        }
+        const message = error instanceof Error ? error.message : 'Screenshot failed'
+        if (message === BROWSER_SCREENSHOT_MEMORY_LIMIT_ERROR) {
+          throw new BrowserError('browser_screenshot_too_large', message)
+        }
+        if (message === BROWSER_SCREENSHOT_BUSY_ERROR) {
+          throw new BrowserError('browser_busy', message)
+        }
+        throw new BrowserError('browser_error', message)
       } finally {
         restore()
       }
@@ -1403,9 +1588,62 @@ export class AgentBrowserBridge {
     worktreeId?: string,
     browserPageId?: string
   ): Promise<BrowserEvalResult> {
-    return this.enqueueTargetedCommand(worktreeId, browserPageId, async (sessionName) => {
-      return (await this.execAgentBrowser(sessionName, ['eval', expression])) as BrowserEvalResult
-    })
+    return this.enqueueTargetedCommand(
+      worktreeId,
+      browserPageId,
+      async (_sessionName, target) => {
+        const wc = this.requireTargetWebContents(target)
+        let releaseDebugger = (): void => {}
+        try {
+          releaseDebugger = acquireElectronDebugger(wc).release
+          const { result, exceptionDetails } = (await wc.debugger.sendCommand('Runtime.evaluate', {
+            expression,
+            returnByValue: true,
+            awaitPromise: true
+          })) as {
+            result: { value?: unknown; description?: string }
+            exceptionDetails?: { text: string; exception?: { description?: string } }
+          }
+          if (exceptionDetails) {
+            throw new BrowserError(
+              'browser_eval_error',
+              exceptionDetails.exception?.description ?? exceptionDetails.text
+            )
+          }
+
+          const currentTarget = this.resolveCommandTarget(worktreeId, target.browserPageId)
+          if (currentTarget.webContentsId !== target.webContentsId) {
+            throw new BrowserError(
+              'browser_tab_changed',
+              `Browser page ${target.browserPageId} changed while evaluating; retry the command`
+            )
+          }
+          return {
+            result:
+              result.value !== undefined
+                ? typeof result.value === 'object' && result.value !== null
+                  ? JSON.stringify(result.value)
+                  : String(result.value)
+                : (result.description ?? ''),
+            origin: wc.getURL()
+          }
+        } catch (error) {
+          if (error instanceof BrowserError) {
+            throw error
+          }
+          if (!this.getWebContents(target.webContentsId)) {
+            throw this.createPageUnavailableError(`orca-tab-${target.browserPageId}`)
+          }
+          throw new BrowserError(
+            'browser_error',
+            `Failed to evaluate in browser page ${target.browserPageId}: ${error instanceof Error ? error.message : String(error)}`
+          )
+        } finally {
+          releaseDebugger()
+        }
+      },
+      { ensureSession: false }
+    )
   }
 
   async hover(
@@ -1575,10 +1813,15 @@ export class AgentBrowserBridge {
       if (!wc) {
         throw new BrowserError('browser_no_tab', 'Tab is no longer available')
       }
-      const buffer = await wc.printToPDF({
+      const print = startBrowserPdfPrint(wc, {
         printBackground: true,
         preferCSSPageSize: true
       })
+      if (!print) {
+        throw new BrowserError('browser_busy', BROWSER_PDF_BUSY_ERROR)
+      }
+      const buffer = await print
+      assertCdpPdfWithinMemoryLimit(buffer)
       return { data: buffer.toString('base64') }
     })
   }
@@ -1656,6 +1899,14 @@ export class AgentBrowserBridge {
     worktreeId?: string,
     browserPageId?: string
   ): Promise<BrowserViewportResult> {
+    try {
+      assertBrowserScreenshotGeometry(width, height, scale)
+    } catch (error) {
+      throw new BrowserError(
+        'browser_screenshot_too_large',
+        error instanceof Error ? error.message : BROWSER_SCREENSHOT_MEMORY_LIMIT_ERROR
+      )
+    }
     return this.enqueueTargetedCommand(worktreeId, browserPageId, async (_sessionName, target) => {
       const wc = this.getWebContents(target.webContentsId)
       if (!wc) {
@@ -1864,12 +2115,29 @@ export class AgentBrowserBridge {
     const target = this.resolveCommandTarget(worktreeId, browserPageId, options.requireScopedTarget)
     const sessionName = `orca-tab-${target.browserPageId}`
 
-    if (options.ensureSession !== false) {
-      await this.ensureSession(sessionName, target.browserPageId, target.webContentsId)
+    this.acquirePendingEnqueue(sessionName)
+    try {
+      if (options.ensureSession !== false) {
+        await this.ensureSession(sessionName, target.browserPageId, target.webContentsId)
+      }
+    } finally {
+      this.releasePendingEnqueue(sessionName)
     }
 
     return new Promise<T>((resolve, reject) => {
       let queue = this.commandQueues.get(sessionName)
+      if (
+        (queue?.length ?? 0) >= AGENT_BROWSER_MAX_QUEUED_COMMANDS_PER_SESSION ||
+        this.queuedCommandCount >= AGENT_BROWSER_MAX_QUEUED_COMMANDS_TOTAL
+      ) {
+        reject(
+          new BrowserError(
+            'browser_busy',
+            'Browser command queue is full; retry after the current commands finish'
+          )
+        )
+        return
+      }
       if (!queue) {
         queue = []
         this.commandQueues.set(sessionName, queue)
@@ -1886,8 +2154,35 @@ export class AgentBrowserBridge {
         resolve: resolve as (value: unknown) => void,
         reject
       })
+      this.queuedCommandCount += 1
       this.processQueue(sessionName)
     })
+  }
+
+  private acquirePendingEnqueue(sessionName: string): void {
+    const pendingForSession = this.pendingEnqueueCounts.get(sessionName) ?? 0
+    const queuedForSession = this.commandQueues.get(sessionName)?.length ?? 0
+    if (
+      pendingForSession + queuedForSession >= AGENT_BROWSER_MAX_QUEUED_COMMANDS_PER_SESSION ||
+      this.pendingEnqueueCount + this.queuedCommandCount >= AGENT_BROWSER_MAX_QUEUED_COMMANDS_TOTAL
+    ) {
+      throw new BrowserError(
+        'browser_busy',
+        'Browser command queue is full; retry after the current commands finish'
+      )
+    }
+    this.pendingEnqueueCounts.set(sessionName, pendingForSession + 1)
+    this.pendingEnqueueCount += 1
+  }
+
+  private releasePendingEnqueue(sessionName: string): void {
+    const remaining = (this.pendingEnqueueCounts.get(sessionName) ?? 1) - 1
+    if (remaining > 0) {
+      this.pendingEnqueueCounts.set(sessionName, remaining)
+    } else {
+      this.pendingEnqueueCounts.delete(sessionName)
+    }
+    this.pendingEnqueueCount = Math.max(0, this.pendingEnqueueCount - 1)
   }
 
   private async executeWithVisibleTarget<T>(
@@ -1954,6 +2249,7 @@ export class AgentBrowserBridge {
     const queue = this.commandQueues.get(sessionName)
     while (queue && queue.length > 0) {
       const cmd = queue.shift()!
+      this.queuedCommandCount = Math.max(0, this.queuedCommandCount - 1)
       try {
         const result = await cmd.execute()
         cmd.resolve(result)
@@ -2251,6 +2547,7 @@ export class AgentBrowserBridge {
     this.commandQueues.delete(sessionName)
     this.processingQueues.delete(sessionName)
     if (queue) {
+      this.queuedCommandCount = Math.max(0, this.queuedCommandCount - queue.length)
       const err = new BrowserError(
         'browser_tab_closed',
         'Tab was closed while commands were queued'
@@ -2283,12 +2580,9 @@ export class AgentBrowserBridge {
     const managesInterceptRoutes =
       commandArgs[0] === 'network' && (commandArgs[1] === 'route' || commandArgs[1] === 'unroute')
 
-    // Why: --cdp is init-only; pass the port (not a ws:// URL) so agent-browser's /json discovery sees only the proxy's webview, not the host renderer page.
     const needsInit = !session.initialized
-    if (needsInit) {
-      const port = session.proxy.getPort()
-      args.push('--cdp', String(port))
-    }
+    // Why: a restarted named daemon auto-launches Chrome unless every invocation reasserts Orca's CDP owner.
+    args.push('--cdp', String(session.proxy.getPort()))
 
     // Why: exec passthrough can produce a large argv; spreading into push risks V8 argument limits.
     for (const commandArg of commandArgs) {
@@ -2323,6 +2617,8 @@ export class AgentBrowserBridge {
           await this.runAgentBrowserRaw(sessionName, [
             '--session',
             sessionName,
+            '--cdp',
+            String(session.proxy.getPort()),
             'network',
             'route',
             urlPattern,
@@ -2368,23 +2664,32 @@ export class AgentBrowserBridge {
   }
 
   private closeStaleAgentBrowserSession(sessionName: string): Promise<void> {
-    return new Promise((resolve) => {
+    return new Promise((resolve, reject) => {
       let child: ReturnType<typeof execFile> | null = null
       let settled = false
 
-      const finish = (): void => {
+      const finish = (error?: Error): void => {
         if (settled) {
           return
         }
         settled = true
         clearTimeout(timeout)
-        resolve()
+        if (error) {
+          reject(error)
+        } else {
+          resolve()
+        }
       }
 
-      // Why: best-effort daemon cleanup — a wedged close must not block the real browser action.
+      // Why: proceeding after an unverified close can reuse a daemon that owns an unrelated browser.
       const timeout = setTimeout(() => {
         child?.kill()
-        finish()
+        finish(
+          new BrowserError(
+            'browser_owner_unavailable',
+            `Could not reset stale helper session ${sessionName}; retry after agent-browser exits`
+          )
+        )
       }, STALE_SESSION_CLOSE_TIMEOUT_MS)
 
       try {
@@ -2392,10 +2697,23 @@ export class AgentBrowserBridge {
           this.agentBrowserBin,
           ['--session', sessionName, 'close'],
           { timeout: STALE_SESSION_CLOSE_TIMEOUT_MS },
-          finish
+          (error) =>
+            finish(
+              error
+                ? new BrowserError(
+                    'browser_owner_unavailable',
+                    `Could not reset stale helper session ${sessionName}: ${error.message}`
+                  )
+                : undefined
+            )
         )
-      } catch {
-        finish()
+      } catch (error) {
+        finish(
+          new BrowserError(
+            'browser_owner_unavailable',
+            `Could not reset stale helper session ${sessionName}: ${error instanceof Error ? error.message : String(error)}`
+          )
+        )
       }
     })
   }
@@ -2525,10 +2843,19 @@ export class AgentBrowserBridge {
     return null
   }
 
+  private requireTargetWebContents(target: ResolvedBrowserCommandTarget): WebContents {
+    const wc = this.getWebContents(target.webContentsId)
+    if (!wc || wc.isDestroyed()) {
+      throw this.createPageUnavailableError(`orca-tab-${target.browserPageId}`)
+    }
+    return wc
+  }
+
   private getWebContents(webContentsId: number): Electron.WebContents | null {
     try {
       const { webContents } = require('electron')
-      return webContents.fromId(webContentsId) ?? null
+      const target = webContents.fromId(webContentsId)
+      return target && !target.isDestroyed() ? target : null
     } catch {
       return null
     }

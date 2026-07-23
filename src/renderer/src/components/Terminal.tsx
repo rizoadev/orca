@@ -12,6 +12,7 @@ import {
 } from '@/constants/terminal'
 import { useAppStore } from '../store'
 import { folderWorkspaceKey } from '../../../shared/workspace-scope'
+import { mapWithConcurrency } from '../../../shared/map-with-concurrency'
 import { useAllWorktrees } from '../store/selectors'
 import { getConnectionId } from '../lib/connection-context'
 import { basename } from '../lib/path'
@@ -141,6 +142,7 @@ const EditorPanel = lazy(() => import('./editor/EditorPanel'))
 
 // Why: gate handler runs after a dialog advances so a stray carry-over click can't act on the next dialog; ~200ms absorbs a physical double-click while staying responsive.
 const CLOSE_DIALOG_DEBOUNCE_MS = 200
+const CHILD_PROCESS_CHECK_CONCURRENCY = 8
 const EDITOR_TAB_CONTENT_TYPES = new Set<TabContentType>([
   'editor',
   'diff',
@@ -447,15 +449,15 @@ function Terminal(): React.JSX.Element | null {
           }
         )
         if (localPtyIds.length > 0) {
-          void Promise.all(localPtyIds.map((id) => window.api.pty.hasChildProcesses(id))).then(
-            (results) => {
-              if (results.some(Boolean)) {
-                setWindowCloseDialogOpen(true)
-              } else {
-                confirmNativeWindowClose()
-              }
+          void mapWithConcurrency(localPtyIds, CHILD_PROCESS_CHECK_CONCURRENCY, (id) =>
+            window.api.pty.hasChildProcesses(id)
+          ).then((results) => {
+            if (results.some(Boolean)) {
+              setWindowCloseDialogOpen(true)
+            } else {
+              confirmNativeWindowClose()
             }
-          )
+          })
           return
         }
       }
@@ -1354,7 +1356,8 @@ function Terminal(): React.JSX.Element | null {
         void closeWebRuntimeSessionTab({
           worktreeId: owningWorktreeId,
           tabId,
-          environmentId: runtimeEnvironmentId
+          environmentId: runtimeEnvironmentId,
+          reason: 'user'
         })
         return
       }
@@ -1408,7 +1411,7 @@ function Terminal(): React.JSX.Element | null {
       if (shouldDeferParkedPtyExitTabClose(tabId, ptyId)) {
         return
       }
-      closeTerminalTab(tabId, { reason: 'pty-exit' })
+      closeTerminalTab(tabId, { reason: 'pty-exit', lifecyclePtyId: ptyId })
     },
     [consumeSuppressedPtyExit]
   )
@@ -1445,7 +1448,8 @@ function Terminal(): React.JSX.Element | null {
             void closeWebRuntimeSessionTab({
               worktreeId: activeWorktreeId,
               tabId: unifiedTab.id,
-              environmentId: runtimeEnvironmentId
+              environmentId: runtimeEnvironmentId,
+              reason: 'user'
             })
           }
           continue
@@ -1509,7 +1513,8 @@ function Terminal(): React.JSX.Element | null {
             void closeWebRuntimeSessionTab({
               worktreeId: activeWorktreeId,
               tabId: unifiedTab.id,
-              environmentId: runtimeEnvironmentId
+              environmentId: runtimeEnvironmentId,
+              reason: 'user'
             })
           }
           continue

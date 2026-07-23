@@ -124,6 +124,8 @@ import {
   getLinearStatePillStyle
 } from '@/components/linear-state-pill-style'
 import { parseTaskQuery, stripRepoQualifiers, withQualifier } from '../../../shared/task-query'
+import { mapSettledWithConcurrency } from '../../../shared/map-with-concurrency'
+import { githubProjectHost } from '../../../shared/github-project-identity'
 import {
   buildLinearTeamUrl,
   getLinearOrganizationUrlKeyFromIssueUrl
@@ -198,6 +200,7 @@ import {
   reconcileTaskPagePagesAfterLandingRefresh,
   reconcileTaskPagePagesWithWorkItemsCache,
   shouldResetTaskPagePaginationAfterLandingRefresh,
+  selectTaskPageUnresolvedSourceRepos,
   selectTaskPageWorkItemsCacheEntries,
   shouldReplaceTaskPageItemsAfterRefresh,
   type TaskPageRepoSourceState
@@ -382,6 +385,7 @@ const TASK_SEARCH_DEBOUNCE_MS = 300
 const LINEAR_ITEM_LIMIT = 36
 const JIRA_ITEM_LIMIT = 50
 const PR_CHECKS_EAGER_PREFETCH_LIMIT = 20
+const GITLAB_REPO_FETCH_CONCURRENCY = 8
 
 const GITHUB_TASK_GRID_CLASS =
   'min-w-[790px] grid-cols-[72px_minmax(320px,1fr)_84px_100px_92px_122px]'
@@ -1180,6 +1184,7 @@ function GHStatusCell({
               {
                 owner: parsedOwnerRepo.owner,
                 repo: parsedOwnerRepo.repo,
+                host: githubProjectHost(parsedOwnerRepo.host),
                 number: item.number,
                 updates
               },
@@ -1188,6 +1193,7 @@ function GHStatusCell({
           : window.api.gh.updateIssueBySlug({
               owner: parsedOwnerRepo.owner,
               repo: parsedOwnerRepo.repo,
+              host: githubProjectHost(parsedOwnerRepo.host),
               number: item.number,
               updates
             })
@@ -1505,17 +1511,21 @@ function formatPRDelta(item: GitHubWorkItem): string | null {
 }
 
 function ReviewChipAvatar({
-  reviewer
+  reviewer,
+  avatarHost
 }: {
   reviewer: GitHubPRPrimaryReviewer | null
+  avatarHost?: string
 }): React.JSX.Element {
   if (reviewer?.login) {
-    // Why: gh pr list --json reviewRequests can return only logins; prefer API avatar_url so GHE renders (falls back to login URL, then initials). See #8784.
+    // Why: review requests may contain only logins; use the PR host before falling back to initials.
+    const avatarUrl =
+      reviewer.avatarUrl || `https://${avatarHost ?? 'github.com'}/${reviewer.login}.png?size=40`
     return (
       <GitHubUserAvatar
         login={reviewer.login}
         name={reviewer.name}
-        avatarUrl={reviewer.avatarUrl}
+        avatarUrl={avatarUrl}
         title={reviewer.name ? `${reviewer.name} (${reviewer.login})` : reviewer.login}
         className="size-5"
       />
@@ -1791,7 +1801,8 @@ function GHAssigneesCell({
     open ? owner : null,
     open ? repoName : null,
     seedLogins,
-    sourceSettings
+    sourceSettings,
+    parsed?.slug.host
   )
 
   const toggleAssignee = useCallback(
@@ -1815,6 +1826,7 @@ function GHAssigneesCell({
           const args = {
             owner,
             repo: repoName,
+            host: githubProjectHost(parsed?.slug.host),
             number: item.number,
             updates
           }
@@ -1874,6 +1886,7 @@ function GHAssigneesCell({
       item.type,
       owner,
       patchWorkItem,
+      parsed?.slug.host,
       pendingLogin,
       repo,
       repoName,
@@ -2042,6 +2055,15 @@ function sameOptionalGitHubOwnerRepo(
     : sameGitHubOwnerRepo(leftValue, rightValue)
 }
 
+// Why: Task grid PR actions must keep the URL's host when list data has not
+// hydrated prRepo yet, while still pinning host-less github.com identities.
+function resolveTaskPullRequestRepo(
+  item: Pick<GitHubWorkItem, 'prRepo' | 'url'>
+): GitHubOwnerRepo | null {
+  const repo = item.prRepo ?? parseGitHubIssueOrPRLink(item.url)?.slug ?? null
+  return repo ? { ...repo, host: githubProjectHost(repo.host) } : null
+}
+
 function mergeReviewerSuggestions(
   users: GitHubAssignableUser[],
   seedUsers: GitHubAssignableUser[]
@@ -2179,12 +2201,13 @@ function PRReviewCell({
     return Array.from(byLogin.values())
   }, [item.author, item.latestReviews, localReviewRequests])
 
-  const reviewSlug = useMemo(() => parseGitHubIssueOrPRLink(item.url)?.slug ?? null, [item.url])
+  const reviewRepo = useMemo(() => resolveTaskPullRequestRepo(item), [item])
   const reviewerMetadata = useRepoAssigneesBySlug(
-    open && reviewSlug ? reviewSlug.owner : null,
-    open && reviewSlug ? reviewSlug.repo : null,
+    open && reviewRepo ? reviewRepo.owner : null,
+    open && reviewRepo ? reviewRepo.repo : null,
     reviewerSeedUsers.map((user) => user.login),
-    sourceSettings
+    sourceSettings,
+    reviewRepo?.host
   )
 
   const authorLogin = item.author?.toLowerCase() ?? null
@@ -2313,7 +2336,12 @@ function PRReviewCell({
           ? await callRuntimeRpc<{ ok: boolean; error?: string }>(
               target,
               'github.requestPRReviewers',
-              { repo: runtimeRepoId, prNumber: item.number, reviewers: logins },
+              {
+                repo: runtimeRepoId,
+                prNumber: item.number,
+                reviewers: logins,
+                prRepo: reviewRepo
+              },
               { timeoutMs: 30_000 }
             )
           : await window.api.gh.requestPRReviewers({
@@ -2321,7 +2349,8 @@ function PRReviewCell({
               repoId: repo.id,
               sourceContext,
               prNumber: item.number,
-              reviewers: logins
+              reviewers: logins,
+              prRepo: reviewRepo
             })
       if (result.ok) {
         toast.success(translate('auto.components.TaskPage.8f06dbb9e5', 'Reviewer requested'))
@@ -2367,7 +2396,12 @@ function PRReviewCell({
           ? await callRuntimeRpc<{ ok: boolean; error?: string }>(
               target,
               'github.removePRReviewers',
-              { repo: runtimeRepoId, prNumber: item.number, reviewers: logins },
+              {
+                repo: runtimeRepoId,
+                prNumber: item.number,
+                reviewers: logins,
+                prRepo: reviewRepo
+              },
               { timeoutMs: 30_000 }
             )
           : await window.api.gh.removePRReviewers({
@@ -2375,7 +2409,8 @@ function PRReviewCell({
               repoId: repo.id,
               sourceContext,
               prNumber: item.number,
-              reviewers: logins
+              reviewers: logins,
+              prRepo: reviewRepo
             })
       if (result.ok) {
         toast.success(
@@ -2508,7 +2543,7 @@ function PRReviewCell({
         >
           {primaryReviewer ? (
             <>
-              <ReviewChipAvatar reviewer={primaryReviewer} />
+              <ReviewChipAvatar reviewer={primaryReviewer} avatarHost={reviewRepo?.host} />
               {extraReviewerCount > 0 ? (
                 <span className="text-[10px] tabular-nums text-muted-foreground">
                   +{extraReviewerCount}
@@ -2744,6 +2779,7 @@ function PRMergeCell({
   }
   const mergePresentation = presentGitHubPRMergeState(item)
   const mergeMethods = resolveGitHubPRMergeMethods(item.mergeMethodSettings)
+  const prRepo = resolveTaskPullRequestRepo(item)
   const mergeDisabled = !repo || merging || !mergePresentation.directMergeAvailable
 
   const handleMerge = async (method: GitHubPRMergeMethod): Promise<void> => {
@@ -2779,7 +2815,7 @@ function PRMergeCell({
                 repo: runtimeRepoId,
                 prNumber: item.number,
                 method,
-                prRepo: item.prRepo ?? null
+                prRepo
               },
               { timeoutMs: 30_000 }
             )
@@ -2789,7 +2825,7 @@ function PRMergeCell({
               sourceContext,
               prNumber: item.number,
               method,
-              prRepo: item.prRepo ?? null
+              prRepo
             })
       if (result.ok) {
         useAppStore.getState().recordFeatureInteraction('github-tasks')
@@ -2825,7 +2861,7 @@ function PRMergeCell({
                 prNumber: item.number,
                 enabled,
                 method: enabled ? mergeMethods.defaultMethod : undefined,
-                prRepo: item.prRepo ?? null
+                prRepo
               },
               { timeoutMs: 30_000 }
             )
@@ -2836,7 +2872,7 @@ function PRMergeCell({
               prNumber: item.number,
               enabled,
               method: enabled ? mergeMethods.defaultMethod : undefined,
-              prRepo: item.prRepo ?? null
+              prRepo
             })
       if (result.ok) {
         useAppStore.getState().recordFeatureInteraction('github-tasks')
@@ -3952,6 +3988,12 @@ export default function TaskPage(): React.JSX.Element {
     [selectedRepos, selectedWorkItemsCacheEntries]
   )
 
+  // Why: repos that fetched but resolved no GitHub source (#9660) show empty like a genuine zero-result; surface them explicitly with Retry.
+  const unresolvedSourceRepos = useMemo(
+    () => selectTaskPageUnresolvedSourceRepos(selectedRepos, perRepoSourceState),
+    [selectedRepos, perRepoSourceState]
+  )
+
   useEffect(() => {
     if (taskSource !== 'github' || githubMode !== 'items') {
       return
@@ -4869,7 +4911,12 @@ export default function TaskPage(): React.JSX.Element {
                 return { repoId: repo.id, items: typed.items, error }
               })
 
-    void Promise.allSettled(eligibleRepos.map(fetchItems))
+    void mapSettledWithConcurrency(eligibleRepos, GITLAB_REPO_FETCH_CONCURRENCY, async (repo) => {
+      if (stale) {
+        return { repoId: repo.id, items: [] as GitLabWorkItem[], error: undefined }
+      }
+      return fetchItems(repo)
+    })
       .then((results) => {
         if (stale) {
           return
@@ -9105,6 +9152,43 @@ export default function TaskPage(): React.JSX.Element {
                     )
                   })}
 
+                {unresolvedSourceRepos.map((r) => (
+                  // Why: null-source repos (#9660) render empty like genuine zero — name the repo and offer Retry so a transient resolve blip is recoverable.
+                  <div
+                    key={`source-unresolved-${r.repoId}`}
+                    role="status"
+                    aria-atomic="true"
+                    className="flex items-center justify-between gap-3 border-b border-border/50 bg-muted/40 px-4 py-3 text-sm text-muted-foreground"
+                  >
+                    <span>
+                      {translate(
+                        'auto.components.TaskPage.noGithubSourceDetected',
+                        'No GitHub source detected for'
+                      )}{' '}
+                      <span className="font-mono">{r.label}</span> —{' '}
+                      {translate(
+                        'auto.components.TaskPage.noGithubSourceDetectedHint',
+                        'it may have no GitHub remote, or the source could not be resolved.'
+                      )}
+                    </span>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => handleRetryIssuesFetch(r.sourceKey)}
+                      disabled={tasksLoading || retryingSourceKeys.has(r.sourceKey)}
+                    >
+                      {retryingSourceKeys.has(r.sourceKey) ? (
+                        <span className="flex items-center gap-1">
+                          <LoaderCircle className="h-3 w-3 animate-spin" />
+                          {translate('auto.components.TaskPage.5b6b2af943', 'Retrying…')}
+                        </span>
+                      ) : (
+                        translate('auto.components.TaskPage.0bfbf62f75', 'Retry')
+                      )}
+                    </Button>
+                  </div>
+                ))}
+
                 {showGitHubTaskSkeletons ? (
                   // Why: fill a typical viewport with shimmer rows so the table doesn't jump in height when results land.
                   <div className="divide-y divide-border/50">
@@ -9156,6 +9240,7 @@ export default function TaskPage(): React.JSX.Element {
                 !tasksError &&
                 !githubUnavailable &&
                 failedCount === 0 &&
+                unresolvedSourceRepos.length === 0 &&
                 perRepoSourceState.every((s) => !s.error) ? (
                   <div className="px-4 py-10 text-center">
                     <p className="text-base font-medium text-foreground">

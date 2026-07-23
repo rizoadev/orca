@@ -2,6 +2,14 @@
 import type { StateCreator } from 'zustand'
 import { toast } from 'sonner'
 import type { AppState } from '../types'
+import { githubRepoIdentityKey } from '../../../../shared/github-repository-identity-key'
+import { githubProjectIdentityKey } from '../../../../shared/github-project-identity'
+import { mapWithConcurrency } from '../../../../shared/map-with-concurrency'
+import { PR_REFRESH_VISIBLE_CANDIDATE_LIMIT } from '../../../../shared/pr-refresh-memory-limits'
+import {
+  GITHUB_WORK_ITEM_FETCH_CONCURRENCY,
+  GitHubWorkItemRequestSlots
+} from './github-work-item-request-slots'
 import type {
   ClassifiedError,
   GitHubOwnerRepo,
@@ -418,9 +426,11 @@ export function projectViewCacheKey(
   projectNumber: number,
   resolvedViewId: string,
   queryOverride?: string,
-  sourceScope = 'local'
+  sourceScope = 'local',
+  host?: string
 ): string {
-  return `github-project:${sourceScope}:${ownerType}:${owner}:${projectNumber}:${resolvedViewId}${queryOverrideKeyPart(queryOverride)}`
+  const projectKey = githubProjectIdentityKey({ ownerType, owner, number: projectNumber, host })
+  return `github-project:${sourceScope}:${projectKey}:${resolvedViewId}${queryOverrideKeyPart(queryOverride)}`
 }
 
 function projectViewRequestKey(args: GetProjectViewTableArgs, sourceScope: string): string {
@@ -432,7 +442,13 @@ function projectViewRequestKey(args: GetProjectViewTableArgs, sourceScope: strin
       : args.viewName
         ? `name:${args.viewName}`
         : 'default'
-  return `${sourceScope}:${args.ownerType}:${args.owner}:${args.projectNumber}:${selector}${queryOverrideKeyPart(args.queryOverride)}`
+  const projectKey = githubProjectIdentityKey({
+    ownerType: args.ownerType,
+    owner: args.owner,
+    number: args.projectNumber,
+    host: args.host
+  })
+  return `${sourceScope}:${projectKey}:${selector}${queryOverrideKeyPart(args.queryOverride)}`
 }
 
 function projectViewSourceScope(settings: AppState['settings']): string {
@@ -688,28 +704,15 @@ export function _clearGitHubPRRefreshStartedEntriesForTest(): void {
   prRefreshStartedHostedReviewEntries.clear()
 }
 
-// Why: cap fan-out at the renderer boundary (main-side gate is behind IPC, can't stop a stampede in time); 8 balances responsiveness vs gh rate limits.
-const WORK_ITEM_FETCH_CONCURRENCY = 8
-let workItemFetchInFlight = 0
-const workItemFetchWaiters: (() => void)[] = []
+// Why: the main-side gate is behind IPC, so renderer fan-out must be bounded before promises retain every request.
+const workItemRequestSlots = new GitHubWorkItemRequestSlots()
 
-async function acquireWorkItemSlot(): Promise<void> {
-  if (workItemFetchInFlight < WORK_ITEM_FETCH_CONCURRENCY) {
-    workItemFetchInFlight += 1
-    return
-  }
-  await new Promise<void>((resolve) => workItemFetchWaiters.push(resolve))
-  // Why: the resolver already claimed the slot on our behalf, so don't re-increment here.
+function acquireWorkItemSlot(): Promise<void> {
+  return workItemRequestSlots.acquire()
 }
 
 function releaseWorkItemSlot(): void {
-  const next = workItemFetchWaiters.shift()
-  if (next) {
-    // Hand the slot off directly (net count unchanged) so a third caller can't race into the cap between decrement and resolve.
-    next()
-    return
-  }
-  workItemFetchInFlight -= 1
+  workItemRequestSlots.release()
 }
 
 export function workItemsCacheKey(
@@ -859,7 +862,7 @@ function evictRepoCacheEntries<T>(
 }
 
 function normalizedRepoIdentity(repo: GitHubOwnerRepo): string {
-  return `${repo.owner.toLowerCase()}/${repo.repo.toLowerCase()}`
+  return githubRepoIdentityKey(repo)
 }
 
 function normalizedHeadSha(headSha?: string): string | null {
@@ -1323,6 +1326,15 @@ function syncHostedReviewCacheFromGitHubPRResult(args: {
   if (!args.pr && !shouldClearHostedReviewForNoGitHubPR(hostedReviewEntry)) {
     return { cache: args.cache, accepted: hostedReviewEntry?.data == null }
   }
+  // Why: hosted-review fallbacks may be stale exact links; inherit branch provenance only when already proven.
+  const branchLookupGitHubPRNumber =
+    args.pr &&
+    args.linkedPRNumber == null &&
+    (args.fallbackPRSource !== 'hosted-review' ||
+      args.pr.number !== args.fallbackPRNumber ||
+      hostedReviewEntry?.branchLookupGitHubPRNumber === args.pr.number)
+      ? args.pr.number
+      : undefined
   return {
     cache: {
       ...args.cache,
@@ -1331,7 +1343,8 @@ function syncHostedReviewCacheFromGitHubPRResult(args: {
         fetchedAt: args.fetchedAt,
         linkedReviewHintKey: args.pr
           ? linkedReviewHintKey({ linkedGitHubPR: args.pr.number })
-          : linkedReviewHintKeyForNoGitHubPR(hostedReviewEntry)
+          : linkedReviewHintKeyForNoGitHubPR(hostedReviewEntry),
+        ...(branchLookupGitHubPRNumber !== undefined ? { branchLookupGitHubPRNumber } : {})
       }
     },
     accepted: true
@@ -2081,7 +2094,8 @@ export const createGitHubSlice: StateCreator<AppState, [], [], GitHubSlice> = (s
           args.projectNumber,
           args.viewId,
           args.queryOverride,
-          sourceScope
+          sourceScope,
+          args.host
         )
       : null
     if (!options?.force && maybeKnownKey) {
@@ -2121,7 +2135,8 @@ export const createGitHubSlice: StateCreator<AppState, [], [], GitHubSlice> = (s
             table.project.number,
             table.selectedView.id,
             args.queryOverride,
-            sourceScope
+            sourceScope,
+            table.project.host
           )
           set((s) => ({
             projectViewCache: withBoundedCacheEntry(s.projectViewCache, key, {
@@ -2207,6 +2222,7 @@ export const createGitHubSlice: StateCreator<AppState, [], [], GitHubSlice> = (s
             'github.project.updateItemField',
             {
               projectId: table.project.id,
+              host: table.project.host,
               itemId: rowId,
               fieldId,
               value
@@ -2215,6 +2231,7 @@ export const createGitHubSlice: StateCreator<AppState, [], [], GitHubSlice> = (s
           )
         : await window.api.gh.updateProjectItemField({
             projectId: table.project.id,
+            host: table.project.host,
             itemId: rowId,
             fieldId,
             value
@@ -2265,6 +2282,7 @@ export const createGitHubSlice: StateCreator<AppState, [], [], GitHubSlice> = (s
             'github.project.clearItemField',
             {
               projectId: table.project.id,
+              host: table.project.host,
               itemId: rowId,
               fieldId
             },
@@ -2272,6 +2290,7 @@ export const createGitHubSlice: StateCreator<AppState, [], [], GitHubSlice> = (s
           )
         : await window.api.gh.clearProjectItemField({
             projectId: table.project.id,
+            host: table.project.host,
             itemId: rowId,
             fieldId
           })
@@ -2361,6 +2380,7 @@ export const createGitHubSlice: StateCreator<AppState, [], [], GitHubSlice> = (s
         get(),
         owner,
         repo,
+        table.project.host,
         settingsForProjectViewCacheKey(get().settings, cacheKey)
       )
     )
@@ -2371,6 +2391,7 @@ export const createGitHubSlice: StateCreator<AppState, [], [], GitHubSlice> = (s
       const args = {
         owner,
         repo,
+        host: table.project.host,
         number,
         updates: {
           ...(updates.title !== undefined ? { title: updates.title } : {}),
@@ -2402,6 +2423,7 @@ export const createGitHubSlice: StateCreator<AppState, [], [], GitHubSlice> = (s
       const args = {
         owner,
         repo,
+        host: table.project.host,
         number,
         updates: {
           ...(updates.title !== undefined ? { title: updates.title } : {}),
@@ -2488,12 +2510,14 @@ export const createGitHubSlice: StateCreator<AppState, [], [], GitHubSlice> = (s
         get(),
         owner,
         repo,
+        table.project.host,
         settingsForProjectViewCacheKey(get().settings, cacheKey)
       )
     )
     const args = {
       owner,
       repo,
+      host: table.project.host,
       number,
       issueTypeId: issueType?.id ?? null
     }
@@ -2629,8 +2653,10 @@ export const createGitHubSlice: StateCreator<AppState, [], [], GitHubSlice> = (s
     }
 
     const request = (async () => {
-      await acquireWorkItemSlot()
+      let acquiredSlot = false
       try {
+        await acquireWorkItemSlot()
+        acquiredSlot = true
         const envelope = await listGitHubWorkItemsForRepo(requestContext, {
           limit,
           query: query || undefined,
@@ -2682,7 +2708,9 @@ export const createGitHubSlice: StateCreator<AppState, [], [], GitHubSlice> = (s
         }
         throw err
       } finally {
-        releaseWorkItemSlot()
+        if (acquiredSlot) {
+          releaseWorkItemSlot()
+        }
         inflightWorkItemsRequests.delete(inflightKey)
       }
     })()
@@ -2704,8 +2732,10 @@ export const createGitHubSlice: StateCreator<AppState, [], [], GitHubSlice> = (s
     let requestFailureCount = 0
     let unavailableFailureCount = 0
     let skippedSourceCount = 0
-    const perProjectResults = await Promise.all(
-      repos.map(async (r) => {
+    const perProjectResults = await mapWithConcurrency(
+      repos,
+      GITHUB_WORK_ITEM_FETCH_CONCURRENCY,
+      async (r) => {
         try {
           return await state.fetchWorkItems(r.repoId, r.path, perRepoLimit, query, {
             ...options,
@@ -2740,7 +2770,7 @@ export const createGitHubSlice: StateCreator<AppState, [], [], GitHubSlice> = (s
           failedCount += 1
           return [] as GitHubWorkItem[]
         }
-      })
+      }
     )
     const merged = sortWorkItemsByNumber(perProjectResults.flat()).slice(0, displayLimit)
     // Why: only claim global unavailability when every eligible source failed for a reachability reason; skipped SSH repos aren't GitHub sources here.
@@ -2756,24 +2786,28 @@ export const createGitHubSlice: StateCreator<AppState, [], [], GitHubSlice> = (s
       return { items: [], failedCount: 0 }
     }
     let failedCount = 0
-    const perProjectResults = await Promise.all(
-      repos.map(async (r) => {
-        const requestState = get()
-        const repo = findRepoForGitHubOwner(requestState, r.repoId, r.path)
-        const requestSettings = getGitHubWorkItemSourceSettings(
-          requestState.settings,
-          repo,
-          r.sourceContext
-        )
-        const requestContext = getGitHubWorkItemRequestContext(
-          requestState,
-          requestSettings,
-          r.repoId,
-          r.path,
-          r.sourceContext
-        )
-        await acquireWorkItemSlot()
+    const perProjectResults = await mapWithConcurrency(
+      repos,
+      GITHUB_WORK_ITEM_FETCH_CONCURRENCY,
+      async (r) => {
+        let acquiredSlot = false
         try {
+          await acquireWorkItemSlot()
+          acquiredSlot = true
+          const requestState = get()
+          const repo = findRepoForGitHubOwner(requestState, r.repoId, r.path)
+          const requestSettings = getGitHubWorkItemSourceSettings(
+            requestState.settings,
+            repo,
+            r.sourceContext
+          )
+          const requestContext = getGitHubWorkItemRequestContext(
+            requestState,
+            requestSettings,
+            r.repoId,
+            r.path,
+            r.sourceContext
+          )
           const envelope = await listGitHubWorkItemsForRepo(requestContext, {
             limit: perRepoLimit,
             query: query || undefined,
@@ -2795,9 +2829,11 @@ export const createGitHubSlice: StateCreator<AppState, [], [], GitHubSlice> = (s
           failedCount += 1
           return [] as GitHubWorkItem[]
         } finally {
-          releaseWorkItemSlot()
+          if (acquiredSlot) {
+            releaseWorkItemSlot()
+          }
         }
-      })
+      }
     )
     const merged = sortWorkItemsByNumber(perProjectResults.flat()).slice(0, displayLimit)
     return { items: merged, failedCount }
@@ -2808,11 +2844,15 @@ export const createGitHubSlice: StateCreator<AppState, [], [], GitHubSlice> = (s
       return { totalCount: 0, totalPages: 0 }
     }
     const normalizedLimit = Math.max(1, Math.floor(perRepoLimit))
-    const counts = await Promise.all(
-      repos.map(async (r) => {
+    const counts = await mapWithConcurrency(
+      repos,
+      GITHUB_WORK_ITEM_FETCH_CONCURRENCY,
+      async (r) => {
         // Why: same stampede cap as item-fetch — without a slot a 90-repo selection fires 90 concurrent count IPCs before the main-side rate-limit guard sees the first 403.
-        await acquireWorkItemSlot()
+        let acquiredSlot = false
         try {
+          await acquireWorkItemSlot()
+          acquiredSlot = true
           const requestState = get()
           const repo = findRepoForGitHubOwner(requestState, r.repoId, r.path)
           const requestSettings = getGitHubWorkItemSourceSettings(
@@ -2831,9 +2871,11 @@ export const createGitHubSlice: StateCreator<AppState, [], [], GitHubSlice> = (s
         } catch {
           return 0
         } finally {
-          releaseWorkItemSlot()
+          if (acquiredSlot) {
+            releaseWorkItemSlot()
+          }
         }
-      })
+      }
     )
     return {
       totalCount: counts.reduce((sum, count) => sum + count, 0),
@@ -3807,7 +3849,12 @@ export const createGitHubSlice: StateCreator<AppState, [], [], GitHubSlice> = (s
           ? await callRuntimeRpc<boolean>(
               { kind: 'environment', environmentId: requestContext.target.environmentId },
               'github.resolveReviewThread',
-              { repo: requestContext.target.runtimeRepoId, threadId, resolve },
+              {
+                repo: requestContext.target.runtimeRepoId,
+                threadId,
+                resolve,
+                prRepo: options?.prRepo ?? null
+              },
               { timeoutMs: 30_000 }
             )
           : await window.api.gh.resolveReviewThread({
@@ -3815,6 +3862,7 @@ export const createGitHubSlice: StateCreator<AppState, [], [], GitHubSlice> = (s
               repoId,
               threadId,
               resolve,
+              prRepo: options?.prRepo ?? null,
               sourceContext: options?.sourceContext
             })
     } catch (err) {
@@ -3868,14 +3916,18 @@ export const createGitHubSlice: StateCreator<AppState, [], [], GitHubSlice> = (s
 
   reportVisibleGitHubPRRefreshCandidates: (worktreeIds, generation) => {
     const state = get()
-    const candidates = worktreeIds
-      .map((id) => {
-        const worktree = findWorktreeById(state, id)
-        return worktree ? buildPRRefreshCandidate(state, worktree) : null
-      })
-      .filter((candidate): candidate is GitHubPRRefreshCandidate => candidate !== null)
     const localCandidates: GitHubPRRefreshCandidate[] = []
-    for (const candidate of candidates) {
+    let candidateCount = 0
+    for (const id of worktreeIds) {
+      const worktree = findWorktreeById(state, id)
+      if (!worktree) {
+        continue
+      }
+      const candidate = buildPRRefreshCandidate(state, worktree)
+      if (!candidate) {
+        continue
+      }
+      candidateCount += 1
       if (getPRRefreshRuntimeRepoTarget(state, candidate)) {
         void get().fetchPRForBranch(candidate.repoPath, candidate.branch, {
           repoId: candidate.repoId,
@@ -3884,10 +3936,11 @@ export const createGitHubSlice: StateCreator<AppState, [], [], GitHubSlice> = (s
           fallbackPRNumber: candidate.fallbackPRNumber ?? null,
           fallbackPRSource: candidate.fallbackPRSource ?? null
         })
-        continue
-      }
-      if (shouldEnqueueLocalPRRefresh(candidate)) {
+      } else if (shouldEnqueueLocalPRRefresh(candidate)) {
         localCandidates.push(candidate)
+      }
+      if (candidateCount >= PR_REFRESH_VISIBLE_CANDIDATE_LIMIT) {
+        break
       }
     }
     const reportVisible = window.api.gh.reportVisiblePRRefreshCandidates

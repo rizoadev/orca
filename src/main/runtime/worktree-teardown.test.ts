@@ -375,6 +375,53 @@ describe('killAllProcessesForWorktree', () => {
     expect(localProvider.shutdown).toHaveBeenCalledTimes(1)
   })
 
+  it('accepts a failed Windows stop when a fresh inventory proves the PTY exited', async () => {
+    const worktreeId = 'repo-1::C:/Users/User/orca/workspaces/repo/feature'
+    const ptyId = `${worktreeId}@@windows-pty`
+    const stopTerminalsForWorktree = vi.fn(
+      async (
+        _worktreeId: string,
+        options: {
+          stopPty: (
+            ptyId: string,
+            stop: () => boolean
+          ) => Promise<{ stopped: boolean; owner: boolean }>
+        }
+      ) => ({
+        stopped: (await options.stopPty(ptyId, () => false)).owner ? 1 : 0
+      })
+    )
+    const runtime = {
+      stopTerminalsForWorktree
+    } as unknown as Parameters<typeof killAllProcessesForWorktree>[1]['runtime']
+    let inventoryCount = 0
+    const localProvider = createProviderStub(async () => {
+      inventoryCount += 1
+      return inventoryCount === 1
+        ? [{ id: ptyId, cwd: 'C:/Users/User/orca/workspaces/repo/feature', title: 'shell' }]
+        : []
+    })
+    ;(localProvider.shutdown as unknown as ReturnType<typeof vi.fn>).mockRejectedValue(
+      new Error(`Session not found: ${ptyId}`)
+    )
+    listRegisteredPtysMock.mockReturnValue([
+      { ptyId, worktreeId, sessionId: null, paneKey: null, pid: 100 }
+    ])
+
+    await expect(
+      killAllProcessesForWorktree(worktreeId, {
+        runtime,
+        localProvider,
+        requirePhysicalStop: true
+      })
+    ).resolves.toEqual({
+      runtimeStopped: 0,
+      providerStopped: 0,
+      registryStopped: 0
+    })
+    expect(localProvider.listProcesses).toHaveBeenCalledTimes(2)
+  })
+
   it('keeps duplicate sweeps behind the runtime physical-stop promise', async () => {
     let releasePhysicalStop: () => void = () => undefined
     const physicalStop = new Promise<boolean>((resolve) => {
@@ -563,6 +610,25 @@ describe('killAllProcessesForWorktree', () => {
     listRegisteredPtysMock.mockReturnValue([])
 
     const result = await killAllProcessesForWorktree('w1', { runtime, localProvider })
+
+    expect(result.runtimeStopped).toBe(0)
+  })
+
+  it('tolerates an unresolved runtime selector during destructive removal', async () => {
+    // Why: a just-created/removed worktree can be absent from the runtime
+    // graph; that means zero runtime-owned PTYs, not a failed teardown.
+    const stopTerminalsForWorktree = vi.fn().mockRejectedValue(new Error('selector_not_found'))
+    const runtime = {
+      stopTerminalsForWorktree
+    } as unknown as Parameters<typeof killAllProcessesForWorktree>[1]['runtime']
+    const localProvider = createProviderStub(async () => [])
+    listRegisteredPtysMock.mockReturnValue([])
+
+    const result = await killAllProcessesForWorktree('w1', {
+      runtime,
+      localProvider,
+      requirePhysicalStop: true
+    })
 
     expect(result.runtimeStopped).toBe(0)
   })

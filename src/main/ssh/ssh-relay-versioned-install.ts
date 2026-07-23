@@ -5,7 +5,8 @@
 // See: docs/ssh-relay-versioned-install-dirs.md
 
 import { join } from 'node:path'
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync } from 'node:fs'
+import { readRelayVersionMarkerSync } from '../../shared/relay-version-marker'
 import type { SshConnection } from './ssh-connection'
 import { RELAY_REMOTE_DIR } from './relay-protocol'
 import { execCommand } from './ssh-relay-deploy-helpers'
@@ -26,6 +27,7 @@ import {
   removeRemoteTreeCommand,
   writeRemoteEmptyFileCommand
 } from './ssh-remote-commands'
+import { isRelayBaseDirectoryListingLimited } from './ssh-relay-base-directory-listing'
 import {
   getRemoteHostPlatform,
   isWindowsRemoteHost,
@@ -77,7 +79,7 @@ export function readLocalFullVersion(localRelayDir: string): string {
         `This usually indicates a packaging or build problem; reinstall Orca.`
     )
   }
-  const v = readFileSync(versionFile, 'utf-8').trim()
+  const v = readRelayVersionMarkerSync(versionFile)
   if (!v) {
     throw new Error(
       `Orca's local relay version marker at ${versionFile} is empty. ` +
@@ -104,9 +106,8 @@ export function computeRemoteRelayDir(
 }
 
 /**
- * Probe whether a fully-installed relay exists at remoteRelayDir — meaning
- * relay.js, its relay-watcher.js child, and the .install-complete sentinel are
- * all present. Missing artifacts force a complete re-deploy.
+ * Probe for relay.js, its watcher, the managed-hook runtime, and the
+ * completion sentinel. Any missing artifact forces a complete re-deploy.
  */
 export async function isRelayAlreadyInstalled(
   conn: SshConnection,
@@ -189,6 +190,9 @@ export async function gcOldRelayVersions(
   try {
     listing = await execHostCommand(conn, host, listRelayBaseDirsCommand(host, baseDir))
   } catch {
+    return
+  }
+  if (isRelayBaseDirectoryListingLimited(listing)) {
     return
   }
   const entries = listing

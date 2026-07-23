@@ -9,6 +9,11 @@ import type {
   HostedReviewProvider
 } from '../shared/hosted-review'
 import type { NativeFileDropPayload } from '../shared/native-file-drop'
+import type { DashboardSnapshot, DashboardRevealAgentArgs } from '../shared/dashboard-snapshot'
+import type {
+  TerminalPreviewConnectResult,
+  TerminalPreviewDataPayload
+} from '../shared/terminal-preview'
 import type {
   TerminalTabCloseRequest,
   TerminalTabCloseResponse
@@ -27,6 +32,8 @@ import type {
 } from '../shared/terminal-render-desync-evidence'
 import type { MobileRelayStatus } from '../shared/mobile-relay-status'
 import type { MobilePairingConnectionMode } from '../shared/mobile-pairing-connection-mode'
+import type { SshMutationExpectation } from '../shared/ssh-types'
+import type { RasterImageDimensions } from '../shared/raster-image-dimensions'
 import type {
   CreateLocalOrcaProfileArgs,
   CreateLocalOrcaProfileResult,
@@ -58,7 +65,10 @@ import type { TaskSourceContext } from '../shared/task-source-context'
 import type { LinearIssueAttributeFilter } from '../shared/linear-issue-attribute-filter'
 import type { ProjectExecutionRuntimeResolution } from '../shared/project-execution-runtime'
 import type { StartupCommandDelivery } from '../shared/codex-startup-delivery'
-import type { SleepingAgentLaunchConfig } from '../shared/agent-session-resume'
+import type {
+  AgentProviderSessionMetadata,
+  SleepingAgentLaunchConfig
+} from '../shared/agent-session-resume'
 import type {
   LocalhostWorktreeLabelResult,
   LocalhostWorktreeLabelRoute
@@ -258,6 +268,7 @@ import type {
   GetProjectViewTableResult,
   GitHubProjectCommentMutationResult,
   GitHubProjectMutationResult,
+  ListAccessibleProjectsArgs,
   ListAccessibleProjectsResult,
   ListAssignableUsersBySlugArgs,
   ListAssignableUsersBySlugResult,
@@ -327,7 +338,11 @@ import type {
 } from '../shared/commit-message-agent-spec'
 import type { ResolvedSourceControlAiGenerationParams } from '../shared/source-control-ai'
 import type { SourceControlAiSettings } from '../shared/source-control-ai-types'
-import type { ShellOpenLocalPathResult } from '../shared/shell-open-types'
+import type {
+  ShellOpenExternalEditorRequest,
+  ShellOpenExternalEditorResult,
+  ShellOpenLocalPathResult
+} from '../shared/shell-open-types'
 import type { SkillDiscoveryResult, SkillDiscoveryTarget } from '../shared/skills'
 import type { SkillFreshnessInventory } from '../shared/skill-freshness'
 import type {
@@ -340,7 +355,11 @@ import type {
   ReactErrorBoundaryReportResult
 } from '../shared/crash-reporting'
 
-export type { ShellOpenLocalPathResult } from '../shared/shell-open-types'
+export type {
+  ShellOpenExternalEditorRequest,
+  ShellOpenExternalEditorResult,
+  ShellOpenLocalPathResult
+} from '../shared/shell-open-types'
 
 type RuntimeEnvironmentSubscriptionHandle = {
   unsubscribe: () => void
@@ -433,6 +452,10 @@ import type {
   AiVaultSubagentListArgs,
   AiVaultSubagentListResult
 } from '../shared/ai-vault-types'
+import type {
+  AiVaultPrepareSessionResumeArgs,
+  AiVaultPrepareSessionResumeResult
+} from '../shared/ai-vault-resume-preparation'
 import type {
   AgentType,
   NativeChatMessage,
@@ -832,6 +855,9 @@ export type OpenCodeUsageApi = {
 
 export type AiVaultApi = {
   listSessions: (args?: AiVaultListArgs) => Promise<AiVaultListResult>
+  prepareSessionResume: (
+    args: AiVaultPrepareSessionResumeArgs
+  ) => Promise<AiVaultPrepareSessionResumeResult>
   /** Lists the Task subagent transcripts of one session, on demand. */
   listSubagentSessions: (args: AiVaultSubagentListArgs) => Promise<AiVaultSubagentListResult>
   /** Fires when any app window regains OS focus; returns an unsubscribe. */
@@ -1284,8 +1310,10 @@ export type PreloadApi = {
       cwd?: string
       cwdFallback?: 'worktree'
       env?: Record<string, string>
+      envToDelete?: string[]
       command?: string
       launchConfig?: SleepingAgentLaunchConfig
+      resumeProviderSession?: AgentProviderSessionMetadata
       launchToken?: string
       launchAgent?: TuiAgent
       startupCommandDelivery?: StartupCommandDelivery
@@ -1356,6 +1384,9 @@ export type PreloadApi = {
     publishTerminalViewAttributes: (attributes: TerminalViewAttributes) => void
     hasChildProcesses: (id: string) => Promise<boolean>
     getForegroundProcess: (id: string) => Promise<string | null>
+    inspectProcess: (
+      id: string
+    ) => Promise<{ foregroundProcess: string | null; hasChildProcesses: boolean }>
     confirmForegroundProcess: (id: string) => Promise<string | null>
     getCwd: (id: string) => Promise<string>
     getSize: (id: string) => Promise<{ cols: number; rows: number } | null>
@@ -1434,7 +1465,9 @@ export type PreloadApi = {
     onSideEffect: (callback: (batch: TerminalSideEffectBatch) => void) => () => void
     /** Title-only replay snapshot for (re)attach; attention facts never replay. */
     getSideEffectSnapshot: (id: string) => Promise<TerminalSideEffectBatch | null>
-    onExit: (callback: (data: { id: string; code: number }) => void) => () => void
+    onExit: (
+      callback: (data: { id: string; code: number; preserveRendererBinding?: boolean }) => void
+    ) => () => void
     onSerializeBufferRequest: (
       callback: (data: {
         requestId: string
@@ -1486,11 +1519,11 @@ export type PreloadApi = {
     repoSlug: (args: {
       repoPath: string
       repoId?: string
-    }) => Promise<{ owner: string; repo: string } | null>
+    }) => Promise<{ owner: string; repo: string; host?: string } | null>
     repoUpstream: (args: {
       repoPath: string
       repoId?: string
-    }) => Promise<{ owner: string; repo: string } | null>
+    }) => Promise<{ owner: string; repo: string; host?: string } | null>
     prForBranch: (args: {
       repoPath: string
       repoId?: string
@@ -1529,6 +1562,7 @@ export type PreloadApi = {
       repoId?: string
       owner: string
       repo: string
+      host?: string
       number: number
       type: 'issue' | 'pr'
     }) => Promise<Omit<GitHubWorkItem, 'repoId'> | null>
@@ -1547,6 +1581,7 @@ export type PreloadApi = {
     prFileContents: (
       args: GitHubRepoSelectorArgs & {
         prNumber: number
+        prRepo?: GitHubOwnerRepo | null
         path: string
         oldPath?: string
         status: GitHubPRFile['status']
@@ -1600,6 +1635,7 @@ export type PreloadApi = {
         prNumber: number
         headSha?: string
         failedOnly?: boolean
+        prRepo?: GitHubOwnerRepo | null
       }
     ) => Promise<{ ok: true; count: number } | { ok: false; error: string }>
     prComments: (args: {
@@ -1616,10 +1652,12 @@ export type PreloadApi = {
       sourceContext?: TaskSourceContext | null
       threadId: string
       resolve: boolean
+      prRepo?: GitHubOwnerRepo | null
     }) => Promise<boolean>
     setPRFileViewed: (
       args: GitHubRepoSelectorArgs & {
         prNumber: number
+        prRepo?: GitHubOwnerRepo | null
         pullRequestId: string
         path: string
         viewed: boolean
@@ -1651,18 +1689,21 @@ export type PreloadApi = {
       args: GitHubRepoSelectorArgs & {
         prNumber: number
         updates: { state: 'open' | 'closed' }
+        prRepo?: GitHubOwnerRepo | null
       }
     ) => Promise<{ ok: true } | { ok: false; error: string }>
     requestPRReviewers: (
       args: GitHubRepoSelectorArgs & {
         prNumber: number
         reviewers: string[]
+        prRepo?: GitHubOwnerRepo | null
       }
     ) => Promise<{ ok: true } | { ok: false; error: string }>
     removePRReviewers: (
       args: GitHubRepoSelectorArgs & {
         prNumber: number
         reviewers: string[]
+        prRepo?: GitHubOwnerRepo | null
       }
     ) => Promise<{ ok: true } | { ok: false; error: string }>
     updateIssue: (
@@ -1725,9 +1766,11 @@ export type PreloadApi = {
      */
     rateLimit: (args?: { force?: boolean }) => Promise<GetRateLimitResult>
     /** Explains scope_missing ProjectV2 failures — notably a shell `GITHUB_TOKEN` shadowing the keyring credential, where `gh auth refresh` is a no-op. */
-    diagnoseAuth: () => Promise<GhAuthDiagnostic>
+    diagnoseAuth: (args?: { host?: string }) => Promise<GhAuthDiagnostic>
     // ── ProjectV2 (GitHub Projects) ─────────────────────────────────
-    listAccessibleProjects: () => Promise<ListAccessibleProjectsResult>
+    listAccessibleProjects: (
+      args?: ListAccessibleProjectsArgs
+    ) => Promise<ListAccessibleProjectsResult>
     resolveProjectRef: (args: ResolveProjectRefArgs) => Promise<ResolveProjectRefResult>
     listProjectViews: (args: ListProjectViewsArgs) => Promise<ListProjectViewsResult>
     getProjectViewTable: (args: GetProjectViewTableArgs) => Promise<GetProjectViewTableResult>
@@ -2115,6 +2158,9 @@ export type PreloadApi = {
     /** Synchronous persisted-settings read for startup decisions that can't wait for async hydration. Blocking IPC — call sparingly. */
     getSync: () => GlobalSettings | null
     set: (args: Partial<GlobalSettings>) => Promise<GlobalSettings>
+    setActiveRuntimeEnvironmentPreference: (args: {
+      environmentId: string | null
+    }) => Promise<GlobalSettings>
     updatePRBotAuthorOverride: (args: { author: string; isBot: boolean }) => Promise<GlobalSettings>
     listFonts: () => Promise<string[]>
     previewGhosttyImport: () => Promise<GhosttyImportPreview>
@@ -2214,6 +2260,35 @@ export type PreloadApi = {
       }
     ) => Promise<OnboardingState>
   }
+  dashboard: {
+    openPopout: () => Promise<void>
+    publishSnapshot: (snapshot: DashboardSnapshot) => Promise<void>
+    getPopoutOpen: () => Promise<boolean>
+    onPopoutOpenChanged: (callback: (open: boolean) => void) => () => void
+    onSnapshotRequested: (callback: () => void) => () => void
+    onRevealAgent: (callback: (args: DashboardRevealAgentArgs) => void) => () => void
+    onAckAgent: (callback: (paneKey: string) => void) => () => void
+    requestSnapshot: () => Promise<void>
+    onSnapshot: (callback: (snapshot: DashboardSnapshot) => void) => () => void
+    revealAgent: (args: DashboardRevealAgentArgs) => Promise<void>
+    ackAgent: (paneKey: string) => Promise<void>
+  }
+  terminalPreview: {
+    connect: (
+      ptyId: string,
+      opts?: { scrollbackRows?: number }
+    ) => Promise<TerminalPreviewConnectResult>
+    input: (ptyId: string, data: string) => Promise<boolean>
+    /** Claim the PTY grid for the preview dialog; resolves to the size actually in effect. */
+    fit: (
+      ptyId: string,
+      cols: number,
+      rows: number
+    ) => Promise<{ cols: number; rows: number } | null>
+    ack: (ptyId: string, bytes: number) => Promise<void>
+    unsubscribe: (ptyId: string) => Promise<void>
+    onData: (callback: (payload: TerminalPreviewDataPayload) => void) => () => void
+  }
   developerPermissions: {
     getStatus: () => Promise<DeveloperPermissionState[]>
     request: (args: { id: DeveloperPermissionId }) => Promise<DeveloperPermissionRequestResult>
@@ -2229,7 +2304,9 @@ export type PreloadApi = {
   shell: {
     openPath: (path: string) => Promise<void>
     openInFileManager: (path: string) => Promise<ShellOpenLocalPathResult>
-    openInExternalEditor: (path: string, command?: string) => Promise<ShellOpenLocalPathResult>
+    openInExternalEditor: (
+      request: ShellOpenExternalEditorRequest
+    ) => Promise<ShellOpenExternalEditorResult>
     openUrl: (url: string) => Promise<void>
     openFilePath: (path: string) => Promise<boolean>
     openFileUri: (uri: string) => Promise<void>
@@ -2414,6 +2491,7 @@ export type PreloadApi = {
       isBinary: boolean
       isImage?: boolean
       mimeType?: string
+      imageDimensions?: RasterImageDimensions
       fileIdentity?: string
     }>
     readLocalLogTail: (args: LocalLogTailReadArgs) => Promise<LocalLogTailReadResult>
@@ -2450,20 +2528,32 @@ export type PreloadApi = {
       rootPath: string
       connectionId?: string
     }) => Promise<MarkdownDocument[]>
-    writeFile: (args: { filePath: string; content: string; connectionId?: string }) => Promise<void>
-    createFile: (args: { filePath: string; connectionId?: string }) => Promise<void>
-    createDir: (args: { dirPath: string; connectionId?: string }) => Promise<void>
-    rename: (args: { oldPath: string; newPath: string; connectionId?: string }) => Promise<void>
-    copy: (args: {
-      sourcePath: string
-      destinationPath: string
-      connectionId?: string
-    }) => Promise<void>
-    deletePath: (args: {
-      targetPath: string
-      connectionId?: string
-      recursive?: boolean
-    }) => Promise<void>
+    writeFile: (
+      args: { filePath: string; content: string; connectionId?: string } & SshMutationExpectation
+    ) => Promise<void>
+    createFile: (
+      args: { filePath: string; connectionId?: string } & SshMutationExpectation
+    ) => Promise<void>
+    createDir: (
+      args: { dirPath: string; connectionId?: string } & SshMutationExpectation
+    ) => Promise<void>
+    rename: (
+      args: { oldPath: string; newPath: string; connectionId?: string } & SshMutationExpectation
+    ) => Promise<void>
+    copy: (
+      args: {
+        sourcePath: string
+        destinationPath: string
+        connectionId?: string
+      } & SshMutationExpectation
+    ) => Promise<void>
+    deletePath: (
+      args: {
+        targetPath: string
+        connectionId?: string
+        recursive?: boolean
+      } & SshMutationExpectation
+    ) => Promise<void>
     authorizeExternalPath: (args: { targetPath: string }) => Promise<void>
     stat: (args: {
       filePath: string
@@ -2478,12 +2568,14 @@ export type PreloadApi = {
     }) => Promise<string[]>
     cancelListFiles: (args: { requestToken: string }) => Promise<void>
     search: (args: SearchOptions & { connectionId?: string }) => Promise<SearchResult>
-    importExternalPaths: (args: {
-      sourcePaths: string[]
-      destDir: string
-      connectionId?: string
-      ensureDir?: boolean
-    }) => Promise<{
+    importExternalPaths: (
+      args: {
+        sourcePaths: string[]
+        destDir: string
+        connectionId?: string
+        ensureDir?: boolean
+      } & SshMutationExpectation
+    ) => Promise<{
       results: (
         | {
             sourcePath: string
@@ -2528,11 +2620,13 @@ export type PreloadApi = {
           }
       )[]
     }>
-    resolveDroppedPathsForAgent: (args: {
-      paths: string[]
-      worktreePath: string
-      connectionId?: string
-    }) => Promise<{
+    resolveDroppedPathsForAgent: (
+      args: {
+        paths: string[]
+        worktreePath: string
+        connectionId?: string
+      } & SshMutationExpectation
+    ) => Promise<{
       resolvedPaths: string[]
       skipped: {
         sourcePath: string
@@ -2841,6 +2935,7 @@ export type PreloadApi = {
         cwd?: string
         env?: Record<string, string>
         launchConfig?: SleepingAgentLaunchConfig
+        resumeProviderSession?: AgentProviderSessionMetadata
         launchToken?: string
         launchAgent?: TuiAgent
         viewMode?: 'terminal' | 'chat'
@@ -3023,6 +3118,7 @@ export type PreloadApi = {
       method: string
       params?: unknown
       timeoutMs?: number
+      expectedEnvironmentPairingRevision?: number
     }) => Promise<RuntimeRpcResponse<unknown>>
     subscribe: (
       args: {
@@ -3030,6 +3126,7 @@ export type PreloadApi = {
         method: string
         params?: unknown
         timeoutMs?: number
+        expectedEnvironmentPairingRevision?: number
       },
       callbacks: {
         onResponse: (response: RuntimeRpcResponse<unknown>) => void
@@ -3250,6 +3347,10 @@ export type PreloadApi = {
     isWebSocketReady: () => Promise<{ ready: boolean; endpoint: string | null }>
     getRelayStatus: () => Promise<{ status: MobileRelayStatus }>
     onRelayStatusChanged: (callback: (status: MobileRelayStatus) => void) => () => void
+    /** Consumes an auth-failure notification that arrived before the renderer listener mounted. */
+    consumePendingUnpairedDeviceAuthFailure?: () => Promise<boolean>
+    /** Fires (throttled, once per session) when an unpaired phone repeatedly fails direct-transport auth. */
+    onUnpairedDeviceAuthFailure?: (callback: () => void) => () => void
   }
   speech: {
     getCatalog: () => Promise<SpeechModelManifest[]>

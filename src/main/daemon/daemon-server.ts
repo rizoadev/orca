@@ -4,7 +4,12 @@ import { randomUUID } from 'node:crypto'
 import { performance } from 'node:perf_hooks'
 import { writeFileSync, chmodSync } from 'node:fs'
 import { StringDecoder } from 'node:string_decoder'
-import { encodeNdjson, createNdjsonParser } from './ndjson'
+import {
+  DAEMON_HANDSHAKE_MAX_LINE_BYTES,
+  encodeBoundedNdjson,
+  encodeNdjson,
+  createNdjsonParser
+} from './ndjson'
 import { TerminalHost } from './terminal-host'
 import { DaemonStreamDataBatcher } from './daemon-stream-data-batcher'
 import {
@@ -22,7 +27,6 @@ import { checkPtySpawnHealth } from './pty-subprocess'
 import { createNoopDaemonFileLog, type DaemonFileLog } from './daemon-file-log'
 import { isTuiAgent } from '../../shared/tui-agent-config'
 import { parsePtyStartupIngressIntent } from '../../shared/pty-startup-ingress'
-import { isNativeWindowsLocalPtySpawn } from '../runtime/terminal-model-query-authority'
 import { unlinkOwnedDaemonPidFile, unlinkOwnedDaemonTokenFile } from './daemon-spawner'
 import {
   CLEAN_DISCONNECT_PROTOCOL_VERSION,
@@ -33,6 +37,31 @@ import {
   type HelloMessage,
   type DaemonRequest
 } from './types'
+import {
+  isAgentSessionExecutionClaim,
+  isAgentSessionSurfaceBinding
+} from '../../shared/agent-session-host-authority'
+import {
+  DAEMON_CONTROL_SOCKET_MAX_BUFFERED_BYTES,
+  DAEMON_HANDSHAKE_TIMEOUT_MS,
+  DAEMON_MAX_ACTIVE_REQUEST_BYTES,
+  DAEMON_MAX_ACTIVE_REQUEST_BYTES_PER_CLIENT,
+  DAEMON_MAX_ACTIVE_REQUESTS,
+  DAEMON_MAX_ACTIVE_REQUESTS_PER_CLIENT,
+  DAEMON_MAX_CONTROL_CLIENTS,
+  DAEMON_MAX_STREAM_ATTACHMENTS,
+  DAEMON_MAX_TRANSPORT_SOCKETS,
+  daemonHelloAdmissionError,
+  daemonRequestAdmissionError,
+  getBoundedDaemonRequestId
+} from './daemon-admission-limits'
+import {
+  DAEMON_CONTROL_PROCESS_MAX_BUFFERED_BYTES,
+  DAEMON_MAX_ACTIVE_RESPONSE_BYTES,
+  DAEMON_MAX_ACTIVE_RESPONSE_BYTES_PER_CLIENT,
+  DAEMON_MAX_RESPONSE_BYTES,
+  daemonResponseReservationBytes
+} from './daemon-response-admission'
 
 export type DaemonServerOptions = {
   socketPath: string
@@ -54,6 +83,9 @@ export type DaemonServerOptions = {
   }
   ptySpawnHealthCheck?: () => Promise<void>
   preparePtySpawn?: () => Promise<void>
+  // Why: login-session death detection (#7936) probes on PTY-exit bursts and fresh app connections.
+  onPtySessionExit?: (sessionId: string) => void
+  onAuthenticatedClientPair?: () => void
   log?: DaemonFileLog
   spawnSubprocess: (opts: {
     sessionId: string
@@ -71,10 +103,16 @@ type ConnectedClient = {
   controlSocket: Socket
   streamSocket: Socket | null
   authenticatedPairEstablished: boolean
+  activeRequestCount: number
+  activeRequestBytes: number
+  activeResponseBytes: number
 }
 
 type PendingPtySpawnPreparation = {
   canceled: boolean
+  // Why: preparations are keyed by sessionId, but a control-socket close must
+  // cancel only the disconnecting client's preps, not another client's (F4).
+  clientId: string
 }
 
 type PendingShutdownReply = {
@@ -95,10 +133,14 @@ export class DaemonServer {
   private startedAtMs: number | null
   private protocolVersion: number
   private onIdleShutdown: () => void
+  private onAuthenticatedClientPair: () => void
   private ptySpawnHealthCheck: () => Promise<void>
   private preparePtySpawn: () => Promise<void>
   private log: DaemonFileLog
   private transportSockets = new Set<Socket>()
+  private activeRequestCount = 0
+  private activeRequestBytes = 0
+  private activeResponseBytes = 0
   private createOrAttachInFlight = 0
   private idleShutdownState: 'running' | 'idle-shutdown-pending' | 'shutting-down' = 'running'
   private initialAdoptionTimer: unknown | null = null
@@ -174,7 +216,11 @@ export class DaemonServer {
       now: () => Date.now()
     }
     this.token = randomUUID()
-    this.host = new TerminalHost({ spawnSubprocess: opts.spawnSubprocess })
+    this.onAuthenticatedClientPair = opts.onAuthenticatedClientPair ?? (() => {})
+    this.host = new TerminalHost({
+      spawnSubprocess: opts.spawnSubprocess,
+      ...(opts.onPtySessionExit ? { onSessionReaped: opts.onPtySessionExit } : {})
+    })
     this.ptySpawnHealthCheck = opts.ptySpawnHealthCheck ?? checkPtySpawnHealth
     this.preparePtySpawn = opts.preparePtySpawn ?? (() => Promise.resolve())
     this.stopStreamBacklogProbe = startDaemonStreamBacklogProbe(() => ({
@@ -290,6 +336,7 @@ export class DaemonServer {
     return (
       this.transportSockets.size === 0 &&
       this.clients.size === 0 &&
+      this.activeRequestCount === 0 &&
       this.createOrAttachInFlight === 0 &&
       this.host.listSessions().length === 0
     )
@@ -368,6 +415,12 @@ export class DaemonServer {
   }
 
   private handleConnection(socket: Socket): void {
+    socket.on('error', () => socket.destroy())
+    if (this.transportSockets.size >= DAEMON_MAX_TRANSPORT_SOCKETS) {
+      socket.destroy()
+      return
+    }
+
     this.cancelInitialAdoptionTimer()
     this.transportSockets.add(socket)
     const removeTransport = (): void => {
@@ -375,7 +428,6 @@ export class DaemonServer {
       this.reevaluateIdleShutdown()
     }
     socket.once('close', removeTransport)
-    socket.on('error', () => socket.destroy())
 
     if (this.idleShutdownState !== 'running') {
       // Why: a connection accepted just before close() gets an explicit retry signal instead of dying mid-auth.
@@ -389,45 +441,67 @@ export class DaemonServer {
       )
       return
     }
+
+    let handshakeComplete = false
+    const handshakeTimer = setTimeout(() => socket.destroy(), DAEMON_HANDSHAKE_TIMEOUT_MS)
+    handshakeTimer.unref()
+    socket.once('close', () => clearTimeout(handshakeTimer))
     // Why: keep UTF-8 sequences intact across socket chunks before NDJSON parsing.
     const decoder = new StringDecoder('utf8')
     const parser = createNdjsonParser(
-      (msg) => this.handleFirstMessage(socket, msg, parser),
+      (msg) => {
+        if (handshakeComplete) {
+          return
+        }
+        handshakeComplete = true
+        clearTimeout(handshakeTimer)
+        this.handleFirstMessage(socket, msg)
+      },
       () => {
         socket.destroy()
-      }
+      },
+      { maxLineBytes: DAEMON_HANDSHAKE_MAX_LINE_BYTES }
     )
 
     socket.on('data', (chunk) => parser.feed(decoder.write(chunk)))
   }
 
-  private handleFirstMessage(
-    socket: Socket,
-    msg: unknown,
-    _parser: ReturnType<typeof createNdjsonParser>
-  ): void {
-    const hello = msg as HelloMessage
-    if (hello.type !== 'hello') {
-      this.log.log('client-hello-rejected', { reason: 'expected-hello' })
-      socket.write(encodeNdjson({ type: 'hello', ok: false, error: 'Expected hello' }))
-      socket.destroy()
+  private handleFirstMessage(socket: Socket, msg: unknown): void {
+    const helloError = daemonHelloAdmissionError(msg)
+    if (helloError) {
+      this.log.log('client-hello-rejected', { reason: 'invalid-hello' })
+      this.rejectHello(socket, helloError)
       return
     }
+    const hello = msg as HelloMessage
 
     if (hello.version !== this.protocolVersion) {
       this.log.log('client-hello-rejected', {
         reason: 'protocol-mismatch',
         clientVersion: hello.version
       })
-      socket.write(encodeNdjson({ type: 'hello', ok: false, error: 'Protocol version mismatch' }))
-      socket.destroy()
+      this.rejectHello(socket, 'Protocol version mismatch')
       return
     }
 
     if (hello.token !== this.token) {
       this.log.log('client-hello-rejected', { reason: 'invalid-token', role: hello.role })
-      socket.write(encodeNdjson({ type: 'hello', ok: false, error: 'Invalid token' }))
-      socket.destroy()
+      this.rejectHello(socket, 'Invalid token')
+      return
+    }
+
+    const previous = hello.role === 'control' ? this.clients.get(hello.clientId) : undefined
+    const streamClient = hello.role === 'stream' ? this.clients.get(hello.clientId) : undefined
+    if (hello.role === 'control' && !previous && this.clients.size >= DAEMON_MAX_CONTROL_CLIENTS) {
+      this.rejectHello(socket, 'Daemon control-client capacity exceeded; reconnect', true)
+      return
+    }
+    if (
+      streamClient &&
+      streamClient.streamSocket === null &&
+      this.streamAttachmentCount() >= DAEMON_MAX_STREAM_ATTACHMENTS
+    ) {
+      this.rejectHello(socket, 'Daemon stream-attachment capacity exceeded; reconnect', true)
       return
     }
 
@@ -449,43 +523,69 @@ export class DaemonServer {
     )
 
     if (hello.role === 'control') {
-      const previous = this.clients.get(hello.clientId)
       const client: ConnectedClient = {
         clientId: hello.clientId,
         controlSocket: socket,
         streamSocket: null,
-        authenticatedPairEstablished: false
+        authenticatedPairEstablished: false,
+        activeRequestCount: 0,
+        activeRequestBytes: 0,
+        activeResponseBytes: 0
       }
       this.clients.set(hello.clientId, client)
       this.setupControlSocket(socket, hello.clientId)
       if (previous) {
+        // Why: reconnect reuses clientId before stale close fires; cancel the old owner's preflight at handoff.
+        this.cancelPendingPtySpawnPreparationsForClient(hello.clientId)
         this.recordFullyAuthenticatedDisconnect(previous.authenticatedPairEstablished)
         // Why: tear down the old sockets after installing the new owner so a stale close can't delete the replacement.
         previous.streamSocket?.destroy()
         previous.controlSocket.destroy()
       }
-    } else if (hello.role === 'stream') {
-      const client = this.clients.get(hello.clientId)
-      if (!client) {
-        // Why: a stream socket is meaningless without its control socket; drop the orphan.
-        socket.destroy()
-        return
-      }
-      this.setupStreamSocket(socket, client)
-      client.authenticatedPairEstablished = true
+    } else if (streamClient) {
+      this.setupStreamSocket(socket, streamClient)
+      streamClient.authenticatedPairEstablished = true
+      // Why: one-shot health probes authenticate only a control socket; they are not fresh app activity.
+      this.onAuthenticatedClientPair()
       // A complete app connection (unlike a probe) re-owns the endpoint and cancels pending retirement.
       this.initialAdoptionDeadlineMs = null
       this.retirementRequested = false
       this.cancelInitialAdoptionTimer()
+    } else {
+      // Why: preserve the legacy authenticated handshake before dropping a stream with no owner.
+      socket.destroy()
     }
+  }
+
+  private rejectHello(socket: Socket, error: string, retryable = false): void {
+    socket.end(
+      encodeNdjson({
+        type: 'hello',
+        ok: false,
+        error,
+        ...(retryable ? { retryable: true } : {})
+      }),
+      () => socket.destroy()
+    )
+  }
+
+  private streamAttachmentCount(): number {
+    let count = 0
+    for (const client of this.clients.values()) {
+      if (client.streamSocket) {
+        count += 1
+      }
+    }
+    return count
   }
 
   private setupControlSocket(socket: Socket, clientId: string): void {
     // Why: decode as a UTF-8 stream so emoji/Unicode split across chunks isn't corrupted.
     const decoder = new StringDecoder('utf8')
     const parser = createNdjsonParser(
-      (msg) => this.handleRequest(socket, clientId, msg as DaemonRequest),
-      () => {} // Ignore parse errors
+      (msg, lineBytes) => this.dispatchRequest(socket, clientId, msg, lineBytes ?? 0),
+      () => socket.destroy(),
+      { includeLineBytes: true }
     )
 
     // Remove the initial data listener and replace with the RPC parser
@@ -497,6 +597,9 @@ export class DaemonServer {
       if (client?.controlSocket !== socket) {
         return
       }
+      // Why: a client that disconnects mid-preflight would otherwise still create
+      // its daemon PTY, orphaning a durable, unattached session — cancel its preps (F4).
+      this.cancelPendingPtySpawnPreparationsForClient(clientId)
       const wasFullyAuthenticated = client.authenticatedPairEstablished
       this.streamDataBatcher.clear(clientId)
       client.streamSocket?.destroy()
@@ -533,6 +636,8 @@ export class DaemonServer {
       if (this.clients.get(client.clientId) !== client || client.streamSocket !== socket) {
         return
       }
+      // Why: a preflight that outlives its output channel would create an unattached daemon PTY.
+      this.cancelPendingPtySpawnPreparationsForClient(client.clientId)
       this.streamDataBatcher.clear(client.clientId)
       client.streamSocket = null
     }
@@ -544,6 +649,86 @@ export class DaemonServer {
       // Why: replacing a stream socket must not leave the old channel alive and untracked.
       previous.destroy()
     }
+  }
+
+  private dispatchRequest(
+    socket: Socket,
+    clientId: string,
+    value: unknown,
+    lineBytes: number
+  ): void {
+    const client = this.clients.get(clientId)
+    if (!client || client.controlSocket !== socket) {
+      return
+    }
+
+    const requestId = getBoundedDaemonRequestId(value)
+    const admissionError = daemonRequestAdmissionError(value)
+    if (admissionError) {
+      this.writeRequestError(socket, requestId, admissionError)
+      return
+    }
+    const request = value as DaemonRequest
+    const responseReservationBytes = daemonResponseReservationBytes(request)
+    if (
+      client.activeRequestCount >= DAEMON_MAX_ACTIVE_REQUESTS_PER_CLIENT ||
+      this.activeRequestCount >= DAEMON_MAX_ACTIVE_REQUESTS ||
+      client.activeRequestBytes + lineBytes > DAEMON_MAX_ACTIVE_REQUEST_BYTES_PER_CLIENT ||
+      this.activeRequestBytes + lineBytes > DAEMON_MAX_ACTIVE_REQUEST_BYTES ||
+      client.activeResponseBytes + responseReservationBytes >
+        DAEMON_MAX_ACTIVE_RESPONSE_BYTES_PER_CLIENT ||
+      this.activeResponseBytes + responseReservationBytes > DAEMON_MAX_ACTIVE_RESPONSE_BYTES
+    ) {
+      this.writeRequestError(socket, request.id, 'Daemon request capacity exceeded; retry')
+      return
+    }
+
+    client.activeRequestCount += 1
+    client.activeRequestBytes += lineBytes
+    this.activeRequestCount += 1
+    this.activeRequestBytes += lineBytes
+    client.activeResponseBytes += responseReservationBytes
+    this.activeResponseBytes += responseReservationBytes
+    void this.handleRequest(socket, clientId, request).finally(() => {
+      client.activeRequestCount -= 1
+      client.activeRequestBytes -= lineBytes
+      this.activeRequestCount -= 1
+      this.activeRequestBytes -= lineBytes
+      client.activeResponseBytes -= responseReservationBytes
+      this.activeResponseBytes -= responseReservationBytes
+      this.reevaluateIdleShutdown()
+    })
+  }
+
+  private writeRequestError(socket: Socket, requestId: string | null, error: string): void {
+    if (!requestId || requestId.startsWith(NOTIFY_PREFIX)) {
+      return
+    }
+    this.writeControlMessage(socket, { id: requestId, ok: false, error })
+  }
+
+  private writeControlMessage(socket: Socket, message: unknown, onFlushed?: () => void): void {
+    const encoded = encodeBoundedNdjson(message, DAEMON_MAX_RESPONSE_BYTES)
+    const encodedBytes = Buffer.byteLength(encoded, 'utf8')
+    if (
+      socket.writableLength + encodedBytes > DAEMON_CONTROL_SOCKET_MAX_BUFFERED_BYTES ||
+      this.controlSocketBufferedBytes() + encodedBytes > DAEMON_CONTROL_PROCESS_MAX_BUFFERED_BYTES
+    ) {
+      socket.destroy()
+      return
+    }
+    socket.write(encoded, onFlushed)
+  }
+
+  private controlSocketBufferedBytes(): number {
+    let total = 0
+    for (const client of this.clients.values()) {
+      total += Math.max(0, client.controlSocket.writableLength)
+      if (total > DAEMON_CONTROL_PROCESS_MAX_BUFFERED_BYTES) {
+        break
+      }
+    }
+    return total
   }
 
   private async handleRequest(
@@ -559,19 +744,17 @@ export class DaemonServer {
         const pendingShutdown = this.pendingShutdownReplies.get(
           this.shutdownReplyKey(clientId, request.id)
         )
-        socket.write(encodeNdjson({ id: request.id, ok: true, payload: result }), () => {
+        this.writeControlMessage(socket, { id: request.id, ok: true, payload: result }, () => {
           pendingShutdown?.start()
         })
       }
     } catch (err) {
       if (!isNotify) {
-        socket.write(
-          encodeNdjson({
-            id: request.id,
-            ok: false,
-            error: err instanceof Error ? err.message : String(err)
-          })
-        )
+        this.writeControlMessage(socket, {
+          id: request.id,
+          ok: false,
+          error: err instanceof Error ? err.message : String(err)
+        })
       }
     }
   }
@@ -610,8 +793,8 @@ export class DaemonServer {
     this.pendingShutdownReplies.set(key, { start })
   }
 
-  private async preparePtySpawnUnlessCanceled(sessionId: string): Promise<void> {
-    const preparation: PendingPtySpawnPreparation = { canceled: false }
+  private async preparePtySpawnUnlessCanceled(sessionId: string, clientId: string): Promise<void> {
+    const preparation: PendingPtySpawnPreparation = { canceled: false, clientId }
     const pending = this.pendingPtySpawnPreparations.get(sessionId) ?? new Set()
     pending.add(preparation)
     this.pendingPtySpawnPreparations.set(sessionId, pending)
@@ -646,6 +829,16 @@ export class DaemonServer {
     }
   }
 
+  private cancelPendingPtySpawnPreparationsForClient(clientId: string): void {
+    for (const pending of this.pendingPtySpawnPreparations.values()) {
+      for (const preparation of pending) {
+        if (preparation.clientId === clientId) {
+          preparation.canceled = true
+        }
+      }
+    }
+  }
+
   private async routeRequest(clientId: string, request: DaemonRequest): Promise<unknown> {
     const client = this.clients.get(clientId)
 
@@ -660,9 +853,17 @@ export class DaemonServer {
         }
         this.createOrAttachInFlight++
         const p = request.payload
+        let routedSessionId = p.sessionId
         let result: Awaited<ReturnType<TerminalHost['createOrAttach']>>
         try {
-          await this.preparePtySpawnUnlessCanceled(p.sessionId)
+          if (
+            p.agentSessionEnsure !== undefined &&
+            (!isAgentSessionExecutionClaim(p.agentSessionEnsure.claim) ||
+              !isAgentSessionSurfaceBinding(p.agentSessionEnsure.surface))
+          ) {
+            throw new Error('agent_session_identity_required')
+          }
+          await this.preparePtySpawnUnlessCanceled(p.sessionId, clientId)
           result = await this.host.createOrAttach({
             sessionId: p.sessionId,
             cols: p.cols,
@@ -679,26 +880,24 @@ export class DaemonServer {
             terminalWindowsPowerShellImplementation: p.terminalWindowsPowerShellImplementation,
             shellReadySupported: p.shellReadySupported,
             historySeed: p.historySeed,
-            startupIngress: parsePtyStartupIngressIntent(p.startupIngress, {
-              allowWindowsEchoProjection: isNativeWindowsLocalPtySpawn({
-                connectionId: null,
-                cwd: p.cwd,
-                shellOverride: p.shellOverride
-              })
-            }),
+            startupIngress: parsePtyStartupIngressIntent(p.startupIngress),
             ...(p.shellReadyTimeoutMs !== undefined
               ? { shellReadyTimeoutMs: p.shellReadyTimeoutMs }
               : {}),
+            ...(p.agentSessionEnsure ? { agentSessionEnsure: p.agentSessionEnsure } : {}),
+            onSessionResolved: (sessionId) => {
+              routedSessionId = sessionId
+            },
             streamClient: {
               onData: (data, rawLength = data.length, transformed = false, seq) => {
                 // Scan BEFORE enqueue: the batcher may drop this chunk, but its facts must be captured regardless.
-                this.transientFactRelay.onSessionData(p.sessionId, data)
-                const lastInputAt = this.lastInputAtBySessionId.get(p.sessionId)
+                this.transientFactRelay.onSessionData(routedSessionId, data)
+                const lastInputAt = this.lastInputAtBySessionId.get(routedSessionId)
                 const isInteractiveOutput =
                   data.length <= DaemonServer.INTERACTIVE_OUTPUT_MAX_CHARS &&
                   lastInputAt !== undefined &&
                   performance.now() - lastInputAt <= DaemonServer.INTERACTIVE_OUTPUT_WINDOW_MS
-                this.streamDataBatcher.enqueue(clientId, p.sessionId, data, {
+                this.streamDataBatcher.enqueue(clientId, routedSessionId, data, {
                   flushImmediately: isInteractiveOutput,
                   flushMaxChars: DaemonServer.INTERACTIVE_OUTPUT_MAX_CHARS,
                   rawLength,
@@ -706,22 +905,22 @@ export class DaemonServer {
                   seq
                 })
               },
-              onExit: (code) => {
+              onExit: (code, incarnationId) => {
                 // Why: exit tears down renderer handlers, so it must ride the ordered queue behind final output.
-                this.log.log('session-exited', { sessionId: p.sessionId, code })
-                this.streamDataBatcher.enqueueControlEvent(clientId, p.sessionId, {
+                this.log.log('session-exited', { sessionId: routedSessionId, code })
+                this.streamDataBatcher.enqueueControlEvent(clientId, routedSessionId, {
                   type: 'event',
                   event: 'exit',
-                  sessionId: p.sessionId,
-                  payload: { code }
+                  sessionId: routedSessionId,
+                  payload: { code, incarnationId }
                 })
                 this.streamDataBatcher.flush(clientId)
                 recordDaemonStreamBacklogEvent('sessionExit', {
-                  sessionIdSuffix: p.sessionId.slice(-10)
+                  sessionIdSuffix: routedSessionId.slice(-10)
                 })
-                this.transientFactRelay.onSessionExit(p.sessionId)
-                this.streamClientIdBySessionId.delete(p.sessionId)
-                this.lastInputAtBySessionId.delete(p.sessionId)
+                this.transientFactRelay.onSessionExit(routedSessionId)
+                this.streamClientIdBySessionId.delete(routedSessionId)
+                this.lastInputAtBySessionId.delete(routedSessionId)
                 this.reevaluateIdleShutdown()
               }
             }
@@ -730,18 +929,19 @@ export class DaemonServer {
           this.createOrAttachInFlight--
           this.reevaluateIdleShutdown()
         }
-        this.streamClientIdBySessionId.set(p.sessionId, clientId)
+        routedSessionId = result.agentSessionEnsure?.owner.ptyId ?? p.sessionId
+        this.streamClientIdBySessionId.set(routedSessionId, clientId)
         // Why an attach-time marker: background resync can precede this attach, so scan suppression must start at the new stream's head.
-        if (this.transientFactRelay.isBackgrounded(p.sessionId)) {
-          this.streamDataBatcher.enqueueControlEvent(clientId, p.sessionId, {
+        if (this.transientFactRelay.isBackgrounded(routedSessionId)) {
+          this.streamDataBatcher.enqueueControlEvent(clientId, routedSessionId, {
             type: 'event',
             event: 'sessionBackgroundMarker',
-            sessionId: p.sessionId,
+            sessionId: routedSessionId,
             payload: { background: true }
           })
         }
         this.log.log(result.isNew ? 'session-created' : 'session-attached', {
-          sessionId: p.sessionId,
+          sessionId: routedSessionId,
           pid: result.pid
         })
         return {
@@ -749,15 +949,22 @@ export class DaemonServer {
           snapshot: result.snapshot,
           pid: result.pid,
           shellState: result.shellState,
+          incarnationId: result.incarnationId,
           ...(result.launchAgent ? { launchAgent: result.launchAgent } : {}),
           wslDistro: result.wslDistro,
-          ...(result.historySeeded !== undefined ? { historySeeded: result.historySeeded } : {})
+          ...(result.historySeeded !== undefined ? { historySeeded: result.historySeeded } : {}),
+          ...(result.agentSessionEnsure ? { agentSessionEnsure: result.agentSessionEnsure } : {})
         }
       }
 
       case 'cancelCreateOrAttach':
         this.cancelPendingPtySpawnPreparations(request.payload.sessionId)
         return {}
+
+      case 'closeStartupQueryAuthority':
+        return {
+          appliedSeq: this.host.closeStartupQueryAuthority(request.payload.sessionId)
+        }
 
       case 'write':
         try {
@@ -862,6 +1069,9 @@ export class DaemonServer {
       case 'getForegroundProcess':
         return { foregroundProcess: this.host.getForegroundProcess(request.payload.sessionId) }
 
+      case 'inspectProcess':
+        return this.host.inspectProcess(request.payload.sessionId)
+
       case 'confirmForegroundProcess':
         return {
           foregroundProcess: await this.host.confirmForegroundProcess(request.payload.sessionId)
@@ -880,6 +1090,7 @@ export class DaemonServer {
           authenticatedClient !== undefined &&
           authenticatedClient.streamSocket !== null &&
           this.clients.size === 1 &&
+          this.activeRequestCount <= 1 &&
           this.createOrAttachInFlight === 0 &&
           this.host.listSessions().length === 0 &&
           [...this.transportSockets].every(

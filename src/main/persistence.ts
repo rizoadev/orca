@@ -1,7 +1,6 @@
 /* eslint-disable max-lines -- Why: persistence keeps schema defaults, migration, and load/save/flush in one file so the storage contract reviews as a unit. */
 import { app, safeStorage } from 'electron'
 import {
-  readFileSync,
   writeFileSync,
   mkdirSync,
   existsSync,
@@ -48,6 +47,7 @@ import type {
   ProjectGroup,
   FolderWorkspace,
   SparsePreset,
+  PersistedMobileClientTabSelections,
   WorktreeMeta,
   WorktreeLineage,
   WorkspaceLineage,
@@ -77,6 +77,12 @@ import {
 } from '../shared/task-source-context'
 import type { MigrationUnsupportedPtyEntry } from '../shared/agent-status-types'
 import { MOBILE_PAIRING_USERDATA_FILES } from './runtime/mobile-pairing-files'
+import { normalizePersistedMobileClientTabSelections } from './runtime/client-session-tab-selection-persistence'
+import { sanitizeWorkspaceSessionTerminalRetirements } from './runtime/mobile-session-terminal-persistence-retirement'
+import {
+  removeRepoFromHostWorkspaceSessions,
+  removeRepoFromWorkspaceSession
+} from './orca-profiles/profile-project-session-state'
 import { hardenExistingSecureFile } from '../shared/secure-file'
 import {
   LEGACY_DEFAULT_SSH_RELAY_GRACE_PERIOD_SECONDS,
@@ -103,6 +109,7 @@ import {
 } from '../shared/constants'
 import { parseWorkspaceSession } from '../shared/workspace-session-schema'
 import { normalizeUsagePercentageDisplay } from '../shared/usage-percentage-display'
+import { normalizeStatusBarUsageMode } from '../shared/status-bar-usage-mode'
 import { isExistingPersistedProfile } from '../shared/project-order-manual-default-notice'
 import { resolveUsagePercentageDisplayChangeNoticeDismissed } from '../shared/usage-percentage-display-change-notice'
 import { normalizePRBotAuthorOverrides } from '../shared/pr-bot-author-overrides'
@@ -237,6 +244,19 @@ import {
 import { track } from './telemetry/client'
 import { getCohortAtEmit } from './telemetry/cohort-classifier'
 import { isStartupDiagnosticsEnabled, logStartupDiagnostic } from './startup/startup-diagnostics'
+import {
+  assertPersistedStateSecretWithinLimit,
+  encodePersistedStateJsonStringContent,
+  isPersistedStateFileCapacityError,
+  parsePersistedStateJsonBuffer,
+  readPersistedStateJsonFileSync,
+  readPersistedStateFileBytesSync,
+  replacePersistedStateJsonWithinLimit,
+  replacedPersistedStateJsonByteLength,
+  restorePersistedStateBackupSync,
+  stringifyPersistedStateWithinLimit,
+  updatePersistedStateHashWithJsonRange
+} from '../shared/persisted-state-file-bounds'
 
 function encrypt(plaintext: string): string {
   if (!plaintext || !safeStorage.isEncryptionAvailable()) {
@@ -263,10 +283,6 @@ function decrypt(ciphertext: string): string {
     )
     return ciphertext
   }
-}
-
-function encryptOptionalSecret(value: string | null | undefined): string | null {
-  return value ? encrypt(value) : null
 }
 
 function decryptOptionalSecret(value: string | null | undefined): string | null {
@@ -402,7 +418,7 @@ function gcStaleWorktreeMeta(state: PersistedState): number {
 
 function readGithubCacheSnapshot(dataFile: string): PersistedState['githubCache'] | null {
   try {
-    const parsed = JSON.parse(readFileSync(getGithubCacheFile(dataFile), 'utf-8')) as unknown
+    const { value: parsed } = readPersistedStateJsonFileSync<unknown>(getGithubCacheFile(dataFile))
     const isPlainRecord = (value: unknown): value is Record<string, unknown> =>
       typeof value === 'object' && value !== null && !Array.isArray(value)
     if (
@@ -2347,7 +2363,8 @@ function cloneWorkspaceSessionState(session: WorkspaceSessionState): WorkspaceSe
 
 function removeWorkspaceSessionOwner(
   session: WorkspaceSessionState | undefined,
-  ownerKey: string
+  ownerKey: string,
+  options: { advanceTerminalTopologyRevision?: boolean } = {}
 ): WorkspaceSessionState | undefined {
   if (!session) {
     return session
@@ -2361,6 +2378,30 @@ function removeWorkspaceSessionOwner(
     delete next.terminalLayoutsByTabId[tab.id]
     if (next.activeTabId === tab.id) {
       next.activeTabId = null
+    }
+  }
+  if (next.terminalPtyIncarnationsByPaneKey) {
+    const removedTabIds = new Set(removedTerminalTabs.map((tab) => tab.id))
+    next.terminalPtyIncarnationsByPaneKey = Object.fromEntries(
+      Object.entries(next.terminalPtyIncarnationsByPaneKey).filter(([paneKey]) => {
+        const separator = paneKey.lastIndexOf(':')
+        return separator < 1 || !removedTabIds.has(paneKey.slice(0, separator))
+      })
+    )
+  }
+  if (next.terminalSurfaceTombstonesByPaneKey) {
+    next.terminalSurfaceTombstonesByPaneKey = Object.fromEntries(
+      Object.entries(next.terminalSurfaceTombstonesByPaneKey).filter(
+        ([, tombstone]) => tombstone.worktreeId !== ownerKey
+      )
+    )
+  }
+  const repoId = getRepoIdFromWorktreeId(ownerKey)
+  const previousTopologyRevision = next.terminalTopologyRevisionByRepoId?.[repoId] ?? 0
+  if (options.advanceTerminalTopologyRevision) {
+    next.terminalTopologyRevisionByRepoId = {
+      ...next.terminalTopologyRevisionByRepoId,
+      [repoId]: previousTopologyRevision + 1
     }
   }
 
@@ -2536,11 +2577,10 @@ export class Store {
   private writeGeneration = 0
   // Why: after a profile transfer rewrites this file on disk, a late flush of stale in-memory state would resurrect the moved project.
   private writesFrozen = false
-  // Plaintext hash at last write, to skip no-op writes; not the payload, since encrypt() uses a random IV per call.
+  // Content hash at last write, to skip no-op writes; derived from the payload with encrypted blobs normalized back to plaintext (see buildStateToSave), since encrypt() uses a random IV per call.
   private lastWrittenStateHash: string | null = null
   private firstPendingSaveAt: number | null = null
   private githubCacheDirty = false
-  private gitUsernameCache = new Map<string, string>()
   private loadNeedsSave = false
   private settingsChangeListeners = new Set<
     (
@@ -2729,24 +2769,26 @@ export class Store {
     }
   }
 
-  private restoreFromBackup(dataFile: string): boolean {
+  private restoreFromBackup(dataFile: string): {
+    rejectedOversizedBackup: boolean
+    restored: boolean
+  } {
+    let rejectedOversizedBackup = false
     for (let i = 0; i < BACKUP_COUNT; i++) {
       const path = backupPath(dataFile, i)
       if (!existsSync(path)) {
         continue
       }
       try {
-        const raw = readFileSync(path, 'utf-8')
-        JSON.parse(raw)
-        mkdirSync(dirname(dataFile), { recursive: true })
-        writeFileSync(dataFile, raw, 'utf-8')
+        restorePersistedStateBackupSync(path, dataFile)
         console.warn(`[persistence] Recovered state from backup slot ${i}: ${path}`)
-        return true
+        return { rejectedOversizedBackup, restored: true }
       } catch (err) {
+        rejectedOversizedBackup ||= isPersistedStateFileCapacityError(err)
         console.error(`[persistence] Backup slot ${i} unusable, trying next:`, err)
       }
     }
-    return false
+    return { rejectedOversizedBackup, restored: false }
   }
 
   private load(allowBackupRecovery = true): PersistedState {
@@ -2758,16 +2800,17 @@ export class Store {
     })
 
     let result: PersistedState | null = null
+    let rejectedOversizedState = false
     try {
       if (fileExistedOnLoad) {
         const readStartedAt = performance.now()
-        const raw = readFileSync(dataFile, 'utf-8')
+        const { buffer } = readPersistedStateFileBytesSync(dataFile)
         logPersistenceStartupMilestone('persistence-read-done', {
-          bytes: Buffer.byteLength(raw),
+          bytes: buffer.byteLength,
           durationMs: Math.round(performance.now() - readStartedAt)
         })
         logPersistenceStartupMilestone('persistence-json-parse-start')
-        const parsed = JSON.parse(raw) as PersistedState
+        const parsed = parsePersistedStateJsonBuffer<PersistedState>(buffer)
         logPersistenceStartupMilestone('persistence-json-parse-done')
 
         // Why: secrets are stored encrypted via safeStorage; decrypt at the load boundary so the app sees plaintext.
@@ -2960,6 +3003,18 @@ export class Store {
         ) {
           this.loadNeedsSave = true
         }
+        // Why (#9537): migrate the indistinguishable legacy host default once so WSL-default users follow their runtime.
+        const localAccountRuntimeAlreadyMigrated =
+          parsed.settings?.localAccountRuntimeDefaultedToAutoForAllUsers === true
+        const migratedLocalAccountRuntime: GlobalSettings['localAccountRuntime'] =
+          localAccountRuntimeAlreadyMigrated
+            ? (parsed.settings?.localAccountRuntime ?? defaults.settings.localAccountRuntime)
+            : parsed.settings?.localAccountRuntime === 'wsl'
+              ? 'wsl'
+              : 'auto'
+        if (!localAccountRuntimeAlreadyMigrated) {
+          this.loadNeedsSave = true
+        }
         if (!autoRenameBranchFromWorkDefaultedOn) {
           this.loadNeedsSave = true
         }
@@ -2996,6 +3051,9 @@ export class Store {
             normalizedProjectGroups
           ),
           worktreeLineageById: parsed.worktreeLineageById ?? {},
+          mobileClientTabSelectionsByDeviceId: normalizePersistedMobileClientTabSelections(
+            parsed.mobileClientTabSelectionsByDeviceId
+          ),
           workspaceLineageByChildKey: normalizeWorkspaceLineageByChildKey(
             parsed.workspaceLineageByChildKey
           ),
@@ -3039,6 +3097,8 @@ export class Store {
             terminalMacOptionAsAlt: migratedOptionAsAlt,
             terminalMacOptionAsAltMigrated: true,
             localWindowsRuntimeDefault: migratedWindowsRuntimeDefault,
+            localAccountRuntime: migratedLocalAccountRuntime,
+            localAccountRuntimeDefaultedToAutoForAllUsers: true,
             floatingTerminalEnabled: migratedFloatingTerminalEnabled,
             floatingTerminalDefaultedForAllUsers: true,
             floatingTerminalCwd: migratedFloatingTerminalCwd,
@@ -3294,6 +3354,7 @@ export class Store {
         }
       }
     } catch (err) {
+      rejectedOversizedState = isPersistedStateFileCapacityError(err)
       console.error('[persistence] Failed to load primary state, trying backups:', err)
     }
 
@@ -3307,14 +3368,23 @@ export class Store {
         }
       }
       if (fileExistedOnLoad || hasBackup) {
-        if (this.restoreFromBackup(dataFile)) {
+        const recovery = this.restoreFromBackup(dataFile)
+        if (recovery.restored) {
           return this.load(false)
         }
+        rejectedOversizedState ||= recovery.rejectedOversizedBackup
         console.error('[persistence] No usable state file or backup found, using defaults')
       }
     }
 
     if (result === null) {
+      if (rejectedOversizedState) {
+        // Why: keep recoverable oversized bytes intact instead of replacing them with fallback defaults.
+        this.writesFrozen = true
+        console.error(
+          '[persistence] State exceeds the safe load limit; using defaults with state writes frozen'
+        )
+      }
       result = getDefaultPersistedState(homedir())
     }
 
@@ -3492,27 +3562,91 @@ export class Store {
     return durable
   }
 
-  private computeStateHash(): string {
-    return createHash('sha1').update(JSON.stringify(this.getDurableState())).digest('hex')
-  }
-
-  // Why: build payload synchronously so hash and serialized bytes reflect the same state tick (no await interleave).
-  private buildStateToSave(): string {
-    // Why: clone before encrypting secrets so in-memory this.state stays plaintext.
+  // Why: build payload synchronously so hash and serialized bytes reflect the same state tick (no await interleave). One full-state stringify serves both the on-disk payload and the no-op-write guard hash: each secret slot is serialized as a fresh unguessable sentinel, then sentinels are substituted to ciphertext for the payload and to plaintext for the hash. The hash is thus a pure function of plaintext state (skips a byte-identical rewrite) without a second stringify.
+  private buildStateToSave(): { payload: string; stateHash: string } {
+    // Why sentinels (not a blob/key string match): the substitution must be
+    // position-exact. A plain search for the ciphertext — or even for a
+    // `"key":"blob"` token — can be mimicked by user-controlled state (e.g. an
+    // agentDefaultEnv var named after a secret field, or a value equal to a
+    // ciphertext), which would substitute the wrong site and let two DISTINCT
+    // states normalize equal → a silently dropped write (data loss), reachable
+    // on deterministic-IV platforms (macOS/legacy-Linux OSCrypt). A per-slot
+    // random UUID can't occur anywhere else in the serialized state (the user
+    // sets their data before it is minted), so it appears exactly once.
+    const secretSubs: { sentinel: string; plaintext: string }[] = []
+    const replaceSecretWithSentinel = (plaintext: string): string => {
+      assertPersistedStateSecretWithinLimit(plaintext)
+      const sentinel = `orca-secret-slot-${randomUUID()}`
+      secretSubs.push({ sentinel, plaintext })
+      return sentinel
+    }
+    // Why: clone with sentinels so in-memory this.state stays plaintext.
     const stateToSave = {
       ...this.getDurableState(),
       settings: {
         ...this.state.settings,
-        opencodeSessionCookie: encrypt(this.state.settings.opencodeSessionCookie),
-        httpProxyUrl: encrypt(this.state.settings.httpProxyUrl ?? '')
+        opencodeSessionCookie: replaceSecretWithSentinel(this.state.settings.opencodeSessionCookie),
+        httpProxyUrl: replaceSecretWithSentinel(this.state.settings.httpProxyUrl ?? '')
       },
       ui: {
         ...this.state.ui,
-        browserKagiSessionLink: encryptOptionalSecret(this.state.ui.browserKagiSessionLink)
+        browserKagiSessionLink: this.state.ui.browserKagiSessionLink
+          ? replaceSecretWithSentinel(this.state.ui.browserKagiSessionLink)
+          : null
       }
     }
     // Why compact: ~20% fewer bytes and less serialize time; all readers JSON.parse so formatting is irrelevant.
-    return JSON.stringify(stateToSave)
+    // One full-state stringify; secret slots currently hold sentinels.
+    const { serialized, byteLength: serializedBytes } =
+      stringifyPersistedStateWithinLimit(stateToSave)
+    const preparedSecretSubs: {
+      escapedPlaintext: string
+      escapedSentinel: string
+      index: number
+      plaintext: string
+    }[] = []
+    let normalizedBytes = serializedBytes
+    for (const { sentinel, plaintext } of secretSubs) {
+      const escapedSentinel = encodePersistedStateJsonStringContent(sentinel)
+      const escapedPlaintext = encodePersistedStateJsonStringContent(plaintext)
+      const index = serialized.indexOf(escapedSentinel)
+      if (index === -1 || serialized.includes(escapedSentinel, index + escapedSentinel.length)) {
+        throw new Error('Persisted state secret sentinel is missing or ambiguous')
+      }
+      normalizedBytes = replacedPersistedStateJsonByteLength({
+        currentBytes: normalizedBytes,
+        search: escapedSentinel,
+        replacement: escapedPlaintext
+      })
+      preparedSecretSubs.push({ escapedPlaintext, escapedSentinel, index, plaintext })
+    }
+
+    const normalizedHash = createHash('sha1')
+    let normalizedOffset = 0
+    for (const { escapedPlaintext, escapedSentinel, index } of preparedSecretSubs.sort(
+      (left, right) => left.index - right.index
+    )) {
+      updatePersistedStateHashWithJsonRange(normalizedHash, serialized, normalizedOffset, index)
+      updatePersistedStateHashWithJsonRange(normalizedHash, escapedPlaintext)
+      normalizedOffset = index + escapedSentinel.length
+    }
+    updatePersistedStateHashWithJsonRange(normalizedHash, serialized, normalizedOffset)
+
+    let payload = serialized
+    let payloadBytes = serializedBytes
+    for (const { escapedSentinel, plaintext } of preparedSecretSubs) {
+      const escapedBlob = encodePersistedStateJsonStringContent(encrypt(plaintext))
+      const nextPayload = replacePersistedStateJsonWithinLimit({
+        serialized: payload,
+        currentBytes: payloadBytes,
+        search: escapedSentinel,
+        replacement: escapedBlob
+      })
+      payload = nextPayload.serialized
+      payloadBytes = nextPayload.byteLength
+    }
+    const stateHash = normalizedHash.digest('hex')
+    return { payload, stateHash }
   }
 
   // Why: async writes avoid blocking the main Electron thread on every debounced save.
@@ -3521,12 +3655,11 @@ export class Store {
       return
     }
     const gen = this.writeGeneration
-    const stateHash = this.computeStateHash()
+    const { payload, stateHash } = this.buildStateToSave()
     // Why: don't rewrite a byte-identical multi-MB file when state nets out to already-persisted.
     if (stateHash === this.lastWrittenStateHash) {
       return
     }
-    const payload = this.buildStateToSave()
     const dataFile = this.dataFile
     const dir = dirname(dataFile)
     await mkdir(dir, { recursive: true }).catch(() => {})
@@ -3566,7 +3699,7 @@ export class Store {
     if (this.writesFrozen) {
       return
     }
-    const stateHash = this.computeStateHash()
+    const { payload, stateHash } = this.buildStateToSave()
     // Why: matching hash means the file already holds this state; force overrides when an async rename may be racing past the gen check.
     if (!opts.force && stateHash === this.lastWrittenStateHash) {
       return
@@ -3577,8 +3710,6 @@ export class Store {
       mkdirSync(dir, { recursive: true })
     }
     const tmpFile = `${dataFile}.${process.pid}.${Date.now()}.${Math.random().toString(16).slice(2)}.tmp`
-
-    const payload = this.buildStateToSave()
 
     // Why: on any write/rename failure, remove the tmp file so shutdown crashes don't leak orphans.
     let renamed = false
@@ -3757,8 +3888,7 @@ export class Store {
     if (!repo) {
       return false
     }
-    const previous = this.gitUsernameCache.get(repo.path) ?? repo.gitUsername ?? ''
-    this.gitUsernameCache.set(repo.path, username)
+    const previous = repo.gitUsername ?? ''
     if (previous === username) {
       return false
     }
@@ -3839,8 +3969,10 @@ export class Store {
         ? { ...repo, projectGroupId: null }
         : repo
     )
+    const removedFolderWorkspaceKeys = new Set<string>()
     for (const workspace of this.state.folderWorkspaces ?? []) {
       if (deletedGroupIds.has(workspace.projectGroupId)) {
+        removedFolderWorkspaceKeys.add(folderWorkspaceKey(workspace.id))
         this.state.workspaceSession = removeWorkspaceSessionOwner(
           this.state.workspaceSession,
           folderWorkspaceKey(workspace.id)
@@ -3851,6 +3983,7 @@ export class Store {
     this.state.folderWorkspaces = (this.state.folderWorkspaces ?? []).filter(
       (workspace) => !deletedGroupIds.has(workspace.projectGroupId)
     )
+    this.pruneMobileClientTabSelections((worktreeId) => removedFolderWorkspaceKeys.has(worktreeId))
     this.scheduleSave()
     return true
   }
@@ -4000,6 +4133,7 @@ export class Store {
       folderWorkspaceKey(id)
     )!
     this.removeWorkspaceLineageForFolderParent(id)
+    this.pruneMobileClientTabSelections((worktreeId) => worktreeId === folderWorkspaceKey(id))
     this.scheduleSave()
     return true
   }
@@ -4096,6 +4230,11 @@ export class Store {
     // Why: presets are repo-scoped and unreachable once the repo is gone, so drop them with it.
     delete this.state.sparsePresetsByRepo[id]
     this.pruneWorktreeStateForRepo(id, null)
+    this.state.workspaceSession = removeRepoFromWorkspaceSession(this.state.workspaceSession, id)
+    this.state.workspaceSessionsByHostId = removeRepoFromHostWorkspaceSessions(
+      this.state.workspaceSessionsByHostId,
+      id
+    )
     this.scheduleSave()
   }
 
@@ -4112,6 +4251,21 @@ export class Store {
     this.syncProjectHostSetupCompatibilityState()
     // Why: prune only this host's worktree metas if the id survives elsewhere; otherwise prune everything (matches removeProject).
     this.pruneWorktreeStateForRepo(id, idStillPresent ? hostId : null)
+    if (!idStillPresent) {
+      this.state.workspaceSession = removeRepoFromWorkspaceSession(this.state.workspaceSession, id)
+      this.state.workspaceSessionsByHostId = removeRepoFromHostWorkspaceSessions(
+        this.state.workspaceSessionsByHostId,
+        id
+      )
+    } else if (parseExecutionHostId(hostId)?.kind === 'runtime') {
+      const session = this.state.workspaceSessionsByHostId?.[hostId]
+      if (session) {
+        this.state.workspaceSessionsByHostId = {
+          ...this.state.workspaceSessionsByHostId,
+          [hostId]: removeRepoFromWorkspaceSession(session, id)
+        }
+      }
+    }
     this.scheduleSave()
   }
 
@@ -4156,6 +4310,22 @@ export class Store {
       }
       if (parentScope?.type === 'worktree' && belongsToHost(parentScope.worktreeId)) {
         delete this.state.workspaceLineageByChildKey[childKey as WorkspaceKey]
+      }
+    }
+    this.pruneMobileClientTabSelections(belongsToHost)
+  }
+
+  private pruneMobileClientTabSelections(matchesWorktreeId: (worktreeId: string) => boolean): void {
+    for (const [clientNavigationId, selectionsByWorktree] of Object.entries(
+      this.state.mobileClientTabSelectionsByDeviceId ?? {}
+    )) {
+      for (const worktreeId of Object.keys(selectionsByWorktree)) {
+        if (matchesWorktreeId(worktreeId)) {
+          delete selectionsByWorktree[worktreeId]
+        }
+      }
+      if (Object.keys(selectionsByWorktree).length === 0) {
+        delete this.state.mobileClientTabSelectionsByDeviceId?.[clientNavigationId]
       }
     }
   }
@@ -4370,9 +4540,7 @@ export class Store {
     const projectHostSetupMethod = sanitizeRepoProjectHostSetupMethod(rawProjectHostSetupMethod)
     const forkSyncMode = sanitizeForkSyncMode(rawForkSyncMode)
     // Why: never spawn git/gh username resolution in hydration — a stuck probe froze Windows startup for minutes (issue #7225); read only cache/persisted value.
-    const gitUsername = isFolderRepo(repo)
-      ? ''
-      : (this.gitUsernameCache.get(repo.path) ?? repo.gitUsername ?? '')
+    const gitUsername = isFolderRepo(repo) ? '' : (repo.gitUsername ?? '')
 
     return {
       ...repoWithoutIcon,
@@ -4396,6 +4564,17 @@ export class Store {
   }
 
   // ── Sparse Presets ─────────────────────────────────────────────────
+
+  // ── Mobile client tab selections ──────────────────────────────────
+
+  getMobileClientTabSelections(): PersistedMobileClientTabSelections {
+    return this.state.mobileClientTabSelectionsByDeviceId ?? {}
+  }
+
+  setMobileClientTabSelections(next: PersistedMobileClientTabSelections): void {
+    this.state.mobileClientTabSelectionsByDeviceId = next
+    this.scheduleSave()
+  }
 
   getSparsePresets(repoId: string): SparsePreset[] {
     return [...(this.state.sparsePresetsByRepo[repoId] ?? [])].sort((left, right) =>
@@ -4731,6 +4910,11 @@ export class Store {
     delete this.state.worktreeMeta[worktreeId]
     delete this.state.worktreeLineageById[worktreeId]
     delete this.state.workspaceLineageByChildKey[worktreeWorkspaceKey(worktreeId)]
+    this.state.workspaceSession = removeWorkspaceSessionOwner(
+      this.state.workspaceSession,
+      worktreeId,
+      { advanceTerminalTopologyRevision: true }
+    )!
     this.scheduleSave()
   }
 
@@ -4874,6 +5058,21 @@ export class Store {
           sessionChanged = true
         }
       }
+      if (session.terminalSurfaceTombstonesByPaneKey) {
+        let tombstonesChanged = false
+        const nextTombstones = { ...session.terminalSurfaceTombstonesByPaneKey }
+        for (const [paneKey, tombstone] of Object.entries(nextTombstones)) {
+          if (tombstone.worktreeId !== oldWorktreeId) {
+            continue
+          }
+          nextTombstones[paneKey] = { ...tombstone, worktreeId: newWorktreeId }
+          tombstonesChanged = true
+        }
+        if (tombstonesChanged) {
+          session.terminalSurfaceTombstonesByPaneKey = nextTombstones
+          sessionChanged = true
+        }
+      }
       return sessionChanged
     }
 
@@ -4923,6 +5122,11 @@ export class Store {
     changed = migrateSession(this.state.workspaceSession) || changed
     for (const session of Object.values(this.state.workspaceSessionsByHostId ?? {})) {
       changed = migrateSession(session) || changed
+    }
+    for (const selectionsByWorktree of Object.values(
+      this.state.mobileClientTabSelectionsByDeviceId ?? {}
+    )) {
+      changed = moveKey(selectionsByWorktree) || changed
     }
     const showDotfiles = this.state.ui?.showDotfilesByWorktree
     if (showDotfiles) {
@@ -5182,6 +5386,7 @@ export class Store {
       usagePercentageDisplay: normalizeUsagePercentageDisplay(
         this.state.ui?.usagePercentageDisplay
       ),
+      statusBarUsageMode: normalizeStatusBarUsageMode(this.state.ui?.statusBarUsageMode),
       // Why: strict boolean coercion so a missing/legacy value reads as false (first-run notice still fires).
       trayMinimizeNoticeShown: this.state.ui?.trayMinimizeNoticeShown === true,
       markdownTocPanelWidth: clampMarkdownTocPanelWidth(this.state.ui?.markdownTocPanelWidth),
@@ -5278,6 +5483,9 @@ export class Store {
           : this.state.ui?.syncTaskStatusFromWorkspaceBoard === true,
       usagePercentageDisplay: normalizeUsagePercentageDisplay(
         sanitizedUpdates.usagePercentageDisplay ?? this.state.ui?.usagePercentageDisplay
+      ),
+      statusBarUsageMode: normalizeStatusBarUsageMode(
+        sanitizedUpdates.statusBarUsageMode ?? this.state.ui?.statusBarUsageMode
       ),
       markdownTocPanelWidth: clampMarkdownTocPanelWidth(
         sanitizedUpdates.markdownTocPanelWidth ?? this.state.ui?.markdownTocPanelWidth
@@ -5457,6 +5665,11 @@ export class Store {
 
   /** Persist a non-'local' host partition; remote hosts skip setLocalWorkspaceSession's local-daemon PTY-binding race guards. */
   private setHostWorkspaceSession(hostId: ExecutionHostId, session: WorkspaceSessionState): void {
+    // Why: each partition owns its topology fence; renderer writes omit it and must rebase locally.
+    session = sanitizeWorkspaceSessionTerminalRetirements(
+      session,
+      this.state.workspaceSessionsByHostId?.[hostId]
+    )
     const pruned = pruneWorkspaceSessionBrowserHistory(
       pruneLocalTerminalScrollbackBuffers(session, this.state.repos)
     )
@@ -5468,12 +5681,13 @@ export class Store {
   }
 
   private setLocalWorkspaceSession(session: PersistedState['workspaceSession']): void {
+    const prior = this.state.workspaceSession
+    session = sanitizeWorkspaceSessionTerminalRetirements(session, prior)
     session = pruneWorkspaceSessionBrowserHistory(
       pruneLocalTerminalScrollbackBuffers(session, this.state.repos)
     )
 
     // Why (Issue #217): merge existing bindings when the incoming binding is empty, so a stale pre-spawn snapshot can't overwrite the durable PTY binding.
-    const prior = this.state.workspaceSession
     const normalized = normalizeWorkspaceSessionPaneIdentities(
       session,
       prior?.terminalLayoutsByTabId
@@ -5748,23 +5962,68 @@ export class Store {
   }
 
   // Why: sync-flush the pty binding before pty:spawn returns to close the spawn/persist SIGKILL race (Issue #217).
-  persistPtyBinding(args: {
-    worktreeId: string
-    tabId: string
-    leafId: string
-    ptyId: string
-    startupCwd?: string
-  }): void {
-    const session = this.state.workspaceSession
-    if (!session) {
-      return
+  persistPtyBinding(
+    args: {
+      worktreeId: string
+      tabId: string
+      leafId: string
+      ptyId: string
+      incarnationId?: string
+      startupCwd?: string
+    },
+    hostId?: string | null
+  ): void {
+    const resolvedHostId = this.resolveHostId(hostId)
+    const session = this.getWorkspaceSession(resolvedHostId)
+    if (resolvedHostId !== LOCAL_EXECUTION_HOST_ID) {
+      this.state.workspaceSessionsByHostId = {
+        ...this.state.workspaceSessionsByHostId,
+        [resolvedHostId]: session
+      }
     }
     const sessionBeforeBinding = cloneWorkspaceSessionState(session)
+    const paneKey = `${args.tabId}:${args.leafId}`
+    let terminalMembershipChanged = false
+    const advanceTopologyAfterMembershipChange = (): void => {
+      const repoId = getRepoIdFromWorktreeId(args.worktreeId)
+      const currentRevision = session.terminalTopologyRevisionByRepoId?.[repoId] ?? 0
+      if (!terminalMembershipChanged || currentRevision <= 0) {
+        return
+      }
+      // Why: a real host-admitted spawn after a retirement must be distinguishable from a stale renderer replay.
+      session.terminalTopologyRevisionByRepoId = {
+        ...session.terminalTopologyRevisionByRepoId,
+        [repoId]: currentRevision + 1
+      }
+    }
+    const restoreSession = (): void => {
+      if (resolvedHostId === LOCAL_EXECUTION_HOST_ID) {
+        this.state.workspaceSession = sessionBeforeBinding
+      } else {
+        this.state.workspaceSessionsByHostId = {
+          ...this.state.workspaceSessionsByHostId,
+          [resolvedHostId]: sessionBeforeBinding
+        }
+      }
+    }
+    if (args.incarnationId) {
+      session.terminalPtyIncarnationsByPaneKey = {
+        ...session.terminalPtyIncarnationsByPaneKey,
+        [paneKey]: args.incarnationId
+      }
+      if (session.terminalSurfaceTombstonesByPaneKey?.[paneKey]) {
+        session.terminalSurfaceTombstonesByPaneKey = {
+          ...session.terminalSurfaceTombstonesByPaneKey
+        }
+        delete session.terminalSurfaceTombstonesByPaneKey[paneKey]
+      }
+    }
     const tabs = session.tabsByWorktree?.[args.worktreeId]
     const tab = tabs?.find((t) => t.id === args.tabId)
     if (tab) {
       tab.ptyId = args.ptyId
     } else {
+      terminalMembershipChanged = true
       // Why: pty:spawn can beat the debounced writer; persist a minimal tab so hydration won't prune the binding as orphaned.
       const nextTabs = [
         ...(tabs ?? []),
@@ -5786,10 +6045,11 @@ export class Store {
     }
     if (!isTerminalLeafId(args.leafId)) {
       // Why: keep legacy renderer-local pane ids out of durable leaf-keyed layout state after the UUID migration.
+      advanceTopologyAfterMembershipChange()
       try {
         this.flushOrThrow()
       } catch (err) {
-        this.state.workspaceSession = sessionBeforeBinding
+        restoreSession()
         throw err
       }
       return
@@ -5797,11 +6057,13 @@ export class Store {
     const layout = session.terminalLayoutsByTabId?.[args.tabId]
     if (layout) {
       if (!layout.root) {
+        terminalMembershipChanged = true
         // Why: createTab can persist an empty layout before TerminalPane mounts; the sync binding still needs a durable root.
         layout.root = { type: 'leaf', leafId: args.leafId }
         layout.activeLeafId = args.leafId
         layout.expandedLeafId = null
       } else if (!layoutContainsLeafId(layout.root, args.leafId)) {
+        terminalMembershipChanged = true
         // Why: splitPane spawns before its snapshot reaches main; add a minimal leaf so a crash can't strand the pane's binding.
         layout.root = {
           type: 'split',
@@ -5819,6 +6081,7 @@ export class Store {
         [args.leafId]: args.ptyId
       }
     } else {
+      terminalMembershipChanged = true
       // Why: first tab spawn — persist a minimal layout so a SIGKILL before the renderer snapshot can't lose ptyIdsByLeafId.
       session.terminalLayoutsByTabId = {
         ...session.terminalLayoutsByTabId,
@@ -5830,10 +6093,11 @@ export class Store {
         }
       }
     }
+    advanceTopologyAfterMembershipChange()
     try {
       this.flushOrThrow()
     } catch (err) {
-      this.state.workspaceSession = sessionBeforeBinding
+      restoreSession()
       throw err
     }
   }
@@ -6198,54 +6462,61 @@ export class Store {
     targetId: string,
     leases: SshRemotePtyLease[]
   ): boolean {
-    const session = this.state.workspaceSession
-    if (!leases?.length || !session) {
+    if (!leases?.length) {
       return false
     }
     let changed = false
-    for (const [worktreeId, tabs] of Object.entries(session.tabsByWorktree ?? {})) {
-      for (const tab of tabs) {
-        if (
-          tab.ptyId &&
-          leases.some((lease) =>
-            this.sshRemotePtyLeaseMayReferenceBinding(lease, {
-              ptyId: tab.ptyId!,
-              worktreeId,
-              targetId,
-              tabId: tab.id
-            })
-          )
-        ) {
-          tab.ptyId = null
-          changed = true
-        }
-      }
-    }
-    for (const [tabId, layout] of Object.entries(session.terminalLayoutsByTabId ?? {})) {
-      const bindings = layout.ptyIdsByLeafId
-      if (!bindings) {
-        continue
-      }
-      const worktreeId = Object.entries(session.tabsByWorktree ?? {}).find(([, tabs]) =>
-        tabs.some((tab) => tab.id === tabId)
-      )?.[0]
-      const nextBindings = Object.fromEntries(
-        Object.entries(bindings).filter(
-          ([leafId, ptyId]) =>
-            !leases.some((lease) =>
+    const sessions = new Set(
+      [
+        this.state.workspaceSession,
+        this.state.workspaceSessionsByHostId?.[toSshExecutionHostId(targetId)]
+      ].filter((session): session is WorkspaceSessionState => Boolean(session))
+    )
+    for (const session of sessions) {
+      for (const [worktreeId, tabs] of Object.entries(session.tabsByWorktree ?? {})) {
+        for (const tab of tabs) {
+          if (
+            tab.ptyId &&
+            leases.some((lease) =>
               this.sshRemotePtyLeaseMayReferenceBinding(lease, {
-                ptyId,
-                targetId,
+                ptyId: tab.ptyId!,
                 worktreeId,
-                tabId,
-                leafId
+                targetId,
+                tabId: tab.id
               })
             )
+          ) {
+            tab.ptyId = null
+            changed = true
+          }
+        }
+      }
+      for (const [tabId, layout] of Object.entries(session.terminalLayoutsByTabId ?? {})) {
+        const bindings = layout.ptyIdsByLeafId
+        if (!bindings) {
+          continue
+        }
+        const worktreeId = Object.entries(session.tabsByWorktree ?? {}).find(([, tabs]) =>
+          tabs.some((tab) => tab.id === tabId)
+        )?.[0]
+        const nextBindings = Object.fromEntries(
+          Object.entries(bindings).filter(
+            ([leafId, ptyId]) =>
+              !leases.some((lease) =>
+                this.sshRemotePtyLeaseMayReferenceBinding(lease, {
+                  ptyId,
+                  targetId,
+                  worktreeId,
+                  tabId,
+                  leafId
+                })
+              )
+          )
         )
-      )
-      if (Object.keys(nextBindings).length !== Object.keys(bindings).length) {
-        layout.ptyIdsByLeafId = nextBindings
-        changed = true
+        if (Object.keys(nextBindings).length !== Object.keys(bindings).length) {
+          layout.ptyIdsByLeafId = nextBindings
+          changed = true
+        }
       }
     }
     if (changed) {
@@ -6287,7 +6558,8 @@ export class Store {
     const cacheFile = getGithubCacheFile(this.dataFile)
     const tmpFile = `${cacheFile}.${process.pid}.tmp`
     try {
-      writeFileSync(tmpFile, JSON.stringify(this.state.githubCache), 'utf-8')
+      const { serialized } = stringifyPersistedStateWithinLimit(this.state.githubCache)
+      writeFileSync(tmpFile, serialized, 'utf-8')
       renameSync(tmpFile, cacheFile)
       this.githubCacheDirty = false
     } catch (err) {

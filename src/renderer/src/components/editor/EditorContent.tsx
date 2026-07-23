@@ -43,7 +43,7 @@ const IpynbViewer = lazy(() => import('./IpynbViewer'))
 
 // Why: module-level for a stable no-op identity so read-only tabs don't rebuild callbacks each render.
 const noopEditorContentChange = (_content: string): void => {}
-const noopEditorSave = (_content: string): void => {}
+const noopEditorSave = async (_content: string): Promise<boolean> => false
 
 export function getMarkdownSourceLineOffset(frontMatterRaw: string): number {
   let offset = 0
@@ -164,8 +164,8 @@ export function EditorContent({
   handleContentChange: (content: string) => void
   handleContentChangeForFile: (file: OpenFile, content: string) => void
   handleDirtyStateHint: (dirty: boolean) => void
-  handleSave: (content: string) => Promise<void>
-  handleSaveForFile: (file: OpenFile, content: string) => Promise<void>
+  handleSave: (content: string) => Promise<boolean>
+  handleSaveForFile: (file: OpenFile, content: string) => Promise<boolean>
   reloadContent: (file: OpenFile) => void
 }): React.JSX.Element {
   const editorViewStateKey =
@@ -316,6 +316,7 @@ export function EditorContent({
       onContentChange={activeFile.readOnly === true ? noopEditorContentChange : handleContentChange}
       onSave={activeFile.readOnly === true ? noopEditorSave : isMarkdown ? md.mdSave : handleSave}
       worktreeId={activeFile.worktreeId}
+      runtimeEnvironmentId={activeFile.runtimeEnvironmentId}
       markdownAnnotationsEnabled={markdownAnnotationsEnabled && isMarkdown}
       conflictDecorationsEnabled={activeFile.conflict?.conflictStatus === 'unresolved'}
       revealLine={
@@ -376,7 +377,7 @@ export function EditorContent({
         : handleContentChange
 
       const onSaveWithFm = fm
-        ? (body: string): Promise<void> => md.mdSave(prependFrontMatter(fm.raw, body))
+        ? (body: string): Promise<boolean> => md.mdSave(prependFrontMatter(fm.raw, body))
         : md.mdSave
 
       return (

@@ -11,6 +11,7 @@ import {
 import { isPowerShellProcess } from '../../shared/shell-process-detection'
 import { killWithDescendantSweep } from '../pty-descendant-termination'
 import type { TuiAgent } from '../../shared/types'
+import { randomUUID } from 'node:crypto'
 import { PhysicalExitTracker } from '../../shared/physical-exit-tracker'
 import {
   PtyStartupIngress,
@@ -24,6 +25,7 @@ import type {
   TakePendingOutputResult,
   TerminalSnapshot
 } from './types'
+import type { PtyOwnerBackend } from '../../shared/pty-owner-backend'
 
 const SHELL_READY_TIMEOUT_MS = 15_000
 // Why: Codex skips marker-gated command delivery; this only bounds older daemon/local paths that still report shell-ready for Codex.
@@ -35,6 +37,9 @@ const SESSION_FORCE_KILL_MAX_ATTEMPTS = 2
 // Why: bounds in-memory pending output when no client drains it; past the cap we drop records and flag
 // overflow so the next take falls back to one full snapshot. UTF-16 units; worst-case wire is ~6x, under NDJSON_MAX_LINE_BYTES (16MB).
 const PENDING_OUTPUT_MAX_BYTES = 2 * 1024 * 1024
+export const PENDING_OUTPUT_MAX_RECORDS = 4_096
+export const PRE_READY_STDIN_MAX_CODE_UNITS = 16 * 1024 * 1024
+export const PRE_READY_STDIN_MAX_SEGMENTS = 4_096
 // Why: pause is a fire-and-forget notify, so a resume can be lost (main crash, dropped socket); a lost
 // resume must never wedge a shell, so auto-resume after this window — a still-flooded main re-pauses.
 export const PRODUCER_PAUSE_FAILSAFE_MS = 5_000
@@ -85,16 +90,18 @@ export type SessionOptions = {
   // a reaper, dead sessions and their scrollback emulators accumulate for the daemon's lifetime.
   onExit?: (code: number) => void
   startupIngress?: PtyStartupIngressIntent
+  ownerBackend?: PtyOwnerBackend
 }
 
 type AttachedClient = {
   token: symbol
   onData: (data: string, rawLength?: number, transformed?: boolean, seq?: number) => void
-  onExit: (code: number) => void
+  onExit: (code: number, incarnationId: string) => void
 }
 
 export class Session {
   readonly sessionId: string
+  readonly incarnationId = randomUUID()
   readonly terminalHandle: string | null
   readonly launchAgent: TuiAgent | null
   readonly wslDistro: string | null
@@ -108,6 +115,7 @@ export class Session {
   private readonly onSessionExit?: (code: number) => void
   private attachedClients: AttachedClient[] = []
   private preReadyStdinQueue: string[] = []
+  private preReadyStdinCodeUnits = 0
   private shellReadyScanState: ShellReadyScanState | null = null
   private shellReadyTimer: ReturnType<typeof setTimeout> | null = null
   private killTimer: ReturnType<typeof setTimeout> | null = null
@@ -158,6 +166,7 @@ export class Session {
     this.postReadyFlushGate = new PostReadyFlushGate(() => this.flushPreReadyQueue())
     this.startupIngress = new PtyStartupIngress({
       ...(opts.startupIngress ? { intent: opts.startupIngress } : {}),
+      ...(opts.ownerBackend ? { ownerBackend: opts.ownerBackend } : {}),
       write: (data) => this.subprocess.write(data),
       onEmission: (emission) => this.emitSubprocessOutput(emission)
     })
@@ -213,7 +222,17 @@ export class Session {
     // Why: keep queuing during the post-ready flush-gate window ('ready' but not yet flushed); a
     // direct write would race fresh input ahead of the buffered startup command.
     if (this._shellState === 'pending' || this.postReadyFlushGate.isPending) {
+      const nextCodeUnits = this.preReadyStdinCodeUnits + data.length
+      if (
+        nextCodeUnits > PRE_READY_STDIN_MAX_CODE_UNITS ||
+        this.preReadyStdinQueue.length >= PRE_READY_STDIN_MAX_SEGMENTS
+      ) {
+        throw new Error(
+          'Terminal input queued before shell readiness exceeds the safe memory limit.'
+        )
+      }
       this.preReadyStdinQueue.push(data)
+      this.preReadyStdinCodeUnits = nextCodeUnits
       return
     }
 
@@ -518,11 +537,12 @@ export class Session {
 
     this.attachedClients = []
     this.preReadyStdinQueue = []
+    this.preReadyStdinCodeUnits = 0
     this.postReadyFlushGate.clear()
     this.emulator.dispose()
 
     for (const client of clientsToNotify) {
-      client.onExit(-1)
+      client.onExit(-1, this.incarnationId)
     }
   }
 
@@ -562,6 +582,7 @@ export class Session {
     }
     this.shellReadyScanState = null
     this.preReadyStdinQueue = []
+    this.preReadyStdinCodeUnits = 0
     this.postReadyFlushGate.clear()
     this.disposeSubprocessHandle()
   }
@@ -584,15 +605,20 @@ export class Session {
       return
     }
     const bytes = record.kind === 'output' ? record.data.length : 8
-    if (this.pendingOutputBytes + bytes > PENDING_OUTPUT_MAX_BYTES) {
+    const last = this.pendingOutputRecords.at(-1)
+    const canCoalesce =
+      record.kind === 'output' && last?.kind === 'output' && last.data.length < 64 * 1024
+    if (
+      this.pendingOutputBytes + bytes > PENDING_OUTPUT_MAX_BYTES ||
+      (!canCoalesce && this.pendingOutputRecords.length >= PENDING_OUTPUT_MAX_RECORDS)
+    ) {
       this.pendingOutputRecords = []
       this.pendingOutputBytes = 0
       this.pendingOutputOverflowed = true
       return
     }
     // Why: coalesce the thousands of tiny TUI chunks per tick to keep take RPC/log frames compact; 64KB cap bounds append cost.
-    const last = this.pendingOutputRecords.at(-1)
-    if (record.kind === 'output' && last?.kind === 'output' && last.data.length < 64 * 1024) {
+    if (canCoalesce) {
       last.data += record.data
     } else {
       this.pendingOutputRecords.push(record)
@@ -667,7 +693,7 @@ export class Session {
     this.disposeSubprocessHandle()
 
     for (const client of this.attachedClients) {
-      client.onExit(code)
+      client.onExit(code, this.incarnationId)
     }
 
     // Why: hand off to the owner's reaper (disposes emulator, drops session from host map); else dead sessions accumulate.
@@ -715,6 +741,7 @@ export class Session {
   private flushPreReadyQueue(): void {
     const queued = this.preReadyStdinQueue
     this.preReadyStdinQueue = []
+    this.preReadyStdinCodeUnits = 0
     for (const data of queued) {
       this.subprocess.write(data)
     }

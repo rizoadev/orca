@@ -7,18 +7,16 @@ import { execCommand } from './ssh-relay-deploy-helpers'
 import { isRelayVersionMismatchError } from './ssh-relay-version-mismatch-error'
 import type { RelayVersionMismatchError } from './ssh-relay-version-mismatch-error'
 import { SshChannelMultiplexer } from './ssh-channel-multiplexer'
-import {
-  SshPtyProvider,
-  isSshPtyIdentityMismatchError,
-  isSshPtyNotFoundError
-} from '../providers/ssh-pty-provider'
+import { SshPtyProvider } from '../providers/ssh-pty-provider'
+import type { SshPtyExitCallback } from '../providers/ssh-pty-provider-contract'
+import { isSshPtyIdentityMismatchError, isSshPtyNotFoundError } from '../providers/ssh-pty-errors'
 import { toAppSshPtyId, toRelaySshPtyId } from '../providers/ssh-pty-id'
 import { SshFilesystemProvider } from '../providers/ssh-filesystem-provider'
 import { SshGitProvider } from '../providers/ssh-git-provider'
 import { agentHookServer } from '../agent-hooks/server'
-import { installRemoteManagedAgentHooks } from '../agent-hooks/remote-managed-hook-installers'
 import { isAgentStatusHooksEnabled } from '../agent-hooks/managed-agent-hook-controls'
 import {
+  AGENT_HOOK_INSTALL_MANAGED_HOOKS_METHOD,
   AGENT_HOOK_INSTALL_PLUGINS_METHOD,
   AGENT_HOOK_NOTIFICATION_METHOD,
   AGENT_HOOK_REQUEST_REPLAY_METHOD,
@@ -34,13 +32,15 @@ import {
   clearPtyOwnershipForConnection,
   clearProviderPtyState,
   deletePtyOwnership,
-  setPtyOwnership
+  setPtyOwnership,
+  restorePtyIncarnation,
+  isCurrentPtyExit
 } from '../ipc/pty'
 import {
-  recordHiddenRendererPtyDataDrop,
-  shouldDropHiddenRendererPtyData
-} from '../ipc/pty-hidden-delivery-gate'
-import type { PtyModelRestoreNeededEvent } from '../../shared/pty-model-restore-marker'
+  routeExternalPtyData,
+  routeExternalPtyExit,
+  routeExternalPtyReplay
+} from '../ipc/pty-renderer-delivery-router'
 import {
   registerSshFilesystemProvider,
   unregisterSshFilesystemProvider,
@@ -68,9 +68,11 @@ import { runRemoteOrcaCli } from './ssh-remote-orca-cli'
 import { toSshExecutionHostId, type ExecutionHostId } from '../../shared/execution-host'
 import { isTerminalLeafId, makePaneKey } from '../../shared/stable-pane-id'
 import { isValidTerminalTabId } from '../../shared/terminal-tab-id'
-import { shellEscape } from './ssh-connection-utils'
 
 export type RelaySessionState = 'idle' | 'deploying' | 'ready' | 'reconnecting' | 'disposed'
+
+type SshPtyExitPayload = Parameters<SshPtyExitCallback>[0]
+type PendingPtyReattach = { exits: SshPtyExitPayload[] }
 
 type RemoteCliBridgeEnv = {
   remoteHome: string
@@ -83,67 +85,6 @@ type RemoteCliBridgeEnv = {
 }
 
 type ExpectedPtyIdentity = { paneKey?: string; tabId?: string }
-
-const REMOTE_GROK_HOME_MAX_LENGTH = 4096
-const REMOTE_GROK_HOME_PROBE_TIMEOUT_MS = 8_000
-
-function defaultRemoteGrokHome(remoteHome: string): string {
-  const home = remoteHome.replace(/\/+$/, '') || remoteHome
-  return `${home}/.grok`
-}
-
-function normalizeRemoteGrokHome(candidate: string): string | null {
-  if (
-    candidate.length === 0 ||
-    candidate.length > REMOTE_GROK_HOME_MAX_LENGTH ||
-    candidate !== candidate.trim() ||
-    !candidate.startsWith('/') ||
-    candidate.includes('\\') ||
-    hasControlCharacter(candidate)
-  ) {
-    return null
-  }
-  return candidate.replace(/\/+$/, '') || '/'
-}
-
-function hasControlCharacter(value: string): boolean {
-  return Array.from(value).some((character) => {
-    const code = character.charCodeAt(0)
-    return code <= 0x1f || code === 0x7f
-  })
-}
-
-function loginShellCommand(shell: string, command: string): string {
-  const shellName = shell.split('/').at(-1)
-  const mode = shellName === 'sh' || shellName === 'dash' ? '-c' : '-lc'
-  return `${shellEscape(shell)} ${mode} ${shellEscape(command)}`
-}
-
-async function resolveRemoteGrokHome(
-  connection: SshConnection,
-  remoteHome: string
-): Promise<string> {
-  const fallback = defaultRemoteGrokHome(remoteHome)
-  try {
-    // Why: remote PTYs start login shells, so probe that profile-derived env, not the relay service or local Electron env.
-    const shellOutput = await execCommand(connection, "printenv SHELL || printf '/bin/sh\\n'", {
-      timeoutMs: REMOTE_GROK_HOME_PROBE_TIMEOUT_MS
-    })
-    const shell = shellOutput.trim().split(/\r?\n/, 1)[0]
-    if (!shell?.startsWith('/') || hasControlCharacter(shell)) {
-      return fallback
-    }
-    // Why: runs in the user's login shell (maybe fish/tcsh), so use external commands to avoid shell-specific syntax.
-    const probe = `printenv GROK_HOME | head -c ${REMOTE_GROK_HOME_MAX_LENGTH + 1}`
-    const output = await execCommand(connection, loginShellCommand(shell, probe), {
-      wrapCommand: false,
-      timeoutMs: REMOTE_GROK_HOME_PROBE_TIMEOUT_MS
-    })
-    return normalizeRemoteGrokHome(output.split(/\r?\n/, 1)[0] ?? '') ?? fallback
-  } catch {
-    return fallback
-  }
-}
 
 function expectedIdentityForLease(lease: {
   tabId?: string
@@ -209,6 +150,7 @@ export class SshRelaySession {
   private hostPlatform: RemoteHostPlatform | null = null
   private remoteCliBridgeEnv: RemoteCliBridgeEnv | null = null
   private forwardedReattachReplayByPty = new Map<string, ForwardedReplayFingerprint>()
+  private pendingPtyReattaches = new Map<string, PendingPtyReattach>()
 
   constructor(
     readonly targetId: string,
@@ -646,7 +588,7 @@ export class SshRelaySession {
     })
   }
 
-  // Why: hook-script agents need remote config files (relay env alone isn't enough); install before the PTY provider so first prompts report status.
+  // Why: hooks must exist before PTY spawn; relay-local work keeps all managed installs to one SSH round trip.
   private async installManagedHooksOnRemote(mux: SshChannelMultiplexer): Promise<void> {
     if (!isRemoteAgentHooksEnabled() || !this.areAgentStatusHooksEnabled()) {
       return
@@ -659,41 +601,34 @@ export class SshRelaySession {
       return
     }
 
-    let remoteHome: string
     try {
-      const result = (await mux.request('session.resolveHome', { path: '~' })) as {
-        resolvedPath?: unknown
+      const hostKeyFingerprint = this.requireReadyConnection().getHostKeyFingerprint?.()
+      const params = hostKeyFingerprint ? { hostKeyFingerprint } : {}
+      const result = (await mux.request(AGENT_HOOK_INSTALL_MANAGED_HOOKS_METHOD, params)) as {
+        errors?: unknown
       }
-      if (typeof result.resolvedPath !== 'string' || result.resolvedPath.length === 0) {
+      if (typeof result.errors === 'number' && result.errors > 0) {
         console.warn(
-          `[ssh-relay-session] skipped remote managed hook install for ${this.targetId}: could not resolve remote home`
+          `[ssh-relay-session] ${result.errors} remote managed hook installers failed for ${this.targetId}`
         )
+      }
+    } catch (error) {
+      // Why: teardown routinely cancels this best-effort request; only warn for
+      // installer failures that survive the connection lifecycle.
+      const code = (error as { code?: unknown })?.code
+      if (
+        code === -32601 ||
+        code === 'CONNECTION_LOST' ||
+        code === 'DISPOSED' ||
+        mux.isDisposed()
+      ) {
         return
       }
-      remoteHome = result.resolvedPath
-    } catch (error) {
       console.warn(
-        `[ssh-relay-session] skipped remote managed hook install for ${this.targetId}: ${
+        `[ssh-relay-session] relay managed hook install failed for ${this.targetId}: ${
           error instanceof Error ? error.message : String(error)
         }`
       )
-      return
-    }
-
-    let sftp: Awaited<ReturnType<SshConnection['sftp']>> | null = null
-    try {
-      const connection = this.requireReadyConnection()
-      const remoteGrokHome = await resolveRemoteGrokHome(connection, remoteHome)
-      sftp = await connection.sftp()
-      await installRemoteManagedAgentHooks(sftp, remoteHome, { grokHomeDir: remoteGrokHome })
-    } catch (error) {
-      console.warn(
-        `[ssh-relay-session] remote managed hook install failed for ${this.targetId}: ${
-          error instanceof Error ? error.message : String(error)
-        }`
-      )
-    } finally {
-      ;(sftp as { end?: () => void } | null)?.end?.()
     }
   }
 
@@ -984,58 +919,33 @@ export class SshRelaySession {
 
   private wireUpPtyEvents(ptyProvider: SshPtyProvider): void {
     ptyProvider.onData((payload) => {
-      const rawLength = payload.sequenceChars ?? payload.data.length
-      const seq = this.runtime?.onPtyData(
-        payload.id,
-        payload.data,
-        Date.now(),
-        rawLength,
-        payload.transformed
-      )
-      const win = this.getMainWindow()
-      if (!win || win.isDestroyed()) {
-        return
-      }
-      // Why: hidden-delivery gate parity with ipc/pty.ts — latch model-restore out-of-band, never an in-band pty:data sentinel (OSC-9999-only chunks strip to empty).
-      const store = this.store as { getSettings?: Store['getSettings'] }
-      if (shouldDropHiddenRendererPtyData(payload.id, store.getSettings?.())) {
-        const drop = recordHiddenRendererPtyDataDrop(payload.id, rawLength)
-        if (drop.shouldEmitRestoreMarker) {
-          win.webContents.send('pty:modelRestoreNeeded', {
-            id: payload.id,
-            reason: 'hidden-drop',
-            ...(typeof seq === 'number' ? { markerSeq: seq } : {})
-          } satisfies PtyModelRestoreNeededEvent)
-        }
-        return
-      }
-      if (payload.data.length > 0 || payload.transformed) {
-        win.webContents.send('pty:data', {
-          ...payload,
-          ...(typeof seq === 'number' ? { seq } : {}),
-          rawLength,
-          ...(payload.transformed ? { transformed: true } : {})
-        })
-      }
+      routeExternalPtyData(payload)
     })
     ptyProvider.onReplay((payload) => {
-      const win = this.getMainWindow()
-      if (win && !win.isDestroyed()) {
-        win.webContents.send('pty:replay', payload)
-      }
+      routeExternalPtyReplay(payload)
     })
     ptyProvider.onExit((payload) => {
-      const relayPtyId = toRelaySshPtyId(this.targetId, payload.id)
-      clearProviderPtyState(payload.id)
-      deletePtyOwnership(payload.id)
-      this.forwardedReattachReplayByPty.delete(payload.id)
-      this.store.markSshRemotePtyLease(this.targetId, relayPtyId, 'terminated')
-      this.runtime?.onPtyExit(payload.id, payload.code)
-      const win = this.getMainWindow()
-      if (win && !win.isDestroyed()) {
-        win.webContents.send('pty:exit', payload)
+      const pendingReattach = this.pendingPtyReattaches.get(payload.id)
+      if (pendingReattach) {
+        // Why: attach response and exit can share one transport batch, before incarnation restoration runs.
+        pendingReattach.exits.push(payload)
+        return
       }
+      if (!isCurrentPtyExit(payload)) {
+        return
+      }
+      this.retireExitedPty(payload)
     })
+  }
+
+  private retireExitedPty(payload: SshPtyExitPayload): void {
+    const relayPtyId = toRelaySshPtyId(this.targetId, payload.id)
+    clearProviderPtyState(payload.id)
+    deletePtyOwnership(payload.id)
+    this.forwardedReattachReplayByPty.delete(payload.id)
+    this.store.markSshRemotePtyLease(this.targetId, relayPtyId, 'terminated')
+    this.runtime?.onPtyExit(payload.id, payload.code, payload.incarnationId)
+    routeExternalPtyExit(payload)
   }
 
   private replayFingerprint(data: string): string {
@@ -1060,16 +970,14 @@ export class SshRelaySession {
     if (!data || !this.shouldForwardReattachReplay(appPtyId, data)) {
       return
     }
-    const win = this.getMainWindow()
-    if (win && !win.isDestroyed()) {
-      win.webContents.send('pty:replay', { id: appPtyId, data })
-    }
+    routeExternalPtyReplay({ id: appPtyId, data })
   }
 
   private async reattachKnownPtys(shouldContinue: () => boolean): Promise<void> {
     const activeLeases = this.store
       .getSshRemotePtyLeases(this.targetId)
       .filter((lease) => lease.state !== 'terminated' && lease.state !== 'expired')
+    const activeLeaseByPtyId = new Map(activeLeases.map((lease) => [lease.ptyId, lease]))
     const leasedPtyIds = activeLeases.map((lease) => lease.ptyId)
     // Why: pass pane identity so the relay can reject cross-generation id collisions; tabId falls back for pre-leafId leases.
     const expectedIdentityByPtyId = new Map(
@@ -1097,6 +1005,9 @@ export class SshRelaySession {
       if (!shouldContinue()) {
         return
       }
+      const appPtyId = toAppSshPtyId(this.targetId, ptyId)
+      const pendingReattach: PendingPtyReattach = { exits: [] }
+      this.pendingPtyReattaches.set(appPtyId, pendingReattach)
       try {
         const expectedIdentity = expectedIdentityByPtyId.get(ptyId)
         const attachResult =
@@ -1106,15 +1017,55 @@ export class SshRelaySession {
         if (!shouldContinue()) {
           return
         }
-        const appPtyId = toAppSshPtyId(this.targetId, ptyId)
+        const exitDuringAttach = pendingReattach.exits.find(
+          (exit) =>
+            !exit.incarnationId ||
+            !attachResult.incarnationId ||
+            exit.incarnationId === attachResult.incarnationId
+        )
+        if (exitDuringAttach) {
+          if (attachResult.incarnationId) {
+            restorePtyIncarnation(appPtyId, attachResult.incarnationId)
+            this.runtime?.acceptPtyIncarnationForExit(appPtyId, attachResult.incarnationId)
+          }
+          this.retireExitedPty(exitDuringAttach)
+          continue
+        }
         setPtyOwnership(appPtyId, this.targetId)
+        if (attachResult.incarnationId) {
+          restorePtyIncarnation(appPtyId, attachResult.incarnationId)
+          const lease = activeLeaseByPtyId.get(ptyId)
+          if (lease?.worktreeId && lease.tabId && lease.leafId) {
+            this.runtime?.registerPty(appPtyId, lease.worktreeId, this.targetId, {
+              tabId: lease.tabId,
+              leafId: lease.leafId,
+              incarnationId: attachResult.incarnationId
+            })
+            // Why: reconnect may be the first new-relay response that can backfill exact exit fencing.
+            try {
+              this.store.persistPtyBinding({
+                worktreeId: lease.worktreeId,
+                tabId: lease.tabId,
+                leafId: lease.leafId,
+                ptyId: appPtyId,
+                incarnationId: attachResult.incarnationId
+              })
+            } catch (error) {
+              // Why: this backfill improves future fencing but must not disconnect an already-live relay PTY.
+              console.error('[ssh-relay-session] Failed to persist reconnect incarnation:', error)
+            }
+          } else {
+            this.runtime?.onPtySpawned(appPtyId, attachResult.incarnationId, {
+              awaitsRegistration: false
+            })
+          }
+        }
         this.store.markSshRemotePtyLease(this.targetId, ptyId, 'attached')
         this.forwardReattachReplay(appPtyId, attachResult.replay ?? '')
       } catch (err) {
         if (!isSshPtyNotFoundError(err)) {
           throw err
         }
-        const appPtyId = toAppSshPtyId(this.targetId, ptyId)
         if (isSshPtyIdentityMismatchError(err)) {
           console.warn(
             `[ssh-relay-session] Ignoring stale PTY ${ptyId} for ${this.targetId} after relay identity mismatch: ${
@@ -1133,9 +1084,10 @@ export class SshRelaySession {
         this.forwardedReattachReplayByPty.delete(appPtyId)
         this.store.markSshRemotePtyLease(this.targetId, ptyId, 'expired')
         // Why: reattach failure means the remote process is gone; tell the renderer to clear the stale pane.
-        const win = this.getMainWindow()
-        if (win && !win.isDestroyed()) {
-          win.webContents.send('pty:exit', { id: appPtyId, code: -1 })
+        routeExternalPtyExit({ id: appPtyId, code: -1 })
+      } finally {
+        if (this.pendingPtyReattaches.get(appPtyId) === pendingReattach) {
+          this.pendingPtyReattaches.delete(appPtyId)
         }
       }
     }

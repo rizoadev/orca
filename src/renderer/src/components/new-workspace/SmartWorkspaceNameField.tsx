@@ -78,9 +78,17 @@ import {
 } from './smart-workspace-localized-options'
 import {
   buildTaskSourceContextFromRepo,
+  getTaskSourceCacheScope,
   type TaskSourceContext
 } from '../../../../shared/task-source-context'
 import { parseExecutionHostId, type ExecutionHostId } from '../../../../shared/execution-host'
+import { githubRepoIdentityKey } from '../../../../shared/github-repository-identity-key'
+import { mapWithConcurrency } from '../../../../shared/map-with-concurrency'
+import { callRuntimeRpc } from '@/runtime/runtime-rpc-client'
+import {
+  getGitHubRuntimeRepoId,
+  getGitHubSourceRuntimeTarget
+} from '@/lib/github-source-runtime-context'
 
 type RepoOption = ReturnType<typeof useAppStore.getState>['repos'][number]
 const EMPTY_REPO_SEARCH_REPOS: readonly RepoOption[] = []
@@ -120,6 +128,7 @@ export type SmartWorkspaceNameSelection = {
 
 const SEARCH_DEBOUNCE_MS = 200
 const RESULT_LIMIT = 12
+export const PROJECT_GROUP_LOOKUP_CONCURRENCY = 4
 
 export function canUseGitLabSmartSource({
   localGitlabAvailable,
@@ -304,7 +313,7 @@ export default function SmartWorkspaceNameField({
   const localInputRef = useRef<HTMLInputElement | null>(null)
   const focusedSelectedSourceKeyRef = useRef<string | null>(null)
   const tabsListRef = useRef<HTMLDivElement | null>(null)
-  const repoSlugCacheRef = useRef<Map<string, RepoSlug | null>>(new Map())
+  const repoSlugCacheRef = useRef<Map<string, RepoSlug>>(new Map())
   const handledCrossRepoUrlRef = useRef<string | null>(null)
   const localInputFocusFrameRef = useRef<number | null>(null)
   // Why: Electron makes programmatic .focus() look user-initiated, so gate the source popover until real interaction.
@@ -542,15 +551,6 @@ export default function SmartWorkspaceNameField({
     let stale = false
     const directNumber = normalizedGhQuery.directNumber
     const directLink = parsedGhLink
-    const searchTargetForRepo = (repo: RepoOption) =>
-      repoBackedSearchTargets.find((target) => target.repo.id === repo.id) ?? {
-        repo,
-        githubSourceContext: buildTaskSourceContextFromRepo({
-          provider: 'github' as const,
-          projectId: repo.id,
-          repo
-        })
-      }
     if (directLink !== null && handledCrossRepoUrlRef.current !== debouncedQuery.trim()) {
       setGithubLoading(true)
       const directLookup = async (): Promise<{
@@ -561,34 +561,43 @@ export default function SmartWorkspaceNameField({
         } | null
       }> => {
         if (crossRepoSwitchTarget === 'task-source') {
-          const matchingRepo = await findMatchingRepoForSlug(
-            repoBackedSearchTargets.map((target) => target.repo),
+          const matchingTarget = await findMatchingRepoForSlug(
+            repoBackedSearchTargets.map((target) => ({
+              repo: target.repo,
+              sourceContext: target.githubSourceContext
+            })),
             directLink.slug,
             repoSlugCacheRef.current
           )
-          handledCrossRepoUrlRef.current = debouncedQuery.trim()
-          if (!matchingRepo) {
+          if (!matchingTarget) {
             return { items: [], prompt: null }
           }
-          const target = searchTargetForRepo(matchingRepo)
           const item = await lookupGitHubWorkItemByOwnerRepoForSource({
-            repoPath: target.repo.path,
-            repoId: target.repo.id,
-            sourceContext: target.githubSourceContext,
+            repoPath: matchingTarget.repo.path,
+            repoId: matchingTarget.repo.id,
+            sourceContext: matchingTarget.sourceContext,
             owner: directLink.slug.owner,
             repo: directLink.slug.repo,
+            ...(directLink.slug.host ? { host: directLink.slug.host } : {}),
             number: directLink.number,
             type: directLink.type
           })
+          // Why: only suppress re-tries once resolution succeeded — a transient
+          // GHES slug failure (matchingTarget === null) must stay retryable.
+          handledCrossRepoUrlRef.current = debouncedQuery.trim()
           return {
-            items: item ? [{ ...item, repoId: target.repo.id } as GitHubWorkItem] : [],
+            items: item ? [{ ...item, repoId: matchingTarget.repo.id } as GitHubWorkItem] : [],
             prompt: null
           }
         }
         if (!selectedRepo?.path) {
           return { items: [], prompt: null }
         }
-        const selectedSlug = await getRepoSlugCached(selectedRepo, repoSlugCacheRef.current)
+        const selectedSlug = await getRepoSlugCached(
+          selectedRepo,
+          githubSourceContext,
+          repoSlugCacheRef.current
+        )
         if (!selectedSlug || sameSlug(selectedSlug, directLink.slug)) {
           handledCrossRepoUrlRef.current = debouncedQuery.trim()
           const item = await lookupSmartGitHubSubmitItem({
@@ -599,6 +608,7 @@ export default function SmartWorkspaceNameField({
               kind: 'link',
               owner: directLink.slug.owner,
               repo: directLink.slug.repo,
+              ...(directLink.slug.host ? { host: directLink.slug.host } : {}),
               number: directLink.number,
               type: directLink.type
             },
@@ -607,12 +617,22 @@ export default function SmartWorkspaceNameField({
           })
           return { items: item ? [item] : [], prompt: null }
         }
-        const matchingRepo = await findMatchingRepoForSlug(
-          repos,
+        const matchingTarget = await findMatchingRepoForSlug(
+          repos.map((repo) => ({
+            repo,
+            sourceContext: buildTaskSourceContextFromRepo({
+              provider: 'github',
+              projectId: repo.id,
+              repo
+            })
+          })),
           directLink.slug,
           repoSlugCacheRef.current
         )
-        return { items: [], prompt: { link: directLink, matchingRepo } }
+        return {
+          items: [],
+          prompt: { link: directLink, matchingRepo: matchingTarget?.repo ?? null }
+        }
       }
       void directLookup()
         .then((result) => {
@@ -647,12 +667,15 @@ export default function SmartWorkspaceNameField({
               kind: 'link' as const,
               owner: directLink.slug.owner,
               repo: directLink.slug.repo,
+              ...(directLink.slug.host ? { host: directLink.slug.host } : {}),
               number: directLink.number,
               type: directLink.type
             }
           : { kind: 'hash-number' as const, number: directNumber }
-      const request = Promise.all(
-        repoBackedSearchTargets.map((target) =>
+      const request = mapWithConcurrency(
+        repoBackedSearchTargets,
+        PROJECT_GROUP_LOOKUP_CONCURRENCY,
+        (target) =>
           lookupSmartGitHubSubmitItem({
             repoPath: target.repo.path,
             repoId: target.repo.id,
@@ -661,7 +684,6 @@ export default function SmartWorkspaceNameField({
             workItem: lookupGitHubWorkItemForSource,
             workItemByOwnerRepo: lookupGitHubWorkItemByOwnerRepoForSource
           }).catch(() => null)
-        )
       ).then((items) =>
         items
           .filter((item): item is GitHubWorkItem => item !== null)
@@ -905,19 +927,17 @@ export default function SmartWorkspaceNameField({
     }
     let stale = false
     setGitlabLoading(true)
-    void Promise.all(
-      repoBackedSearchTargets.map((target) =>
-        lookupGitLabWorkItemByPathForSource({
-          repoPath: target.repo.path,
-          repoId: target.repo.id,
-          sourceContext: target.gitlabSourceContext,
-          // Why: self-hosted GitLab URLs must resolve against their pasted hostname, not gitlab.com.
-          host: parsedGlLink.slug.host,
-          path: parsedGlLink.slug.path,
-          iid: parsedGlLink.number,
-          type: parsedGlLink.type
-        }).catch(() => null)
-      )
+    void mapWithConcurrency(repoBackedSearchTargets, PROJECT_GROUP_LOOKUP_CONCURRENCY, (target) =>
+      lookupGitLabWorkItemByPathForSource({
+        repoPath: target.repo.path,
+        repoId: target.repo.id,
+        sourceContext: target.gitlabSourceContext,
+        // Why: self-hosted GitLab URLs must resolve against their pasted hostname, not gitlab.com.
+        host: parsedGlLink.slug.host,
+        path: parsedGlLink.slug.path,
+        iid: parsedGlLink.number,
+        type: parsedGlLink.type
+      }).catch(() => null)
     )
       .then((items) => {
         if (stale) {
@@ -962,18 +982,16 @@ export default function SmartWorkspaceNameField({
     setGitlabLoading(true)
     // Why: thread the typed query so the GitLab API filters MRs by name/number (shouldQueryGitlab already gates oversized queries).
     const trimmedQuery = debouncedQuery.trim() || undefined
-    void Promise.all(
-      repoBackedSearchTargets.map((target) =>
-        listGitLabMRsForSource({
-          repoPath: target.repo.path,
-          repoId: target.repo.id,
-          sourceContext: target.gitlabSourceContext,
-          state: mrStateFilter,
-          page: 1,
-          perPage: RESULT_LIMIT,
-          query: trimmedQuery
-        }).catch(() => ({ items: [], hasMore: false }))
-      )
+    void mapWithConcurrency(repoBackedSearchTargets, PROJECT_GROUP_LOOKUP_CONCURRENCY, (target) =>
+      listGitLabMRsForSource({
+        repoPath: target.repo.path,
+        repoId: target.repo.id,
+        sourceContext: target.gitlabSourceContext,
+        state: mrStateFilter,
+        page: 1,
+        perPage: RESULT_LIMIT,
+        query: trimmedQuery
+      }).catch(() => ({ items: [], hasMore: false }))
     )
       .then((results) => {
         if (stale) {
@@ -1128,6 +1146,7 @@ export default function SmartWorkspaceNameField({
           sourceContext,
           owner: crossRepoPrompt.link.slug.owner,
           repo: crossRepoPrompt.link.slug.repo,
+          ...(crossRepoPrompt.link.slug.host ? { host: crossRepoPrompt.link.slug.host } : {}),
           number: crossRepoPrompt.link.number,
           type: crossRepoPrompt.link.type
         })
@@ -1161,8 +1180,12 @@ export default function SmartWorkspaceNameField({
     if (!added) {
       return
     }
-    repoSlugCacheRef.current.delete(added.id)
-    const slug = await getRepoSlugCached(added, repoSlugCacheRef.current)
+    const sourceContext = buildTaskSourceContextFromRepo({
+      provider: 'github',
+      projectId: added.id,
+      repo: added
+    })
+    const slug = await getRepoSlugCached(added, sourceContext, repoSlugCacheRef.current)
     if (slug && sameSlug(slug, crossRepoPrompt.link.slug)) {
       await acceptGitHubLink(added)
     }
@@ -1353,7 +1376,7 @@ export default function SmartWorkspaceNameField({
                     event.preventDefault()
                     onPlainEnter?.()
                   }}
-                  className="flex h-9 w-full min-w-0 items-center gap-2 rounded-md border border-input bg-transparent px-2.5 text-sm shadow-xs outline-none focus-within:border-ring focus-within:ring-[3px] focus-within:ring-ring/50"
+                  className="flex h-9 w-full min-w-0 items-center gap-2 rounded-md border border-input bg-background px-2.5 text-sm shadow-xs outline-none focus-within:border-ring focus-within:ring-[3px] focus-within:ring-ring/50 dark:bg-input/30"
                 >
                   <SelectionIcon kind={selectedSource.kind} />
                   <span className="min-w-0 flex-1 truncate font-medium leading-none text-foreground">
@@ -1484,7 +1507,9 @@ export default function SmartWorkspaceNameField({
                     }}
                     placeholder={placeholder}
                     disabled={disabled}
-                    className="h-9 pl-8 text-sm"
+                    // Why: match the project/run-on comboboxes' solid `bg-background` — the input's
+                    // default transparent fill made it read a different color on light mode.
+                    className="h-9 bg-background pl-8 text-sm"
                   />
                 </>
               )}
@@ -1748,39 +1773,54 @@ function RowLabel({ row }: { row: RowEntry }): React.JSX.Element {
 }
 
 function sameSlug(left: RepoSlug, right: RepoSlug): boolean {
-  return (
-    left.owner.toLowerCase() === right.owner.toLowerCase() &&
-    left.repo.toLowerCase() === right.repo.toLowerCase()
-  )
+  return githubRepoIdentityKey(left) === githubRepoIdentityKey(right)
 }
 
-async function getRepoSlugCached(
-  repo: RepoOption,
-  cache: Map<string, RepoSlug | null>
+export async function getRepoSlugCached(
+  repo: Pick<RepoOption, 'id' | 'path'>,
+  sourceContext: TaskSourceContext | null | undefined,
+  cache: Map<string, RepoSlug>
 ): Promise<RepoSlug | null> {
-  const cacheKey = repo.id
+  const cacheKey = sourceContext
+    ? `${getTaskSourceCacheScope(sourceContext)}\0${repo.path}`
+    : `local:${repo.id}\0${repo.path}`
   if (cache.has(cacheKey)) {
     return cache.get(cacheKey) ?? null
   }
   try {
-    const slug = await window.api.gh.repoSlug({ repoPath: repo.path, repoId: repo.id })
-    cache.set(cacheKey, slug)
+    const target = getGitHubSourceRuntimeTarget(sourceContext)
+    const slug =
+      target.kind === 'environment'
+        ? await callRuntimeRpc<RepoSlug | null>(
+            target,
+            'github.repoSlug',
+            { repo: getGitHubRuntimeRepoId(sourceContext, repo.id) },
+            { timeoutMs: 30_000 }
+          )
+        : await window.api.gh.repoSlug({ repoPath: repo.path, repoId: repo.id })
+    if (slug) {
+      cache.set(cacheKey, slug)
+    }
     return slug
   } catch {
-    cache.set(cacheKey, null)
     return null
   }
 }
 
+type RepoSlugTarget = {
+  repo: RepoOption
+  sourceContext: TaskSourceContext | null | undefined
+}
+
 async function findMatchingRepoForSlug(
-  repos: RepoOption[],
+  targets: RepoSlugTarget[],
   slug: RepoSlug,
-  cache: Map<string, RepoSlug | null>
-): Promise<RepoOption | null> {
-  for (const repo of repos) {
-    const candidate = await getRepoSlugCached(repo, cache)
+  cache: Map<string, RepoSlug>
+): Promise<RepoSlugTarget | null> {
+  for (const target of targets) {
+    const candidate = await getRepoSlugCached(target.repo, target.sourceContext, cache)
     if (candidate && sameSlug(candidate, slug)) {
-      return repo
+      return target
     }
   }
   return null

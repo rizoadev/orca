@@ -18,6 +18,7 @@ import { isSubmoduleWorktreeRemovalRefusal } from '../../shared/worktree-submodu
 import { decodeGitCQuotedPath } from '../../shared/git-cquoted-path'
 import { parseGitRevListAheadBehindCounts } from '../../shared/git-rev-list-output'
 import { parseWslUncPath } from '../../shared/wsl-paths'
+import { iterateNulDelimitedFields } from '../../shared/nul-delimited-fields'
 import {
   hasUnsupportedRevParsePathFormatEcho,
   isUnsupportedRevParsePathFormatError,
@@ -87,6 +88,8 @@ const PRUNABLE_EXISTENCE_PROBE_CONCURRENCY = 8
 // Why: bound `git worktree add` so a OneDrive cloud-placeholder stall fails fast (STA-1292); generous enough for a legit large checkout (#7225).
 export const WORKTREE_ADD_TIMEOUT_MS = 180_000
 export const WORKTREE_REMOVAL_PREFLIGHT_TIMEOUT_MS = 30_000
+// Why: one wedged shared scan otherwise hangs every later list, including create's post-add re-list.
+export const WORKTREE_LIST_TIMEOUT_MS = 30_000
 
 function gitExecOptions(
   cwd: string,
@@ -546,7 +549,7 @@ function splitNulWorktreeList(output: string): string[][] {
   const blocks: string[][] = []
   let currentBlock: string[] = []
 
-  for (const field of output.split('\0')) {
+  for (const field of iterateNulDelimitedFields(output)) {
     if (field) {
       currentBlock.push(field)
       continue
@@ -572,13 +575,18 @@ async function readWorktreeList(
     cwd: repoPath,
     wslDistro: options.wslDistro
   })
+  const execOptions = {
+    cwd: repoPath,
+    ...options,
+    timeout: options.timeout ?? WORKTREE_LIST_TIMEOUT_MS
+  }
   return capabilities.runWithFallback(
     'worktree-list-z',
     async () => {
-      const { stdout } = await gitExecFileAsync(['worktree', 'list', '--porcelain', '-z'], {
-        cwd: repoPath,
-        ...options
-      })
+      const { stdout } = await gitExecFileAsync(
+        ['worktree', 'list', '--porcelain', '-z'],
+        execOptions
+      )
       return normalizeMainWorktreePath(
         repoPath,
         parseWorktreeList(stdout, { nulDelimited: true }),
@@ -587,10 +595,7 @@ async function readWorktreeList(
     },
     async () => {
       // Why: `-z` preserves worktree paths with newlines but Git <2.36 rejects it; fall back to the line parser.
-      const { stdout } = await gitExecFileAsync(['worktree', 'list', '--porcelain'], {
-        cwd: repoPath,
-        ...options
-      })
+      const { stdout } = await gitExecFileAsync(['worktree', 'list', '--porcelain'], execOptions)
       const normalized = await normalizeMainWorktreePath(
         repoPath,
         parseWorktreeList(stdout),
@@ -737,7 +742,9 @@ export function listWorktrees(
     return listWorktreesUnshared(repoPath, options)
   }
   const generation = worktreeScanGenerations.get(repoPath) ?? 0
-  const key = `${repoPath}\0${options.wslDistro ?? ''}\0${generation}`
+  const timeout = options.timeout ?? WORKTREE_LIST_TIMEOUT_MS
+  // Why: callers with different deadlines cannot safely share which timeout wins the scan.
+  const key = `${repoPath}\0${options.wslDistro ?? ''}\0${timeout}\0${generation}`
   const inFlight = inFlightWorktreeScans.get(key)
   if (inFlight) {
     return inFlight
@@ -1370,10 +1377,12 @@ function hasOnlyIgnoredUntrackedStatus(
       )
       .filter((entry) => entry && !entry.split('/').includes('..'))
   )
-  return status
-    .split('\0')
-    .filter(Boolean)
-    .every((entry) => entry.startsWith('?? ') && ignored.has(entry.slice(3).replace(/\\/g, '/')))
+  for (const entry of iterateNulDelimitedFields(status)) {
+    if (entry && (!entry.startsWith('?? ') || !ignored.has(entry.slice(3).replace(/\\/g, '/')))) {
+      return false
+    }
+  }
+  return true
 }
 
 function translateWorktreePath(

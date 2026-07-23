@@ -50,7 +50,10 @@ import type {
 import type { TerminalPaneSplitSource } from '../../../../shared/feature-education-telemetry'
 import type { EventProps } from '../../../../shared/telemetry-events'
 import type { StartupCommandDelivery } from '../../../../shared/codex-startup-delivery'
-import type { SleepingAgentLaunchConfig } from '../../../../shared/agent-session-resume'
+import type {
+  AgentProviderSessionMetadata,
+  SleepingAgentLaunchConfig
+} from '../../../../shared/agent-session-resume'
 import { resolveTerminalFontWeights } from '../../../../shared/terminal-fonts'
 import {
   buildFontFamily,
@@ -97,6 +100,7 @@ import type { EffectiveMacOptionAsAlt } from '@/lib/keyboard-layout/detect-optio
 import { resolveEffectiveTerminalAppearance } from '@/lib/terminal-theme'
 import { connectPanePty } from './pty-connection'
 import type { PtyTransport } from './pty-transport'
+import type { PtyTransportRecoveryState } from './pty-transport-types'
 import {
   reconcileMissingSessions,
   type ReconcilableBinding
@@ -106,7 +110,10 @@ import { getConnectionId } from '@/lib/connection-context'
 import { getExecutionHostIdForWorktree } from '@/lib/worktree-runtime-owner'
 import { isPaneReplaying, type ReplayingPanesRef } from './replay-guard'
 import { fitAndFocusPanes, fitPanes } from './pane-helpers'
-import { markTerminalPinnedViewport } from '@/lib/pane-manager/terminal-scroll-intent'
+import {
+  markTerminalPinnedViewport,
+  releaseTerminalScrollIntentKeys
+} from '@/lib/pane-manager/terminal-scroll-intent'
 import { syncTerminalScrollIntentSoon } from '@/lib/pane-manager/terminal-scroll-intent-settle'
 import { registerRuntimeTerminalTab, scheduleRuntimeGraphSync } from '@/runtime/sync-runtime-graph'
 import { captureParkedTerminalPaneCandidates } from './terminal-parked-tab-watchers'
@@ -209,7 +216,9 @@ type UseTerminalPaneLifecycleDeps = {
     delivery?: 'terminal-paste'
     startupCommandDelivery?: StartupCommandDelivery
     env?: Record<string, string>
+    envToDelete?: string[]
     launchConfig?: SleepingAgentLaunchConfig
+    resumeProviderSession?: AgentProviderSessionMetadata
     launchToken?: string
     launchAgent?: TuiAgent
     draftPrompt?: string
@@ -259,8 +268,12 @@ type UseTerminalPaneLifecycleDeps = {
   onPtyExitRef: React.RefObject<(ptyId: string) => void>
   onAgentExitedRef: React.RefObject<(leafId: string) => void>
   onPtyErrorRef?: React.RefObject<(paneId: number, message: string) => void>
+  onPtyRecoveryStateRef?: React.RefObject<
+    (paneId: number, state: PtyTransportRecoveryState | null) => void
+  >
   clearTabPtyId: (tabId: string, ptyId: string) => void
   consumeSuppressedPtyExit: (ptyId: string) => boolean
+  isPtyShutdownPending: (ptyId: string) => boolean
   updateTabTitle: (tabId: string, title: string) => void
   setRuntimePaneTitle: (tabId: string, paneId: number, title: string) => void
   clearRuntimePaneTitle: (tabId: string, paneId: number) => void
@@ -514,8 +527,10 @@ export function useTerminalPaneLifecycle({
   onPtyExitRef,
   onAgentExitedRef,
   onPtyErrorRef,
+  onPtyRecoveryStateRef,
   clearTabPtyId,
   consumeSuppressedPtyExit,
+  isPtyShutdownPending,
   updateTabTitle,
   setRuntimePaneTitle,
   clearRuntimePaneTitle,
@@ -726,8 +741,10 @@ export function useTerminalPaneLifecycle({
       onPtyExitRef,
       onAgentExitedRef,
       onPtyErrorRef,
+      onPtyRecoveryStateRef,
       clearTabPtyId,
       consumeSuppressedPtyExit,
+      isPtyShutdownPending,
       updateTabTitle,
       setRuntimePaneTitle,
       clearRuntimePaneTitle,
@@ -1121,6 +1138,7 @@ export function useTerminalPaneLifecycle({
         queueResizeAll(true)
       },
       onPaneClosed: (paneId, closedPane) => {
+        onPtyRecoveryStateRef?.current?.(paneId, null)
         const isDetachedToTab = closedPane?.reason === 'detach'
         const linkProviderDisposable = linkProviderDisposablesRef.current.get(paneId)
         if (linkProviderDisposable) {
@@ -1207,6 +1225,7 @@ export function useTerminalPaneLifecycle({
         }
         const leafId = closedPane?.leafId
         if (leafId && !isDetachedToTab) {
+          releaseTerminalScrollIntentKeys([leafId])
           // Why: revoke only this pane's authority; an exact tombstone blocks queued hooks without suppressing siblings.
           const paneKey = makePaneKey(tabId, leafId)
           useAppStore.getState().retireAgentPaneAuthority(paneKey)
