@@ -255,8 +255,13 @@ export const ORCHESTRATION_METHODS: RpcMethod[] = [
 
       // Why: fan out one message per recipient (independent read-tracking) but share a thread_id for correlation (Section 4.5).
       const { terminals } = await runtime.listTerminals()
-      const handles = resolveGroupAddress(params.to, from, terminals, (handle: string) =>
-        runtime.getAgentStatusForHandle(handle)
+      const handles = resolveGroupAddress(
+        params.to,
+        from,
+        terminals,
+        (handle: string) => runtime.getAgentStatusForHandle(handle),
+        // Why: @squad:* resolves against the same persisted squads the settings UI edits.
+        runtime.getClientSettings().agentSquads
       )
 
       if (handles.length === 0) {

@@ -3040,6 +3040,7 @@ export class OrcaRuntimeService {
     GlobalSettings,
     | 'defaultTuiAgent'
     | 'disabledTuiAgents'
+    | 'agentSquads'
     | 'agentCmdOverrides'
     | 'agentDefaultArgs'
     | 'agentDefaultEnv'
@@ -3063,6 +3064,7 @@ export class OrcaRuntimeService {
     return {
       defaultTuiAgent: settings.defaultTuiAgent ?? null,
       disabledTuiAgents: settings.disabledTuiAgents ?? [],
+      agentSquads: settings.agentSquads ?? [],
       agentCmdOverrides: settings.agentCmdOverrides ?? {},
       agentDefaultArgs: settings.agentDefaultArgs ?? {},
       agentDefaultEnv: settings.agentDefaultEnv ?? {},

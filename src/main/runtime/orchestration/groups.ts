@@ -1,6 +1,13 @@
 import { isCursorAgentTitle } from '../../../shared/agent-title-core'
 import { buildAgentNameRe } from '../../../shared/agent-name-token-match'
 import type { RuntimeTerminalSummary } from '../../../shared/runtime-types'
+import {
+  normalizeAgentSquads,
+  parseSquadAddress,
+  resolveSquadLeader,
+  resolveSquadWorkers,
+  type AgentSquad
+} from '../../../shared/agent-squads'
 
 // Why: group addresses enable broadcast messaging to logical groups of agents.
 // Resolution is done at send-time: one message record per recipient, same thread_id,
@@ -20,7 +27,12 @@ const AGENT_NAME_GROUPS = [
 
 type AgentNameGroup = (typeof AGENT_NAME_GROUPS)[number]
 
-export type GroupAddress = '@all' | '@idle' | `@${AgentNameGroup}` | `@worktree:${string}`
+export type GroupAddress =
+  | '@all'
+  | '@idle'
+  | `@${AgentNameGroup}`
+  | `@worktree:${string}`
+  | `@squad:${string}`
 
 export function isGroupAddress(to: string): boolean {
   return to.startsWith('@')
@@ -49,7 +61,9 @@ export function resolveGroupAddress(
   to: string,
   senderHandle: string,
   terminals: RuntimeTerminalSummary[],
-  getAgentStatus: (handle: string) => string | null
+  getAgentStatus: (handle: string) => string | null,
+  // Why: optional so existing callers stay source-compatible; squads only resolve when provided.
+  squads?: readonly AgentSquad[] | unknown
 ): string[] {
   if (!isGroupAddress(to)) {
     return [to]
@@ -76,6 +90,44 @@ export function resolveGroupAddress(
     return terminals
       .filter((t) => t.handle !== senderHandle && t.worktreeId === worktreeId)
       .map((t) => t.handle)
+  }
+
+  // @squad:<id|name> — leader_decide routes to leader terminals; idle_first prefers idle members.
+  const squadKey = parseSquadAddress(to)
+  if (squadKey) {
+    const normalized = normalizeAgentSquads(squads ?? [])
+    const leader = resolveSquadLeader(normalized, squadKey)
+    if (!leader.ok) {
+      return []
+    }
+    const matchAgent = (agentName: string): string[] =>
+      terminals
+        .filter((t) => {
+          if (t.handle === senderHandle) {
+            return false
+          }
+          return titleMatchesAgentNameGroup(t.title ?? '', agentName)
+        })
+        .map((t) => t.handle)
+
+    if (leader.squad.routing === 'idle_first') {
+      const workers = resolveSquadWorkers(normalized, squadKey)
+      const candidates = workers.ok ? [leader.leader, ...workers.workers] : [leader.leader]
+      const idle: string[] = []
+      for (const member of candidates) {
+        for (const handle of matchAgent(member.agent)) {
+          if (getAgentStatus(handle) === 'idle') {
+            idle.push(handle)
+          }
+        }
+      }
+      if (idle.length > 0) {
+        return Array.from(new Set(idle))
+      }
+    }
+
+    // Why: default leader_decide (and round_robin without live counters) targets the leader role.
+    return Array.from(new Set(matchAgent(leader.leader.agent)))
   }
 
   // Why: agent-name groups (@claude, @droid, etc.) match by terminal title so

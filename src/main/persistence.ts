@@ -210,6 +210,7 @@ import {
   SOURCE_CONTROL_TEXT_ACTION_IDS
 } from '../shared/source-control-ai-actions'
 import { normalizeDisabledTuiAgents } from '../shared/tui-agent-selection'
+import { normalizeAgentSquads } from '../shared/agent-squads'
 import {
   DEFAULT_TUI_AGENT_ARGS,
   DEFAULT_TUI_AGENT_ENV,
@@ -5226,6 +5227,10 @@ export class Store {
     }
     if ('disabledTuiAgents' in updates) {
       sanitizedUpdates.disabledTuiAgents = normalizeDisabledTuiAgents(updates.disabledTuiAgents)
+    }
+    if ('agentSquads' in updates) {
+      // Why: drop malformed squad entries so settings never persist half-broken routing targets.
+      sanitizedUpdates.agentSquads = normalizeAgentSquads(updates.agentSquads)
     }
     if ('agentDefaultArgs' in updates) {
       sanitizedUpdates.agentDefaultArgs = normalizeTuiAgentArgsRecord(updates.agentDefaultArgs)

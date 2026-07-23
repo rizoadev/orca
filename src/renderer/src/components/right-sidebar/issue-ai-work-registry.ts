@@ -5,6 +5,15 @@
 // unknown until the user relaunches (matches "background terminal" semantics).
 
 import { useSyncExternalStore } from 'react'
+import {
+  formatCoalescedPrompt,
+  tryCoalesceFollowUp,
+  type CoalesceFollowUpResult
+} from '../../../../shared/agent-followup-coalesce'
+import {
+  classifyDirectHuman,
+  type AgentRunAttribution
+} from '../../../../shared/agent-run-attribution'
 
 export type IssueAiWorkEntry = {
   worktreeId: string
@@ -23,6 +32,10 @@ export type IssueAiWorkEntry = {
   branchName?: string
   /** Repo id that owns the branch/worktree; needed by merge/delete flows. */
   repoId?: string
+  /** Pending follow-ups folded before the worker session is live. */
+  pendingMessages?: string[]
+  /** Explainable provenance for this AI issue run. */
+  attribution?: AgentRunAttribution
 }
 
 const entriesByIssueId = new Map<string, IssueAiWorkEntry>()
@@ -65,6 +78,57 @@ export function clearAllIssueAiWorkForTests(): void {
 
 export function getIssueAiWorkEntry(issueId: string): IssueAiWorkEntry | undefined {
   return entriesByIssueId.get(issueId)
+}
+
+/** Fold a follow-up into a not-yet-finished issue AI launch when possible. */
+export function coalesceIssueAiWorkFollowUp(args: {
+  issueId: string
+  message: string
+  originatorId?: string | null
+}): CoalesceFollowUpResult {
+  const current = entriesByIssueId.get(args.issueId)
+  if (!current) {
+    return { outcome: 'no_pending', targetKey: args.issueId }
+  }
+  // Why: once outcome is set the worker finished — new work must launch fresh.
+  if (current.outcome) {
+    return { outcome: 'no_pending', targetKey: args.issueId, reason: `outcome=${current.outcome}` }
+  }
+  // Why: empty worktreeId means a pre-spawn placeholder; otherwise the run is live.
+  const state = current.worktreeId.trim().length === 0 && !current.paneKey ? 'pending' : 'running'
+  const nextAttribution = args.originatorId
+    ? classifyDirectHuman({
+        originatorId: args.originatorId,
+        evidenceKind: 'followup',
+        evidenceRefId: args.issueId
+      })
+    : undefined
+  const result = tryCoalesceFollowUp({
+    targetKey: args.issueId,
+    state,
+    existingMessages: current.pendingMessages ?? [],
+    nextMessage: args.message,
+    existingAttribution: current.attribution,
+    nextAttribution
+  })
+  if (result.outcome !== 'merged') {
+    return result
+  }
+  entriesByIssueId.set(args.issueId, {
+    ...current,
+    pendingMessages: result.messages,
+    ...(result.attribution ? { attribution: result.attribution } : {})
+  })
+  emit()
+  return result
+}
+
+export function getIssueAiWorkCoalescedPrompt(issueId: string): string | null {
+  const entry = entriesByIssueId.get(issueId)
+  if (!entry?.pendingMessages?.length) {
+    return null
+  }
+  return formatCoalescedPrompt(entry.pendingMessages)
 }
 
 function subscribe(listener: () => void): () => void {

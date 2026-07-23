@@ -2,6 +2,7 @@ import { describe, expect, it, beforeEach } from 'vitest'
 import {
   clearAllIssueAiWorkForTests,
   clearIssueAiWork,
+  coalesceIssueAiWorkFollowUp,
   getIssueAiWorkEntry,
   registerIssueAiWork,
   updateIssueAiWorkOutcome
@@ -32,6 +33,27 @@ describe('issue-ai-work-registry', () => {
   it('stores an entry and returns it by issue id', () => {
     registerIssueAiWork('gh:1', baseEntry)
     expect(getIssueAiWorkEntry('gh:1')).toEqual(baseEntry)
+  })
+
+  it('coalesces follow-ups only while the run is still pending/without outcome', () => {
+    registerIssueAiWork('gh:pending', {
+      ...baseEntry,
+      worktreeId: '',
+      paneKey: undefined,
+      pendingMessages: ['first']
+    })
+    const merged = coalesceIssueAiWorkFollowUp({
+      issueId: 'gh:pending',
+      message: 'second',
+      originatorId: 'user-b'
+    })
+    expect(merged.outcome).toBe('merged')
+    expect(getIssueAiWorkEntry('gh:pending')?.pendingMessages).toEqual(['first', 'second'])
+
+    registerIssueAiWork('gh:running', baseEntry)
+    expect(coalesceIssueAiWorkFollowUp({ issueId: 'gh:running', message: 'later' }).outcome).toBe(
+      'already_running'
+    )
   })
 
   it('records an outcome without dropping the rest of the entry', () => {

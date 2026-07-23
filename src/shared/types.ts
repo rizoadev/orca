@@ -30,6 +30,7 @@ import type {
 } from './source-control-ai-types'
 import type { StartupCommandDelivery } from './codex-startup-delivery'
 import type { AgentKind, LaunchSource, RequestKind } from './telemetry-events'
+import type { AgentSquad } from './agent-squads'
 import type { SleepingAgentLaunchConfig, SleepingAgentSessionRecord } from './agent-session-resume'
 import type { ClaudeAgentTeamsMode } from './claude-agent-teams-tmux-compat'
 import type { TerminalCustomTheme } from './terminal-custom-themes'
@@ -2817,6 +2818,8 @@ export type GlobalSettings = {
   defaultTuiAgent: TuiAgent | 'blank' | null
   /** Agents hidden from picker/auto-launch; detection stays a raw PATH snapshot. */
   disabledTuiAgents: TuiAgent[]
+  /** Named agent squads with a designated leader for group routing (@squad:<id>). */
+  agentSquads?: AgentSquad[]
   /** One-shot guard: start Claude Agent Teams hidden for existing profiles without overriding later opt-ins. */
   claudeAgentTeamsDefaultDisabledMigrated?: boolean
   /** Why: worktree deletion is destructive (rm -rf of the working dir), so confirm by default. */

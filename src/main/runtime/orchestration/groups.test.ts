@@ -303,6 +303,56 @@ describe('resolveGroupAddress', () => {
     })
   })
 
+  describe('@squad', () => {
+    const squads = [
+      {
+        id: 'frontend',
+        name: 'Frontend Team',
+        leader: { agent: 'claude' as const },
+        members: [
+          { agent: 'claude' as const },
+          { agent: 'codex' as const },
+          { agent: 'cursor' as const }
+        ],
+        routing: 'leader_decide' as const
+      }
+    ]
+
+    it('routes leader_decide squads to leader-titled terminals', () => {
+      const terminals = [
+        makeSummary('term_a', { title: 'Claude Code' }),
+        makeSummary('term_b', { title: 'Codex' }),
+        makeSummary('term_c', { title: 'Cursor' })
+      ]
+      const result = resolveGroupAddress('@squad:frontend', 'sender', terminals, noStatus, squads)
+      expect(result).toEqual(['term_a'])
+    })
+
+    it('prefers idle members when routing is idle_first', () => {
+      const idleFirst = [{ ...squads[0]!, routing: 'idle_first' as const }]
+      const terminals = [
+        makeSummary('term_a', { title: 'Claude Code' }),
+        makeSummary('term_b', { title: 'Codex' })
+      ]
+      const getStatus = (handle: string) => (handle === 'term_b' ? 'idle' : 'working')
+      const result = resolveGroupAddress(
+        '@squad:frontend',
+        'sender',
+        terminals,
+        getStatus,
+        idleFirst
+      )
+      expect(result).toEqual(['term_b'])
+    })
+
+    it('returns empty for unknown squad ids', () => {
+      const terminals = [makeSummary('term_a', { title: 'Claude Code' })]
+      expect(resolveGroupAddress('@squad:missing', 'sender', terminals, noStatus, squads)).toEqual(
+        []
+      )
+    })
+  })
+
   describe('unknown groups', () => {
     it('returns empty for unrecognized group', () => {
       const terminals = [makeSummary('term_a'), makeSummary('term_b')]
