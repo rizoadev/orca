@@ -530,6 +530,7 @@ import {
   addIssueComment as addGitLabIssueComment,
   addMRInlineComment as addGitLabMRInlineComment,
   addMRComment as addGitLabMRComment,
+  addDiscussionNote as addGitLabDiscussionNote,
   listTodos as listGitLabTodos,
   listIssues as listGitLabIssues,
   listLabels as listGitLabLabels,
@@ -16422,6 +16423,28 @@ export class OrcaRuntimeService {
     return addGitLabMRComment(
       repo.path,
       iid,
+      body,
+      repo.issueSourcePreference,
+      repo.connectionId ?? null,
+      projectRef,
+      ...this.getLocalGitExecutionOptionArgs(repo)
+    )
+  }
+
+  async addGitLabRepoDiscussionNote(
+    repoSelector: string,
+    type: 'issue' | 'mr',
+    iid: number,
+    discussionId: string,
+    body: string,
+    projectRef?: GitLabProjectRef | null
+  ): Promise<Awaited<ReturnType<typeof addGitLabDiscussionNote>>> {
+    const repo = await this.resolveRepoSelector(repoSelector)
+    return addGitLabDiscussionNote(
+      repo.path,
+      type,
+      iid,
+      discussionId,
       body,
       repo.issueSourcePreference,
       repo.connectionId ?? null,

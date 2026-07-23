@@ -137,6 +137,15 @@ export const glApi = {
   addMRComment: (args: GitLabRepoSelectorArgs & { iid: number; body: string }): Promise<unknown> =>
     ipcRenderer.invoke('gitlab:addMRComment', args),
 
+  addDiscussionNote: (
+    args: GitLabRepoSelectorArgs & {
+      type: 'issue' | 'mr'
+      iid: number
+      discussionId: string
+      body: string
+    }
+  ): Promise<unknown> => ipcRenderer.invoke('gitlab:addDiscussionNote', args),
+
   addMRInlineComment: (
     args: GitLabRepoSelectorArgs & {
       iid: number

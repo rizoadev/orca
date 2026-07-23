@@ -1075,6 +1075,77 @@ export async function addMRInlineComment(
   )
 }
 
+export async function addDiscussionNote(
+  repoPath: string,
+  type: 'issue' | 'mr',
+  iid: number,
+  discussionId: string,
+  body: string,
+  preference?: IssueSourcePreference,
+  connectionId?: string | null,
+  projectRef?: ProjectRef | null,
+  localGitOptions: LocalGitExecOptions = {}
+): Promise<{ ok: true; comment: MRComment } | { ok: false; error: string }> {
+  return withProjectRef<{ ok: true; comment: MRComment } | { ok: false; error: string }>(
+    repoPath,
+    preference,
+    connectionId,
+    projectRef,
+    async (resolvedProjectRef) => {
+      const trimmedDiscussionId = discussionId.trim()
+      const trimmedBody = body.trim()
+      if (!trimmedDiscussionId) {
+        return { ok: false, error: 'Discussion id is required' }
+      }
+      if (!trimmedBody) {
+        return { ok: false, error: 'Comment body is required' }
+      }
+      const resource = type === 'mr' ? 'merge_requests' : 'issues'
+      await acquire()
+      try {
+        // Why: GitLab replies are discussion notes; top-level /notes would start a new thread.
+        const { stdout } = await glabExecFileAsync(
+          [
+            'api',
+            ...glabHostnameArgs(resolvedProjectRef, connectionId),
+            '-X',
+            'POST',
+            `projects/${encodedProject(resolvedProjectRef.path)}/${resource}/${iid}/discussions/${encodeURIComponent(trimmedDiscussionId)}/notes`,
+            '-f',
+            `body=${trimmedBody}`
+          ],
+          glabRepoExecOptions(repoPath, connectionId, localGitOptions)
+        )
+        const data = JSON.parse(stdout) as {
+          id?: number
+          author?: { username?: string; avatar_url?: string; state?: string } | null
+          body?: string
+          created_at?: string
+        }
+        return {
+          ok: true,
+          comment: {
+            id: data.id ?? Date.now(),
+            author: data.author?.username ?? 'You',
+            authorAvatarUrl: data.author?.avatar_url ?? '',
+            body: data.body ?? trimmedBody,
+            createdAt: data.created_at ?? new Date().toISOString(),
+            url: '',
+            threadId: trimmedDiscussionId,
+            isBot: data.author?.state === 'bot'
+          }
+        }
+      } catch (err) {
+        return { ok: false, error: err instanceof Error ? err.message : String(err) }
+      } finally {
+        release()
+      }
+    },
+    { ok: false, error: 'Could not resolve GitLab project for this repository' },
+    localGitOptions
+  )
+}
+
 export async function resolveMRDiscussion(
   repoPath: string,
   iid: number,

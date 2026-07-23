@@ -22,6 +22,7 @@ import {
 } from '../gitlab/gitlab-preload-args'
 import { recordGitLabProjectRecent } from '../gitlab/gitlab-project-recents'
 import {
+  addDiscussionNote,
   addIssueComment,
   addMRInlineComment,
   addMRComment,
@@ -461,6 +462,32 @@ export function registerGitLabHandlers(store: Store): void {
       return addMRComment(
         repo.path,
         args.iid,
+        args.body,
+        repo.issueSourcePreference,
+        repoConnectionId(repo),
+        undefined,
+        ...localGitOptionArgs(store, repo)
+      )
+    }
+  )
+
+  ipcMain.handle(
+    'gitlab:addDiscussionNote',
+    async (
+      _event,
+      args: GitLabRepoSelectorArgs & {
+        type: 'issue' | 'mr'
+        iid: number
+        discussionId: string
+        body: string
+      }
+    ) => {
+      const repo = assertRegisteredRepo(args, store)
+      return addDiscussionNote(
+        repo.path,
+        args.type,
+        args.iid,
+        args.discussionId,
         args.body,
         repo.issueSourcePreference,
         repoConnectionId(repo),

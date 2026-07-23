@@ -1923,6 +1923,14 @@ export type PreloadApi = {
         body: string
       }
     ) => Promise<GitLabCommentResult>
+    addDiscussionNote: (
+      args: GitLabRepoSelectorArgs & {
+        type: 'issue' | 'mr'
+        iid: number
+        discussionId: string
+        body: string
+      }
+    ) => Promise<GitLabCommentResult>
     addMRInlineComment: (
       args: GitLabRepoSelectorArgs & {
         iid: number

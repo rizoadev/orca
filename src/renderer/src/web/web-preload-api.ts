@@ -370,6 +370,7 @@ type WebGitLabRouteKey =
   | 'updateMR'
   | 'updateMRReviewers'
   | 'addMRComment'
+  | 'addDiscussionNote'
   | 'addMRInlineComment'
   | 'resolveMRDiscussion'
   | 'jobTrace'
@@ -392,6 +393,7 @@ type WebGitLabRuntimeMethod =
   | 'gitlab.updateMR'
   | 'gitlab.updateMRReviewers'
   | 'gitlab.addMRComment'
+  | 'gitlab.addDiscussionNote'
   | 'gitlab.addMRInlineComment'
   | 'gitlab.resolveMRDiscussion'
   | 'gitlab.jobTrace'
@@ -471,6 +473,7 @@ export const GITLAB_WEB_RPC_METHODS = {
   updateMR: 'gitlab.updateMR',
   updateMRReviewers: 'gitlab.updateMRReviewers',
   addMRComment: 'gitlab.addMRComment',
+  addDiscussionNote: 'gitlab.addDiscussionNote',
   addMRInlineComment: 'gitlab.addMRInlineComment',
   resolveMRDiscussion: 'gitlab.resolveMRDiscussion',
   jobTrace: 'gitlab.jobTrace',
@@ -2371,6 +2374,8 @@ function createGitLabApi(): WebGitLabApi {
       route<WebGitLabResult<'updateMRReviewers'>>(GITLAB_WEB_RPC_METHODS.updateMRReviewers, args),
     addMRComment: (args) =>
       route<WebGitLabResult<'addMRComment'>>(GITLAB_WEB_RPC_METHODS.addMRComment, args),
+    addDiscussionNote: (args) =>
+      route<WebGitLabResult<'addDiscussionNote'>>(GITLAB_WEB_RPC_METHODS.addDiscussionNote, args),
     addMRInlineComment: (args) =>
       route<WebGitLabResult<'addMRInlineComment'>>(GITLAB_WEB_RPC_METHODS.addMRInlineComment, args),
     resolveMRDiscussion: (args) =>

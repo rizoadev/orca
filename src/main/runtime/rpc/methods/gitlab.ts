@@ -98,6 +98,14 @@ const AddMRComment = RepoSelector.extend({
   projectRef: GitLabProjectRef
 })
 
+const AddDiscussionNote = RepoSelector.extend({
+  type: z.enum(['issue', 'mr']),
+  iid: z.number().int().positive(),
+  discussionId: requiredString('Discussion id is required'),
+  body: requiredString('Comment body is required'),
+  projectRef: GitLabProjectRef
+}) // Why: reply-in-thread notes (issue/MR discussions), not top-level /notes.
+
 const AddMRInlineComment = RepoSelector.extend({
   iid: z.number().int().positive(),
   input: z.object({
@@ -223,6 +231,19 @@ export const GITLAB_METHODS: RpcMethod[] = [
     params: AddMRComment,
     handler: async (params, { runtime }) =>
       runtime.addGitLabRepoMRComment(params.repo, params.iid, params.body, params.projectRef)
+  }),
+  defineMethod({
+    name: 'gitlab.addDiscussionNote',
+    params: AddDiscussionNote,
+    handler: async (params, { runtime }) =>
+      runtime.addGitLabRepoDiscussionNote(
+        params.repo,
+        params.type,
+        params.iid,
+        params.discussionId,
+        params.body,
+        params.projectRef
+      )
   }),
   defineMethod({
     name: 'gitlab.addMRInlineComment',
