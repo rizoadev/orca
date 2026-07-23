@@ -34,6 +34,14 @@ describe('buildDispatchPreamble', () => {
     expect(result).not.toContain('{{')
   })
 
+  it('injects an optional squad briefing section for leader tasks', () => {
+    const result = buildDispatchPreamble(
+      baseParams({ squadBriefing: 'You are the leader of squad "Frontend".' })
+    )
+    expect(result).toContain('=== SQUAD BRIEFING ===')
+    expect(result).toContain('You are the leader of squad "Frontend".')
+  })
+
   it('includes worker_done command with --body 3-sentence summary prompt and reportPath', () => {
     const result = buildDispatchPreamble(baseParams())
 

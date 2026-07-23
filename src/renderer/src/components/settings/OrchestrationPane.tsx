@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { ArrowRightLeft, GitBranch, ListChecks, Workflow, type LucideIcon } from 'lucide-react'
+import type { GlobalSettings } from '../../../../shared/types'
 import { ORCHESTRATION_SKILL_NAME } from '@/lib/agent-feature-install-commands'
 import type { SkillUsageExample } from '@/lib/skill-usage-example'
 import {
@@ -29,7 +30,13 @@ import {
 import { OrchestrationSkillAgentCoverage } from './OrchestrationSkillAgentCoverage'
 import { SkillUsageExamplesSection } from './SkillUsageExamplesSection'
 import { OrchestrationSkillPromptDialog } from './OrchestrationSkillPromptDialog'
+import { AgentSquadsSettings } from './AgentSquadsSettings'
 import { translate } from '@/i18n/i18n'
+
+type OrchestrationPaneProps = {
+  settings: GlobalSettings
+  updateSettings: (updates: Partial<GlobalSettings>) => void | Promise<void>
+}
 
 const EXAMPLE_ICONS = {
   handoff: ArrowRightLeft,
@@ -43,7 +50,10 @@ function resolveOrchestrationExampleIcon(example: SkillUsageExample): LucideIcon
   return EXAMPLE_ICONS[example.id as keyof typeof EXAMPLE_ICONS] ?? Workflow
 }
 
-export function OrchestrationPane(): React.JSX.Element {
+export function OrchestrationPane({
+  settings,
+  updateSettings
+}: OrchestrationPaneProps): React.JSX.Element {
   const searchQuery = useAppStore((s) => s.settingsSearchQuery)
   const showOrchestration = matchesSettingsSearch(searchQuery, getOrchestrationPaneSearchEntries())
   const [skillPromptOpen, setSkillPromptOpen] = useState(false)
@@ -166,6 +176,8 @@ export function OrchestrationPane(): React.JSX.Element {
         open={skillPromptOpen}
         onOpenChange={setSkillPromptOpen}
       />
+
+      <AgentSquadsSettings settings={settings} updateSettings={updateSettings} />
 
       <SkillUsageExamplesSection
         heading={translate(

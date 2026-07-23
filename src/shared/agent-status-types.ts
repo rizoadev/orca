@@ -3,6 +3,7 @@
 // a narrow interrupt fallback synthesizes a final `done` when an agent misses its cancellation hook.
 
 import type { AgentProviderSessionMetadata } from './agent-session-resume'
+import type { AgentRunAttribution } from './agent-run-attribution'
 import {
   normalizeInteractivePromptField,
   normalizeOptionalField,
@@ -65,6 +66,10 @@ export type AgentStatusOrchestrationContext = {
   parentPaneKey?: string
   coordinatorHandle?: string
   orchestrationRunId?: string
+  /** Explainable human provenance for this dispatch (audit/UI only). */
+  attribution?: AgentRunAttribution
+  squadId?: string
+  isLeaderTask?: boolean
 }
 
 export type AgentSubagentState = 'working' | 'blocked' | 'waiting' | 'idle'

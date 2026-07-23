@@ -45,6 +45,7 @@ import type { SessionOptionValue } from '../../../../shared/native-chat-session-
 import { resolveLocalWindowsTerminalShellOverrideForTab } from '../../../../shared/local-windows-terminal-runtime'
 import { WINDOWS_GIT_BASH_SHELL } from '../../../../shared/windows-terminal-shell'
 import type { AgentStartedTelemetry } from '../../lib/worktree-activation'
+import type { AgentRunAttribution } from '../../../../shared/agent-run-attribution'
 import { scheduleRuntimeGraphSync } from '@/runtime/sync-runtime-graph'
 import { forgetAgentHibernationTabOutput } from '@/lib/agent-hibernation-output-activity'
 import { forgetForegroundTerminalTabs } from '@/lib/foreground-terminal-tabs'
@@ -668,6 +669,8 @@ export type TerminalSlice = {
       initialAgentStatus?: { agent: TuiAgent; prompt: string }
       showSessionRestoredBanner?: boolean
       telemetry?: AgentStartedTelemetry
+      /** Local explainable provenance; not sent on the public telemetry wire. */
+      attribution?: AgentRunAttribution
     }
   ) => void
   queueTabInitialCwd: (tabId: string, cwd: string) => void
@@ -688,6 +691,7 @@ export type TerminalSlice = {
     initialAgentStatus?: { agent: TuiAgent; prompt: string }
     showSessionRestoredBanner?: boolean
     telemetry?: AgentStartedTelemetry
+    attribution?: AgentRunAttribution
   } | null
   queueTabSetupSplit: (
     tabId: string,

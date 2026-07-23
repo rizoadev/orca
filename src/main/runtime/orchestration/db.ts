@@ -806,6 +806,33 @@ export class OrchestrationDb {
     return this.getTask(id)
   }
 
+  /** Fold additional instruction text into a not-yet-dispatched task (coalesce path). */
+  appendTaskSpec(id: string, additionalSpec: string): TaskRow | undefined {
+    const task = this.getTask(id)
+    if (!task) {
+      return undefined
+    }
+    if (task.status !== 'pending' && task.status !== 'ready') {
+      return undefined
+    }
+    assertOrchestrationWriteFits('Task', [additionalSpec])
+    this.db.prepare('UPDATE tasks SET spec = ? WHERE id = ?').run(additionalSpec, id)
+    return this.getTask(id)
+  }
+
+  /** Find a pending/ready task by coalesce key (display_name or task_title). */
+  findCoalesceTarget(coalesceKey: string): TaskRow | undefined {
+    const key = coalesceKey.trim()
+    if (!key) {
+      return undefined
+    }
+    const ready = this.listTasks({ status: 'ready' })
+    const pending = this.listTasks({ status: 'pending' })
+    return [...ready, ...pending].find(
+      (task) => task.display_name === key || task.task_title === key
+    )
+  }
+
   // Why: runs in the status-update transaction, so a completed task never leaves its ready children unpromoted.
   private promoteReadyTasks(completedTaskId: string): void {
     let afterRowId = 0

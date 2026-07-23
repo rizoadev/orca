@@ -31,6 +31,7 @@ import type {
 import type { StartupCommandDelivery } from './codex-startup-delivery'
 import type { AgentKind, LaunchSource, RequestKind } from './telemetry-events'
 import type { AgentSquad } from './agent-squads'
+import type { AgentRunAttribution } from './agent-run-attribution'
 import type { SleepingAgentLaunchConfig, SleepingAgentSessionRecord } from './agent-session-resume'
 import type { ClaudeAgentTeamsMode } from './claude-agent-teams-tmux-compat'
 import type { TerminalCustomTheme } from './terminal-custom-themes'
@@ -2127,6 +2128,8 @@ export type WorktreeStartupLaunch = {
   launchAgent?: TuiAgent
   startupCommandDelivery?: StartupCommandDelivery
   telemetry?: { agent_kind: AgentKind; launch_source: LaunchSource; request_kind: RequestKind }
+  /** Local explainable provenance; not sent on the public telemetry wire. */
+  attribution?: AgentRunAttribution
 }
 
 export type WorktreeDefaultTabsLaunch = {

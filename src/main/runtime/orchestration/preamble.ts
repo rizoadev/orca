@@ -30,6 +30,8 @@ export type PreambleParams = {
   // Why: prompt-returning agents should idle after worker_done, while bare
   // shells have no agent prompt for Orca to reuse.
   workerKind?: 'prompt-returning-agent' | 'bare-shell'
+  /** Optional squad-leader briefing injected before the task body. */
+  squadBriefing?: string
 }
 
 // Why: 5 minutes is frequent enough that the coordinator's stale-heartbeat
@@ -53,10 +55,17 @@ export function buildDispatchPreamble(params: PreambleParams): string {
     workerKind: params.workerKind ?? 'prompt-returning-agent'
   })
 
+  const squadSection = params.squadBriefing?.trim()
+    ? `
+=== SQUAD BRIEFING ===
+${params.squadBriefing.trim()}
+`
+    : ''
+
   const header = `You are working inside Orca, a multi-agent IDE. You are a dispatched worker.
 Your coordinator's terminal handle is: ${params.coordinatorHandle}
 Your task ID is: ${params.taskId}
-
+${squadSection}
 You talk to the coordinator only through the CLI commands below. Do not use
 Slack, GitHub comments, or any other channel to reach a human during the run.
 

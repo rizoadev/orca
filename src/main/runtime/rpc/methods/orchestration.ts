@@ -4,6 +4,17 @@ import { defineMethod, type RpcMethod } from '../core'
 import { OptionalFiniteNumber, OptionalString, OptionalBoolean, requiredString } from '../schemas'
 import type { MessageType, MessagePriority, TaskStatus } from '../../orchestration/db'
 import { buildDispatchPreamble } from '../../orchestration/preamble'
+import {
+  buildSquadLeaderBriefing,
+  normalizeAgentSquads,
+  parseSquadAddress,
+  resolveSquadLeader
+} from '../../../../shared/agent-squads'
+import { classifyDelegation, classifyDirectHuman } from '../../../../shared/agent-run-attribution'
+import {
+  formatCoalescedPrompt,
+  tryCoalesceFollowUp
+} from '../../../../shared/agent-followup-coalesce'
 import { formatMessageBanner } from '../../orchestration/formatter'
 import { isGroupAddress, resolveGroupAddress } from '../../orchestration/groups'
 import { reconcileLifecycleMessage } from '../../orchestration/lifecycle-reconciliation'
@@ -139,7 +150,10 @@ const TaskCreateParams = z.object({
   displayName: OptionalString,
   deps: OptionalString,
   parent: OptionalString,
-  callerTerminalHandle: OptionalString
+  callerTerminalHandle: OptionalString,
+  // Why: when set, fold into an existing pending/ready task with the same title key instead of spawning a sibling.
+  coalesceKey: OptionalString,
+  originatorId: OptionalString
 })
 
 const TaskListParams = z.object({
@@ -175,7 +189,10 @@ const DispatchParams = z.object({
   inject: OptionalBoolean,
   dryRun: OptionalBoolean,
   returnPreamble: OptionalBoolean,
-  devMode: OptionalBoolean
+  devMode: OptionalBoolean,
+  // Why: optional @squad:<id> context so the worker preamble can include the leader briefing.
+  squad: OptionalString,
+  originatorId: OptionalString
 })
 
 const DispatchShowParams = z.object({
@@ -429,10 +446,37 @@ export const ORCHESTRATION_METHODS: RpcMethod[] = [
           throw new Error('Invalid --deps: must be a JSON array of task IDs')
         }
       }
+
+      // Why: Multica-style coalesce — fold follow-up specs into a pending/ready task with the same key.
+      if (params.coalesceKey) {
+        const existing = db.findCoalesceTarget(params.coalesceKey)
+        if (existing) {
+          const nextAttribution = params.originatorId
+            ? classifyDirectHuman({
+                originatorId: params.originatorId,
+                evidenceKind: 'followup',
+                evidenceRefId: existing.id
+              })
+            : undefined
+          const merged = tryCoalesceFollowUp({
+            targetKey: params.coalesceKey,
+            state: existing.status === 'ready' ? 'ready' : 'pending',
+            existingMessages: [existing.spec],
+            nextMessage: params.spec,
+            nextAttribution
+          })
+          if (merged.outcome === 'merged') {
+            const task = db.appendTaskSpec(existing.id, formatCoalescedPrompt(merged.messages))
+            return { task, coalesced: true as const }
+          }
+        }
+      }
+
       const task = db.createTask({
         spec: params.spec,
         taskTitle: params.taskTitle,
-        displayName: params.displayName,
+        // Why: default display_name to coalesceKey so later creates can find this row.
+        displayName: params.displayName ?? params.coalesceKey,
         deps,
         parentId: params.parent,
         createdByTerminalHandle: params.callerTerminalHandle
@@ -491,6 +535,21 @@ export const ORCHESTRATION_METHODS: RpcMethod[] = [
         throw new Error(`Task not found: ${params.task}`)
       }
 
+      const resolveSquadBriefing = (): string | undefined => {
+        const squadKey =
+          params.squad?.trim() || (params.to ? parseSquadAddress(params.to) : null) || null
+        if (!squadKey) {
+          return undefined
+        }
+        const squads = normalizeAgentSquads(runtime.getClientSettings().agentSquads)
+        const leader = resolveSquadLeader(squads, squadKey)
+        if (!leader.ok) {
+          return undefined
+        }
+        return buildSquadLeaderBriefing(leader.squad)
+      }
+      const squadBriefing = resolveSquadBriefing()
+
       // Why: dry-run previews the preamble without mutating state, so it skips the ready-status check and uses a placeholder dispatchId.
       if (params.dryRun) {
         const preamble = buildDispatchPreamble({
@@ -500,6 +559,7 @@ export const ORCHESTRATION_METHODS: RpcMethod[] = [
           coordinatorHandle: params.from ?? 'coordinator',
           workerHandle: params.to ?? 'worker',
           devMode: params.devMode,
+          ...(squadBriefing ? { squadBriefing } : {}),
           ...(params.to
             ? { cliCommand: runtime.getTerminalOrchestrationCliCommand(params.to) }
             : {})
@@ -535,6 +595,20 @@ export const ORCHESTRATION_METHODS: RpcMethod[] = [
       )
 
       // Why: built after ctx so dispatchId is the real ctx.id, letting heartbeats attribute liveness to a specific dispatch context, not just a task.
+      // Why: originator stamps local delegation provenance for UI/audit; not on public telemetry wire.
+      void (params.originatorId
+        ? classifyDelegation({
+            parent: classifyDirectHuman({
+              originatorId: params.originatorId,
+              evidenceKind: 'dispatch',
+              evidenceRefId: ctx.id
+            }),
+            evidenceKind: 'dispatch',
+            evidenceRefId: ctx.id,
+            delegatedFromTaskId: task.id,
+            isLeaderTask: Boolean(squadBriefing)
+          })
+        : null)
       const preamble = buildDispatchPreamble({
         taskId: task.id,
         dispatchId: ctx.id,
@@ -542,7 +616,8 @@ export const ORCHESTRATION_METHODS: RpcMethod[] = [
         coordinatorHandle: params.from ?? 'coordinator',
         workerHandle: to,
         devMode: params.devMode,
-        cliCommand: runtime.getTerminalOrchestrationCliCommand(to)
+        cliCommand: runtime.getTerminalOrchestrationCliCommand(to),
+        ...(squadBriefing ? { squadBriefing } : {})
       })
 
       let injected = false

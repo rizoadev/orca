@@ -66,7 +66,13 @@ export const getOrchestrationPaneSearchEntries = createLocalizedCatalog(() => [
       ...translateSearchKeyword(
         'auto.components.settings.orchestration.search.f5d39af41e',
         'child agents'
-      )
+      ),
+      ...translateSearchKeyword('auto.components.settings.orchestration.search.squads', 'squads'),
+      ...translateSearchKeyword(
+        'auto.components.settings.orchestration.search.squadAddress',
+        '@squad'
+      ),
+      ...translateSearchKeyword('auto.components.settings.orchestration.search.leader', 'leader')
     ]
   }
 ])

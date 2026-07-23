@@ -91,7 +91,9 @@ async function renderPane(): Promise<HTMLDivElement> {
   document.body.appendChild(container)
   root = createRoot(container)
   await act(async () => {
-    root?.render(<OrchestrationPane />)
+    root?.render(
+      <OrchestrationPane settings={{ agentSquads: [] } as never} updateSettings={vi.fn()} />
+    )
   })
   return container
 }
@@ -137,7 +139,9 @@ describe('OrchestrationPane', () => {
   })
 
   it('keeps skill setup visible after install and shows agent coverage plus examples', () => {
-    const markup = renderToStaticMarkup(<OrchestrationPane />)
+    const markup = renderToStaticMarkup(
+      <OrchestrationPane settings={{ agentSquads: [] } as never} updateSettings={vi.fn()} />
+    )
 
     expect(markup).toContain('Orchestration skill')
     expect(markup).toContain('Installed')

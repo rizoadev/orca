@@ -5,6 +5,7 @@ import { activateAndRevealWorktree } from '@/lib/worktree-activation'
 import { useAppStore } from '@/store'
 import { translate } from '@/i18n/i18n'
 import type { Repo, TuiAgent } from '../../../../shared/types'
+import { classifyDirectHuman } from '../../../../shared/agent-run-attribution'
 import { updateIssueAiWorkOutcome } from './issue-ai-work-registry'
 import { claimOrCoalesceIssueAiWork, resolveIssueAiWorkRegistration } from './issue-ai-work-claim'
 import { subscribeCompletionForWorktree } from './issue-ai-work-completion-watcher'
@@ -195,7 +196,12 @@ export async function launchIssueAiWorker(args: {
             agent_kind: startupLaunch.telemetry!.agent_kind,
             launch_source: 'sidebar' as const,
             request_kind: 'new' as const
-          }
+          },
+          attribution: classifyDirectHuman({
+            originatorId: 'local-user',
+            evidenceKind: 'launch',
+            evidenceRefId: registryId
+          })
         }
 
     let primaryTabId: string | null = result.startupTerminal?.tabId ?? null
