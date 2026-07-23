@@ -18,7 +18,10 @@ vi.mock('./repo-git-remote-identity', () => ({
 type RepoIdentityStore = {
   getRepos: () => Repo[]
   getRepo: (id: string) => Repo | undefined
-  updateRepo: (id: string, updates: Pick<Partial<Repo>, 'gitRemoteIdentity'>) => Repo | null
+  updateRepo: (
+    id: string,
+    updates: Pick<Partial<Repo>, 'gitRemoteIdentity' | 'upstream'>
+  ) => Repo | null
 }
 
 const remoteIdentity: GitRemoteIdentity = {
@@ -174,5 +177,56 @@ describe('enrichMissingRepoGitRemoteIdentities', () => {
 
     expect(store.updateRepo).not.toHaveBeenCalled()
     expect(repo.gitRemoteIdentity).toBeUndefined()
+  })
+
+  it('refreshes a stale GitHub identity when remotes move to GitLab', async () => {
+    const gitlabIdentity: GitRemoteIdentity = {
+      canonicalKey: 'gitlab.com/group/app',
+      remoteName: 'origin',
+      remoteUrl: 'git@gitlab.com:group/app.git'
+    }
+    vi.mocked(detectGitRemoteIdentity).mockResolvedValue(gitlabIdentity)
+    const repo = makeRepo({
+      gitRemoteIdentity: {
+        canonicalKey: 'github.com/old-org/old-app',
+        remoteName: 'origin',
+        remoteUrl: 'git@github.com:old-org/old-app.git'
+      },
+      upstream: { owner: 'old-org', repo: 'old-app' }
+    })
+    const store = makeStore(repo)
+    const onChanged = vi.fn()
+
+    enrichMissingRepoGitRemoteIdentities(store, { onChanged })
+    await flushRepoGitRemoteIdentityEnrichmentForTests()
+
+    expect(store.updateRepo).toHaveBeenCalledWith('repo-1', {
+      gitRemoteIdentity: gitlabIdentity,
+      upstream: null
+    })
+    expect(repo.gitRemoteIdentity).toEqual(gitlabIdentity)
+    expect(repo.upstream).toBeNull()
+    expect(onChanged).toHaveBeenCalledTimes(1)
+  })
+
+  it('skips re-probing an unchanged identity inside the refresh TTL', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(10_000)
+    vi.mocked(detectGitRemoteIdentity).mockResolvedValue(remoteIdentity)
+    const repo = makeRepo({ gitRemoteIdentity: remoteIdentity })
+    const store = makeStore(repo)
+
+    enrichMissingRepoGitRemoteIdentities(store)
+    await flushRepoGitRemoteIdentityEnrichmentForTests()
+    expect(detectGitRemoteIdentity).toHaveBeenCalledTimes(1)
+
+    enrichMissingRepoGitRemoteIdentities(store)
+    await flushRepoGitRemoteIdentityEnrichmentForTests()
+    expect(detectGitRemoteIdentity).toHaveBeenCalledTimes(1)
+
+    vi.setSystemTime(10_000 + 61_000)
+    enrichMissingRepoGitRemoteIdentities(store)
+    await flushRepoGitRemoteIdentityEnrichmentForTests()
+    expect(detectGitRemoteIdentity).toHaveBeenCalledTimes(2)
   })
 })

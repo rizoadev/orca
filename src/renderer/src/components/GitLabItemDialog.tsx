@@ -58,6 +58,12 @@ type Props = {
   // Why: Task page keeps the historical right sheet; the right-sidebar Issues
   // panel wants a centered modal so it doesn't feel like another Tasks route.
   presentation?: 'sheet' | 'modal'
+  // Why: right-sidebar Issues wrapper surfaces "Open in GitLab" and
+  // "Create workspace" in its own header action bar, so the shared dialog
+  // must be able to suppress the duplicate footer buttons on request.
+  hideFooterExternalActions?: boolean
+  /** Slot rendered on the right side of the tab bar (Description / Conversation / …). */
+  tabBarTrailingSlot?: React.ReactNode
 }
 
 type GitLabDialogRepoSelector = {
@@ -332,7 +338,9 @@ export default function GitLabItemDialog({
   sourceContext,
   onClose,
   onCreateWorkspace,
-  presentation = 'sheet'
+  presentation = 'sheet',
+  hideFooterExternalActions = false,
+  tabBarTrailingSlot
 }: Props): React.JSX.Element {
   const [details, setDetails] = useState<GitLabWorkItemDetails | null>(null)
   const [loading, setLoading] = useState(false)
@@ -1071,39 +1079,44 @@ export default function GitLabItemDialog({
       </header>
 
       <Tabs defaultValue="description" className="flex min-h-0 flex-1 flex-col">
-        <TabsList className="mx-5 mt-3 self-start">
-          <TabsTrigger value="description">
-            {translate('auto.components.GitLabItemDialog.908d8d2a73', 'Description')}
-          </TabsTrigger>
-          <TabsTrigger value="conversation">
-            {translate('auto.components.GitLabItemDialog.c996e2962c', 'Conversation')}
-            {details?.comments?.length ? (
-              <span className="ml-1.5 rounded-full bg-muted px-1.5 text-[10px] font-medium">
-                {details.comments.length}
-              </span>
+        <div className="mx-5 mt-3 flex flex-wrap items-center gap-2">
+          <TabsList className="self-start">
+            <TabsTrigger value="description">
+              {translate('auto.components.GitLabItemDialog.908d8d2a73', 'Description')}
+            </TabsTrigger>
+            <TabsTrigger value="conversation">
+              {translate('auto.components.GitLabItemDialog.c996e2962c', 'Conversation')}
+              {details?.comments?.length ? (
+                <span className="ml-1.5 rounded-full bg-muted px-1.5 text-[10px] font-medium">
+                  {details.comments.length}
+                </span>
+              ) : null}
+            </TabsTrigger>
+            {isMR ? (
+              <TabsTrigger value="files">
+                {translate('auto.components.GitLabItemDialog.be3d291837', 'Files')}
+                {details?.files?.length ? (
+                  <span className="ml-1.5 rounded-full bg-muted px-1.5 text-[10px] font-medium">
+                    {details.files.length}
+                  </span>
+                ) : null}
+              </TabsTrigger>
             ) : null}
-          </TabsTrigger>
-          {isMR ? (
-            <TabsTrigger value="files">
-              {translate('auto.components.GitLabItemDialog.be3d291837', 'Files')}
-              {details?.files?.length ? (
-                <span className="ml-1.5 rounded-full bg-muted px-1.5 text-[10px] font-medium">
-                  {details.files.length}
-                </span>
-              ) : null}
-            </TabsTrigger>
+            {isMR ? (
+              <TabsTrigger value="pipeline">
+                {translate('auto.components.GitLabItemDialog.02cbe2de44', 'Pipeline')}
+                {details?.pipelineJobs?.length ? (
+                  <span className="ml-1.5 rounded-full bg-muted px-1.5 text-[10px] font-medium">
+                    {details.pipelineJobs.length}
+                  </span>
+                ) : null}
+              </TabsTrigger>
+            ) : null}
+          </TabsList>
+          {tabBarTrailingSlot ? (
+            <div className="ml-auto flex flex-wrap items-center gap-1.5">{tabBarTrailingSlot}</div>
           ) : null}
-          {isMR ? (
-            <TabsTrigger value="pipeline">
-              {translate('auto.components.GitLabItemDialog.02cbe2de44', 'Pipeline')}
-              {details?.pipelineJobs?.length ? (
-                <span className="ml-1.5 rounded-full bg-muted px-1.5 text-[10px] font-medium">
-                  {details.pipelineJobs.length}
-                </span>
-              ) : null}
-            </TabsTrigger>
-          ) : null}
-        </TabsList>
+        </div>
 
         <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4 scrollbar-sleek">
           {error ? (
@@ -1604,17 +1617,21 @@ export default function GitLabItemDialog({
         </div>
 
         <div className="flex items-center justify-between gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => void window.api.shell.openUrl(item.url)}
-            className="gap-1.5"
-          >
-            <ExternalLink className="size-3.5" />
-            {translate('auto.components.GitLabItemDialog.f2e64d1c20', 'Open in GitLab')}
-          </Button>
+          {hideFooterExternalActions ? (
+            <span />
+          ) : (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => void window.api.shell.openUrl(item.url)}
+              className="gap-1.5"
+            >
+              <ExternalLink className="size-3.5" />
+              {translate('auto.components.GitLabItemDialog.f2e64d1c20', 'Open in GitLab')}
+            </Button>
+          )}
           <div className="flex items-center gap-2">
-            {onCreateWorkspace ? (
+            {onCreateWorkspace && !hideFooterExternalActions ? (
               <Button variant="outline" size="sm" onClick={() => onCreateWorkspace(item)}>
                 {translate('auto.components.GitLabItemDialog.131865e231', 'Create workspace')}
               </Button>

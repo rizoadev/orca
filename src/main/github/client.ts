@@ -1233,6 +1233,7 @@ async function listQueriedWorkItems(
   let availabilityError: unknown
 
   // Why: surface the issue-side error separately for the IPC envelope; PR-side keeps prior swallow-and-log (parent doc §6).
+  // Why: issue Search without repo: is global — never query issues unless owner/repo resolved.
   const issueFetch = (async (): Promise<PartialWorkItemsResult> => {
     if (!issueScope) {
       return { items: [] }

@@ -203,6 +203,14 @@ import type {
   TelegramBridgeStatus,
   TelegramRepoTopicMapping
 } from '../shared/telegram-bridge-types'
+import type {
+  ProjectTodoAddArgs,
+  ProjectTodoClearDoneArgs,
+  ProjectTodoDeleteArgs,
+  ProjectTodoList,
+  ProjectTodoListArgs,
+  ProjectTodoToggleArgs
+} from '../shared/project-todo-types'
 import type { KeybindingActionId, KeybindingFileSnapshot } from '../shared/keybindings'
 import type { AiVaultListArgs, AiVaultSubagentListArgs } from '../shared/ai-vault-types'
 import type { AiVaultPrepareSessionResumeArgs } from '../shared/ai-vault-resume-preparation'
@@ -4364,6 +4372,19 @@ const api = {
       ipcRenderer.on('telegramBridge:event', listener)
       return () => ipcRenderer.removeListener('telegramBridge:event', listener)
     }
+  },
+
+  projectTodo: {
+    list: (args: ProjectTodoListArgs): Promise<ProjectTodoList> =>
+      ipcRenderer.invoke('projectTodo:list', args),
+    add: (args: ProjectTodoAddArgs): Promise<ProjectTodoList> =>
+      ipcRenderer.invoke('projectTodo:add', args),
+    toggle: (args: ProjectTodoToggleArgs): Promise<ProjectTodoList> =>
+      ipcRenderer.invoke('projectTodo:toggle', args),
+    delete: (args: ProjectTodoDeleteArgs): Promise<ProjectTodoList> =>
+      ipcRenderer.invoke('projectTodo:delete', args),
+    clearDone: (args: ProjectTodoClearDoneArgs): Promise<ProjectTodoList> =>
+      ipcRenderer.invoke('projectTodo:clearDone', args)
   },
 
   e2e: {

@@ -51,6 +51,27 @@ describe('detectRepoIssueProvider', () => {
     ).toBe('gitlab')
   })
 
+  it('prefers live GitLab remote over stale GitHub upstream metadata', () => {
+    expect(
+      detectRepoIssueProvider(
+        repo({
+          upstream: { owner: 'old-org', repo: 'old-app' },
+          repoIcon: {
+            type: 'image',
+            source: 'github',
+            label: 'old-org/old-app',
+            src: 'https://avatars.githubusercontent.com/u/1'
+          },
+          gitRemoteIdentity: {
+            canonicalKey: 'gitlab.com/group/app',
+            remoteName: 'origin',
+            remoteUrl: 'git@gitlab.com:group/app.git'
+          }
+        })
+      )
+    ).toBe('gitlab')
+  })
+
   it('detects self-hosted GitLab hostnames', () => {
     expect(
       detectRepoIssueProvider(

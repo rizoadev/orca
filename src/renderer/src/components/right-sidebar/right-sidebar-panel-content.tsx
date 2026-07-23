@@ -11,6 +11,7 @@ const AiVaultPanel = lazy(() => import('./AiVaultPanel'))
 const FolderWorkspaceWorktreesPanel = lazy(() => import('./FolderWorkspaceWorktreesPanel'))
 const FolderWorkspacePrChecksPanel = lazy(() => import('./FolderWorkspacePrChecksPanel'))
 const TelegramBridgePanel = lazy(() => import('./TelegramBridgePanel'))
+const ProjectTodoPanel = lazy(() => import('./ProjectTodoPanel'))
 
 type RightSidebarPanelContentProps = {
   effectiveTab: ActiveRightSidebarTab
@@ -45,6 +46,9 @@ export function RightSidebarPanelContent({
         )}
         {effectiveTab === 'remote-chat' && (
           <TelegramBridgePanel isVisible={rightSidebarOpen && effectiveTab === 'remote-chat'} />
+        )}
+        {effectiveTab === 'todos' && (
+          <ProjectTodoPanel isVisible={rightSidebarOpen && effectiveTab === 'todos'} />
         )}
       </Suspense>
     </div>

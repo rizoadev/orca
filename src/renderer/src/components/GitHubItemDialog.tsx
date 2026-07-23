@@ -352,6 +352,8 @@ type GitHubItemDialogProps = {
   onClose: () => void
   /** Optional Project-origin context; when set, edits route via slug-addressed IPCs against the row's repo (slug routing wins for writes). */
   projectOrigin?: GitHubItemDialogProjectOrigin
+  /** Slot rendered on the right side of the tab bar (Conversation / Checks / Files). */
+  tabBarTrailingSlot?: React.ReactNode
 }
 
 function formatRelativeTime(input: string): string {
@@ -6704,7 +6706,8 @@ export default function GitHubItemDialog({
   projectOrigin,
   onUse,
   onReviewRequestsChange,
-  onClose
+  onClose,
+  tabBarTrailingSlot
 }: GitHubItemDialogProps): React.JSX.Element {
   const workItemId = workItem?.id
   const [tab, setTab] = useState<ItemDialogTab>(() => normalizeItemDialogTab(workItem, initialTab))
@@ -7587,35 +7590,41 @@ export default function GitHubItemDialog({
             onValueChange={(value) => setTab(value as ItemDialogTab)}
             className="flex h-full min-h-0 flex-col gap-0"
           >
-            <TabsList
-              variant="line"
-              className="mx-4 mt-2 justify-start gap-3 border-b border-border/60 bg-transparent"
-            >
-              <TabsTrigger value="conversation" className="px-2">
-                <MessageSquare className="size-3.5" />
-                {translate('auto.components.GitHubItemDialog.e30a5470c9', 'Conversation')}
-              </TabsTrigger>
-              {workItem.type === 'pr' && (
-                <>
-                  <TabsTrigger value="checks" className="px-2">
-                    <ListChecks className="size-3.5" />
-                    {translate('auto.components.GitHubItemDialog.4bd1f5b055', 'Checks')}
-                    {checks.length > 0 && (
-                      <span className="ml-1 text-[10px] text-muted-foreground">
-                        {checks.length}
-                      </span>
-                    )}
-                  </TabsTrigger>
-                  <TabsTrigger value="files" className="px-2">
-                    <FileText className="size-3.5" />
-                    {translate('auto.components.GitHubItemDialog.999b5ad7d9', 'Files')}
-                    {files.length > 0 && (
-                      <span className="ml-1 text-[10px] text-muted-foreground">{files.length}</span>
-                    )}
-                  </TabsTrigger>
-                </>
-              )}
-            </TabsList>
+            <div className="mx-4 mt-2 flex flex-wrap items-center gap-2 border-b border-border/60">
+              <TabsList variant="line" className="justify-start gap-3 border-0 bg-transparent">
+                <TabsTrigger value="conversation" className="px-2">
+                  <MessageSquare className="size-3.5" />
+                  {translate('auto.components.GitHubItemDialog.e30a5470c9', 'Conversation')}
+                </TabsTrigger>
+                {workItem.type === 'pr' && (
+                  <>
+                    <TabsTrigger value="checks" className="px-2">
+                      <ListChecks className="size-3.5" />
+                      {translate('auto.components.GitHubItemDialog.4bd1f5b055', 'Checks')}
+                      {checks.length > 0 && (
+                        <span className="ml-1 text-[10px] text-muted-foreground">
+                          {checks.length}
+                        </span>
+                      )}
+                    </TabsTrigger>
+                    <TabsTrigger value="files" className="px-2">
+                      <FileText className="size-3.5" />
+                      {translate('auto.components.GitHubItemDialog.999b5ad7d9', 'Files')}
+                      {files.length > 0 && (
+                        <span className="ml-1 text-[10px] text-muted-foreground">
+                          {files.length}
+                        </span>
+                      )}
+                    </TabsTrigger>
+                  </>
+                )}
+              </TabsList>
+              {tabBarTrailingSlot ? (
+                <div className="ml-auto flex flex-wrap items-center gap-1.5 pb-1">
+                  {tabBarTrailingSlot}
+                </div>
+              ) : null}
+            </div>
 
             <div className="min-h-0 flex-1 overflow-y-auto scrollbar-sleek">
               <TabsContent value="conversation" className="mt-0">

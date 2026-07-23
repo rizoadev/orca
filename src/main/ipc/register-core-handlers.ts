@@ -44,6 +44,7 @@ import { registerWorkspacePortHandlers } from './workspace-ports'
 import { registerLocalhostWorktreeLabelHandlers } from './localhost-worktree-labels'
 import { registerAutomationHandlers } from './automations'
 import { registerTelegramBridgeHandlers } from './telegram-bridge'
+import { registerProjectTodoHandlers } from './project-todo'
 import { registerKeybindingHandlers } from './keybindings'
 import { registerTelemetryHandlers } from './telemetry'
 import { registerBrowserHandlers } from './browser'
@@ -178,6 +179,7 @@ export function registerCoreHandlers(
   if (telegramBridge) {
     registerTelegramBridgeHandlers(telegramBridge)
   }
+  registerProjectTodoHandlers()
   if (keybindings) {
     registerKeybindingHandlers(keybindings)
   }

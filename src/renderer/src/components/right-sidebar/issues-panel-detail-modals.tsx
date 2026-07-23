@@ -4,6 +4,7 @@ import GitHubItemDialog from '@/components/GitHubItemDialog'
 import GitLabItemDialog from '@/components/GitLabItemDialog'
 import type { GitHubWorkItem, GitLabWorkItem, Repo } from '../../../../shared/types'
 import { translate } from '@/i18n/i18n'
+import { IssueDetailActionBar } from './issue-detail-action-bar'
 import { getRepoIssueSourceContext } from './issues-panel-rows'
 
 export function IssuesPanelDetailModals({
@@ -23,6 +24,42 @@ export function IssuesPanelDetailModals({
   onUseGitHub: (item: GitHubWorkItem) => void
   onUseGitLab: (item: GitLabWorkItem) => void
 }): React.JSX.Element {
+  // Why: only render the AI action row for issues (not PRs); the shared dialog
+  // wraps both types, so the slot is gated per item kind here.
+  const githubTabBarSlot =
+    selectedGitHubItem?.type === 'issue' ? (
+      <IssueDetailActionBar
+        repo={activeRepo}
+        provider="github"
+        issueNumber={selectedGitHubItem.number}
+        issueTitle={selectedGitHubItem.title}
+        issueUrl={selectedGitHubItem.url}
+        onIssueClosed={onCloseGitHub}
+        onCreateWorkspace={() => {
+          const item = selectedGitHubItem
+          onCloseGitHub()
+          onUseGitHub(item)
+        }}
+      />
+    ) : null
+
+  const gitlabTabBarSlot =
+    selectedGitLabItem?.type === 'issue' ? (
+      <IssueDetailActionBar
+        repo={activeRepo}
+        provider="gitlab"
+        issueNumber={selectedGitLabItem.number}
+        issueTitle={selectedGitLabItem.title}
+        issueUrl={selectedGitLabItem.url}
+        onIssueClosed={onCloseGitLab}
+        onCreateWorkspace={() => {
+          const item = selectedGitLabItem
+          onCloseGitLab()
+          onUseGitLab(item)
+        }}
+      />
+    ) : null
+
   return (
     <>
       <Dialog
@@ -49,7 +86,7 @@ export function IssuesPanelDetailModals({
             )}
           </DialogDescription>
           {selectedGitHubItem ? (
-            <div className="min-h-0 flex-1 overflow-hidden">
+            <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
               <GitHubItemDialog
                 workItem={selectedGitHubItem}
                 repoPath={activeRepo.path}
@@ -59,6 +96,7 @@ export function IssuesPanelDetailModals({
                   'auto.components.right.sidebar.issuesPanel.backToIssues',
                   'Issues'
                 )}
+                tabBarTrailingSlot={githubTabBarSlot}
                 onUse={(item) => {
                   onCloseGitHub()
                   onUseGitHub(item)
@@ -76,6 +114,8 @@ export function IssuesPanelDetailModals({
         repoId={activeRepo.id}
         sourceContext={getRepoIssueSourceContext(activeRepo, 'gitlab')}
         presentation="modal"
+        hideFooterExternalActions={selectedGitLabItem?.type === 'issue'}
+        tabBarTrailingSlot={gitlabTabBarSlot}
         onCreateWorkspace={(item) => {
           onCloseGitLab()
           onUseGitLab(item)

@@ -200,6 +200,39 @@ describe('listWorkItems', () => {
       expect.arrayContaining(['pr', 'list', '--repo', 'acme/widgets']),
       { cwd: '/private-repo' }
     )
+
+    await expect(listWorkItems('/no-remote-repo', 36)).rejects.toThrow('no git remotes found')
+    // Why: issues require a resolved owner/repo (no unscoped search/issues); only PR list uses cwd fallback.
+    expect(ghExecFileAsyncMock).toHaveBeenCalledTimes(1)
+
+    await expect(listWorkItems('/no-remote-repo', 36)).rejects.toThrow('no git remotes found')
+    // The second refresh is served from the negative cache — zero new spawns.
+    expect(ghExecFileAsyncMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('never runs unscoped issue search when owner/repo cannot be resolved', async () => {
+    getIssueOwnerRepoMock.mockResolvedValue(null)
+    getOwnerRepoMock.mockResolvedValue(null)
+    getOwnerRepoForRemoteMock.mockResolvedValue(null)
+    ghExecFileAsyncMock.mockResolvedValue({ stdout: '[]' })
+
+    const recent = await listWorkItems('/local-unresolved', 10)
+    expect(recent.items).toEqual([])
+    // PR cwd fallback may still run; issue Search must not.
+    for (const call of ghExecFileAsyncMock.mock.calls) {
+      const args = call[0] as string[]
+      const joined = args.join(' ')
+      expect(joined).not.toMatch(/search\/issues\?q=.*is:issue/)
+      if (joined.includes('search/issues')) {
+        expect(joined).toMatch(/repo%3A|repo:/)
+      }
+    }
+
+    ghExecFileAsyncMock.mockClear()
+    ghExecFileAsyncMock.mockResolvedValue({ stdout: '[]' })
+    const queried = await listWorkItems('/local-unresolved', 10, 'is:issue is:open')
+    expect(queried.items).toEqual([])
+    expect(ghExecFileAsyncMock).not.toHaveBeenCalled()
   })
 
   it('runs both issue and PR GitHub searches for a mixed query and merges the results by recency', async () => {

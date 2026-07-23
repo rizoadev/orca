@@ -46,20 +46,25 @@ export function detectRepoIssueProvider(
   if (!repo) {
     return null
   }
-  // Why: GitHub identity is already projected from upstream/avatar/remote URL.
-  // Prefer that before GitLab hostname heuristics so github.com remotes never
-  // misroute when a custom avatar icon is missing.
-  if (isGitHubBackedRepo(repo)) {
-    return 'github'
-  }
   const host =
     hostFromCanonicalKey(repo.gitRemoteIdentity?.canonicalKey) ??
     hostFromRemoteUrl(repo.gitRemoteIdentity?.remoteUrl)
+  // Why: live git remote wins over persisted GitHub `upstream`/avatar metadata.
+  // Repos that moved from GitHub→GitLab keep stale upstream and used to misroute
+  // the Issues tab to GitHub (empty list / wrong public issues).
   if (looksLikeGitLabHost(host)) {
     return 'gitlab'
   }
+  if (host === 'github.com') {
+    return 'github'
+  }
   if (repo.repoIcon?.type === 'lucide' && repo.repoIcon.name === 'gitlab') {
     return 'gitlab'
+  }
+  // Why: only fall back to projected GitHub identity when the remote host is
+  // unknown — never override a non-GitHub remote just because upstream lingered.
+  if (!host && isGitHubBackedRepo(repo)) {
+    return 'github'
   }
   return null
 }

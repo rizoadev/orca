@@ -496,6 +496,14 @@ import type {
   TelegramRepoTopicMapping
 } from '../shared/telegram-bridge-types'
 import type {
+  ProjectTodoAddArgs,
+  ProjectTodoClearDoneArgs,
+  ProjectTodoDeleteArgs,
+  ProjectTodoList,
+  ProjectTodoListArgs,
+  ProjectTodoToggleArgs
+} from '../shared/project-todo-types'
+import type {
   WorkspaceCleanupDismissArgs,
   WorkspaceCleanupLocalProcessArgs,
   WorkspaceCleanupLocalProcessResult,
@@ -3254,6 +3262,13 @@ export type PreloadApi = {
     stop: () => Promise<void>
     onStatus: (callback: (status: TelegramBridgeStatus) => void) => () => void
     onEvent: (callback: (event: TelegramBridgeEvent) => void) => () => void
+  }
+  projectTodo: {
+    list: (args: ProjectTodoListArgs) => Promise<ProjectTodoList>
+    add: (args: ProjectTodoAddArgs) => Promise<ProjectTodoList>
+    toggle: (args: ProjectTodoToggleArgs) => Promise<ProjectTodoList>
+    delete: (args: ProjectTodoDeleteArgs) => Promise<ProjectTodoList>
+    clearDone: (args: ProjectTodoClearDoneArgs) => Promise<ProjectTodoList>
   }
   wsl: {
     isAvailable: () => Promise<boolean>

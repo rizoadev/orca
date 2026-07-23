@@ -10,6 +10,7 @@ import { useConfirmationDialog } from '@/components/confirmation-dialog'
 import type { GitHubWorkItem, GitLabWorkItem, TuiAgent } from '../../../../shared/types'
 import { translate } from '@/i18n/i18n'
 import { launchIssueAiPlanCommenter } from './issues-panel-ai-plan'
+import { launchIssueAiWorker, type IssueAiWorkMode } from './issues-panel-ai-work'
 import { confirmCloseIssue } from './issues-panel-close-confirm'
 import { closeRepoIssue, createRepoIssue } from './issues-panel-create-actions'
 import { IssuesPanelCreateDialog, type CreateIssueSubmitInput } from './issues-panel-create-dialog'
@@ -47,6 +48,7 @@ export default function IssuesPanel({ isVisible }: { isVisible: boolean }): Reac
   const [createOpen, setCreateOpen] = useState(false)
   const [createSubmitting, setCreateSubmitting] = useState(false)
   const [aiPlanningIssueId, setAiPlanningIssueId] = useState<string | null>(null)
+  const [aiWorkingIssueId, setAiWorkingIssueId] = useState<string | null>(null)
   const [closingIssueId, setClosingIssueId] = useState<string | null>(null)
 
   useEffect(() => {
@@ -124,6 +126,7 @@ export default function IssuesPanel({ isVisible }: { isVisible: boolean }): Reac
     setSelectedGitLabItem(null)
     setCreateOpen(false)
     setAiPlanningIssueId(null)
+    setAiWorkingIssueId(null)
     setClosingIssueId(null)
   }, [activeRepo?.id])
 
@@ -166,6 +169,32 @@ export default function IssuesPanel({ isVisible }: { isVisible: boolean }): Reac
         })
       } finally {
         setAiPlanningIssueId((current) => (current === row.id ? null : current))
+      }
+    },
+    [activeRepo, activeWorktree]
+  )
+
+  const handleAskAiWork = useCallback(
+    async (row: IssueRow, agent: TuiAgent, mode: IssueAiWorkMode) => {
+      if (!activeRepo || !activeWorktree) {
+        return
+      }
+      setAiWorkingIssueId(row.id)
+      try {
+        await launchIssueAiWorker({
+          worktreeId: activeWorktree.id,
+          repo: activeRepo,
+          agent,
+          mode,
+          issue: {
+            provider: row.provider,
+            number: row.number,
+            title: row.title,
+            url: row.url
+          }
+        })
+      } finally {
+        setAiWorkingIssueId((current) => (current === row.id ? null : current))
       }
     },
     [activeRepo, activeWorktree]
@@ -351,11 +380,16 @@ export default function IssuesPanel({ isVisible }: { isVisible: boolean }): Reac
           worktreeId={activeWorktree?.id ?? null}
           connectionId={activeRepo.connectionId}
           aiPlanningIssueId={aiPlanningIssueId}
+          aiWorkingIssueId={aiWorkingIssueId}
           closingIssueId={closingIssueId}
           onOpenIssue={openIssue}
           onAskAiPlan={(row, agent) => {
             void handleAskAiPlan(row, agent)
           }}
+          onAskAiWork={(row, agent, mode) => {
+            void handleAskAiWork(row, agent, mode)
+          }}
+          repoId={activeRepo?.id ?? null}
           onCloseIssue={(row) => {
             void handleCloseIssue(row)
           }}

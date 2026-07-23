@@ -3176,6 +3176,7 @@ export type RightSidebarTab =
   | 'issues'
   | 'ports'
   | 'remote-chat'
+  | 'todos'
 export type ActiveRightSidebarTab = Exclude<RightSidebarTab, 'search'>
 export type RightSidebarExplorerView = 'files' | 'search'
 
@@ -3198,6 +3199,7 @@ export type TopLevelView =
   | 'space'
   | 'skills'
   | 'mobile'
+  | 'issues-board'
 
 export type PersistedUIState = {
   lastActiveRepoId: string | null
