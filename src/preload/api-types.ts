@@ -512,6 +512,18 @@ import type {
   WorkspaceCleanupScanResult
 } from '../shared/workspace-cleanup'
 import type { KeybindingActionId, KeybindingFileSnapshot } from '../shared/keybindings'
+import type {
+  PiIssueChatStartArgs,
+  PiIssueChatSendArgs,
+  PiIssueChatSessionSnapshot,
+  PiIssueChatEvent
+} from '../shared/pi-issue-chat-types'
+import type {
+  StrandsIssueChatStartArgs,
+  StrandsIssueChatSendArgs,
+  StrandsIssueChatSessionSnapshot,
+  StrandsIssueChatEvent
+} from '../shared/strands-issue-chat-types'
 
 type GitLabRepoSelectorArgs = {
   repoPath: string
@@ -2496,6 +2508,20 @@ export type PreloadApi = {
   openCodeUsage: OpenCodeUsageApi
   aiVault: AiVaultApi
   nativeChat: NativeChatApi
+  strandsIssueChat: {
+    start: (args: StrandsIssueChatStartArgs) => Promise<StrandsIssueChatSessionSnapshot>
+    get: (sessionId: string) => Promise<StrandsIssueChatSessionSnapshot | null>
+    send: (args: StrandsIssueChatSendArgs) => Promise<void>
+    stop: (sessionId: string) => Promise<void>
+    onEvent: (callback: (event: StrandsIssueChatEvent) => void) => () => void
+  }
+  piIssueChat: {
+    start: (args: PiIssueChatStartArgs) => Promise<PiIssueChatSessionSnapshot>
+    get: (sessionId: string) => Promise<PiIssueChatSessionSnapshot | null>
+    send: (args: PiIssueChatSendArgs) => Promise<void>
+    stop: (sessionId: string) => Promise<void>
+    onEvent: (callback: (event: PiIssueChatEvent) => void) => () => void
+  }
   fs: {
     readDir: (args: { dirPath: string; connectionId?: string }) => Promise<DirEntry[]>
     readFile: (args: {

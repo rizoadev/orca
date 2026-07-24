@@ -1,5 +1,7 @@
 /**
- * In-modal Strands chat for issues: message list + composer, no terminal.
+ * In-modal pi agent chat for issues: message list + composer, no terminal.
+ * Why: replaces Strands with pi SDK so all models from ~/.pi/agent/models.json
+ * are available and the full pi tool suite is active.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useAppStore } from '@/store'
@@ -8,11 +10,11 @@ import { Button } from '@/components/ui/button'
 import CommentMarkdown from '@/components/sidebar/CommentMarkdown'
 import { cn } from '@/lib/utils'
 import type {
-  StrandsIssueChatEvent,
-  StrandsIssueChatMessage,
-  StrandsIssueChatSessionSnapshot,
-  StrandsIssueChatStatus
-} from '../../../../shared/strands-issue-chat-types'
+  PiIssueChatEvent,
+  PiIssueChatMessage,
+  PiIssueChatSessionSnapshot,
+  PiIssueChatStatus
+} from '../../../../shared/pi-issue-chat-types'
 
 export type IssueStrandsChatPanelProps = {
   sessionId: string
@@ -22,81 +24,41 @@ export type IssueStrandsChatPanelProps = {
 }
 
 type ChatRenderItem =
-  | { kind: 'message'; message: StrandsIssueChatMessage }
-  | { kind: 'tools'; tools: StrandsIssueChatMessage[] }
+  | { kind: 'message'; message: PiIssueChatMessage }
+  | { kind: 'tools'; tools: PiIssueChatMessage[] }
 
 function upsertMessage(
-  messages: StrandsIssueChatMessage[],
-  message: StrandsIssueChatMessage
-): StrandsIssueChatMessage[] {
+  messages: PiIssueChatMessage[],
+  message: PiIssueChatMessage
+): PiIssueChatMessage[] {
   const idx = messages.findIndex((m) => m.id === message.id)
-  if (idx < 0) {
-    return [...messages, message]
+  if (idx >= 0) {
+    const next = [...messages]
+    next[idx] = message
+    return next
   }
-  const next = messages.slice()
-  next[idx] = message
-  return next
+  return [...messages, message]
 }
 
-/** Collapse consecutive tool messages into one badge row for scanability. */
-function groupMessagesForRender(messages: StrandsIssueChatMessage[]): ChatRenderItem[] {
+function groupMessagesForRender(messages: PiIssueChatMessage[]): ChatRenderItem[] {
   const items: ChatRenderItem[] = []
-  let toolRun: StrandsIssueChatMessage[] = []
-  const flushTools = (): void => {
-    if (toolRun.length === 0) {
-      return
-    }
-    items.push({ kind: 'tools', tools: toolRun })
-    toolRun = []
-  }
+  let toolBatch: PiIssueChatMessage[] = []
+
   for (const message of messages) {
     if (message.role === 'tool') {
-      toolRun.push(message)
-      continue
+      toolBatch.push(message)
+    } else {
+      if (toolBatch.length > 0) {
+        items.push({ kind: 'tools', tools: toolBatch })
+        toolBatch = []
+      }
+      items.push({ kind: 'message', message })
     }
-    flushTools()
-    items.push({ kind: 'message', message })
   }
-  flushTools()
+  if (toolBatch.length > 0) {
+    items.push({ kind: 'tools', tools: toolBatch })
+  }
   return items
-}
-
-function toolBadgeLabel(message: StrandsIssueChatMessage): string {
-  const raw = (message.toolName ?? message.content).trim()
-  // Why: older turns stored "Running tool: bash"; badge only needs the tool id.
-  return raw.replace(/^running tool:\s*/i, '') || 'tool'
-}
-
-/** Merge consecutive identical tools: bash, bash, fileEditor → bash (2), fileEditor. */
-function collapseToolCounts(
-  tools: StrandsIssueChatMessage[]
-): { name: string; count: number; id: string }[] {
-  const groups: { name: string; count: number; id: string }[] = []
-  for (const tool of tools) {
-    const name = toolBadgeLabel(tool)
-    const last = groups.at(-1)
-    if (last && last.name.toLowerCase() === name.toLowerCase()) {
-      last.count += 1
-      continue
-    }
-    groups.push({ name, count: 1, id: tool.id })
-  }
-  return groups
-}
-
-function ToolBadge({ name, count }: { name: string; count: number }): React.JSX.Element {
-  const lower = name.toLowerCase()
-  const Icon = lower.includes('bash') || lower.includes('shell') ? Terminal : Wrench
-  const label = count > 1 ? `${name} (${count})` : name
-  return (
-    <span
-      className="inline-flex max-w-full items-center gap-1 rounded-full border border-cyan-500/30 bg-cyan-500/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-cyan-600 dark:text-cyan-300"
-      title={count > 1 ? `${name} × ${count}` : name}
-    >
-      <Icon className="size-2.5 shrink-0 opacity-80" />
-      <span className="truncate">{label}</span>
-    </span>
-  )
 }
 
 export function IssueStrandsChatPanel({
@@ -105,38 +67,38 @@ export function IssueStrandsChatPanel({
   issueContext,
   className
 }: IssueStrandsChatPanelProps): React.JSX.Element {
-  const [status, setStatus] = useState<StrandsIssueChatStatus>('idle')
-  const [messages, setMessages] = useState<StrandsIssueChatMessage[]>([])
+  const [status, setStatus] = useState<PiIssueChatStatus>('idle')
+  const [messages, setMessages] = useState<PiIssueChatMessage[]>([])
   const [error, setError] = useState<string | null>(null)
   const [draft, setDraft] = useState('')
   const [starting, setStarting] = useState(true)
-  const [providerLabel, setProviderLabel] = useState<string | null>(null)
+  const [modelLabel, setModelLabel] = useState<string | null>(null)
   const listRef = useRef<HTMLDivElement | null>(null)
   const sendInFlight = useRef(false)
 
-  const applySnapshot = useCallback((session: StrandsIssueChatSessionSnapshot) => {
+  const applySnapshot = useCallback((session: PiIssueChatSessionSnapshot) => {
     setMessages(session.messages)
     setStatus(session.status)
     setError(session.error ?? null)
     if (session.provider && session.modelId) {
-      setProviderLabel(`${session.provider}/${session.modelId}`)
+      setModelLabel(`${session.provider}/${session.modelId}`)
     }
   }, [])
 
-  // Why: details body arrives after open; do not restart the agent on every hydration tick.
   const issueContextRef = useRef(issueContext)
   issueContextRef.current = issueContext
 
   useEffect(() => {
     let cancelled = false
-    const strandsApi = window.api.strandsIssueChat
-    if (!strandsApi) {
+    const piApi = window.api.piIssueChat
+    if (!piApi) {
       setStarting(false)
       setStatus('error')
-      setError('Strands chat is unavailable in this build. Restart Orca dev.')
+      setError('Pi chat is unavailable in this build. Restart Orca dev.')
       return
     }
-    const unsub = strandsApi.onEvent((event: StrandsIssueChatEvent) => {
+
+    const unsub = piApi.onEvent((event: PiIssueChatEvent) => {
       if (event.type === 'snapshot') {
         if (event.session.sessionId !== sessionId) {
           return
@@ -170,15 +132,14 @@ export function IssueStrandsChatPanel({
       setMessages([])
       setError(null)
       try {
-        // Why: forward agentDefaultEnv.strands so the in-process session uses
-        // the same model the user configured for terminal `orca strands` launches.
-        const strandsEnv =
-          useAppStore.getState().settings?.agentDefaultEnv?.['strands'] ?? undefined
-        const session = await strandsApi.start({
+        // Why: read selected model from Orca settings to honour model preference
+        const settings = useAppStore.getState().settings
+        const modelRef = settings?.agentDefaultEnv?.['strands']?.['ORCA_STRANDS_MODEL'] ?? undefined
+        const session = await piApi.start({
           sessionId,
           cwd,
           issueContext: issueContextRef.current,
-          strandsEnv
+          modelRef
         })
         if (!cancelled) {
           applySnapshot(session)
@@ -198,7 +159,7 @@ export function IssueStrandsChatPanel({
     return () => {
       cancelled = true
       unsub()
-      void strandsApi.stop(sessionId)
+      void piApi.stop(sessionId)
     }
   }, [applySnapshot, cwd, sessionId])
 
@@ -224,11 +185,11 @@ export function IssueStrandsChatPanel({
     sendInFlight.current = true
     setDraft('')
     try {
-      const strandsApi = window.api.strandsIssueChat
-      if (!strandsApi) {
-        throw new Error('Strands chat is unavailable. Restart Orca dev.')
+      const piApi = window.api.piIssueChat
+      if (!piApi) {
+        throw new Error('Pi chat is unavailable. Restart Orca dev.')
       }
-      await strandsApi.send({ sessionId, text })
+      await piApi.send({ sessionId, text })
     } catch (err) {
       setStatus('error')
       setError(err instanceof Error ? err.message : String(err))
@@ -238,116 +199,119 @@ export function IssueStrandsChatPanel({
   }
 
   return (
-    // Why: overflow-hidden + min-h-0 keep the transcript scrolled inside the pane instead of growing the modal.
     <div
       className={cn(
         'flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-lg border border-border/50 bg-card/40',
         className
       )}
     >
-      <div className="flex shrink-0 items-center gap-2 border-b border-border/40 px-3 py-2.5">
-        <Sparkles className="size-3.5 text-violet-500" />
-        <div className="min-w-0 flex-1">
-          <div className="text-xs font-semibold text-foreground">Strands</div>
-          <div className="truncate text-[10px] text-muted-foreground">
-            {providerLabel ?? 'Issue sidebar · deepseek-v4-flash'}
-          </div>
-        </div>
-        {status === 'running' || starting ? (
-          <LoaderCircle className="size-3.5 animate-spin text-muted-foreground" />
-        ) : null}
+      {/* Header */}
+      <div className="flex shrink-0 items-center gap-2 border-b border-border/50 px-3 py-2">
+        <Sparkles className="size-3.5 shrink-0 text-muted-foreground" />
+        <span className="min-w-0 truncate text-xs text-muted-foreground">
+          {modelLabel ?? 'Issue chat · pi'}
+        </span>
+        {status === 'running' && (
+          <LoaderCircle className="ml-auto size-3.5 shrink-0 animate-spin text-muted-foreground" />
+        )}
       </div>
 
-      <div
-        ref={listRef}
-        className="min-h-0 min-w-0 flex-1 space-y-2.5 overflow-x-hidden overflow-y-auto overscroll-contain px-3 py-3 scrollbar-sleek"
-      >
-        {starting && messages.length === 0 ? (
-          <p className="text-xs text-muted-foreground">Starting Strands…</p>
-        ) : null}
-        {!starting && messages.length === 0 ? (
-          <div className="space-y-1.5 text-xs text-muted-foreground">
-            <p>Chat about this issue. Strands can read/edit the worktree and run shell commands.</p>
-            <p>
-              Default: llmproxy ·{' '}
-              <code className="text-[10px]">cline2/deepseek/deepseek-v4-flash</code>
-            </p>
+      {/* Message list */}
+      <div ref={listRef} className="min-h-0 flex-1 overflow-y-auto px-3 py-3">
+        {starting && messages.length === 0 && (
+          <div className="flex items-center gap-2 text-xs text-muted-foreground">
+            <LoaderCircle className="size-3.5 animate-spin" />
+            <span>Starting pi agent…</span>
           </div>
-        ) : null}
-        {renderItems.map((item) => {
-          if (item.kind === 'tools') {
-            const grouped = collapseToolCounts(item.tools)
+        )}
+        {!starting && messages.length === 0 && status !== 'error' && (
+          <p className="text-xs text-muted-foreground">
+            Ask pi anything about this issue. It can read files, run commands, and edit code.
+          </p>
+        )}
+        <div className="flex flex-col gap-3">
+          {renderItems.map((item, i) => {
+            if (item.kind === 'tools') {
+              return (
+                <div key={`tools-${i}`} className="flex flex-wrap gap-1">
+                  {item.tools.map((t) => (
+                    <span
+                      key={t.id}
+                      className="inline-flex items-center gap-1 rounded-md bg-muted/60 px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground"
+                    >
+                      <Wrench className="size-2.5" />
+                      {t.toolName ?? t.content}
+                    </span>
+                  ))}
+                </div>
+              )
+            }
+            const { message } = item
+            if (message.role === 'system') {
+              return (
+                <p key={message.id} className="text-xs text-destructive">
+                  {message.content}
+                </p>
+              )
+            }
+            if (message.role === 'user') {
+              return (
+                <div key={message.id} className="flex justify-end">
+                  <div className="max-w-[85%] rounded-lg bg-primary px-3 py-2 text-xs text-primary-foreground">
+                    {message.content}
+                  </div>
+                </div>
+              )
+            }
+            // assistant
             return (
-              <div
-                key={`tools-${item.tools[0]?.id ?? 'x'}`}
-                className="flex flex-wrap items-center gap-1.5"
-              >
-                {grouped.map((tool) => (
-                  <ToolBadge key={tool.id} name={tool.name} count={tool.count} />
-                ))}
+              <div key={message.id} className="flex gap-2">
+                <Terminal className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" />
+                <div className="min-w-0 flex-1 text-xs">
+                  <CommentMarkdown content={message.content} />
+                </div>
               </div>
             )
-          }
-          const message = item.message
-          return (
-            <div
-              key={message.id}
-              className={cn(
-                'min-w-0 max-w-full overflow-hidden rounded-md px-2.5 py-2 text-xs leading-relaxed',
-                message.role === 'user' && 'ml-6 bg-primary/10 text-foreground',
-                message.role === 'assistant' &&
-                  'mr-0 border border-border/40 bg-muted/40 text-foreground',
-                message.role === 'system' && 'bg-destructive/10 text-destructive'
-              )}
-            >
-              {message.role === 'assistant' ? (
-                <CommentMarkdown
-                  content={message.content}
-                  className="comment-markdown max-w-full overflow-hidden text-xs leading-relaxed break-words [&_code]:break-all [&_code]:text-[11px] [&_li]:my-0.5 [&_p]:my-1.5 [&_pre]:my-2 [&_pre]:max-w-full [&_pre]:overflow-x-auto [&_pre]:text-[11px]"
-                />
-              ) : (
-                <div className="whitespace-pre-wrap break-words [overflow-wrap:anywhere]">
-                  {message.content}
-                </div>
-              )}
+          })}
+          {status === 'running' && messages.at(-1)?.role !== 'assistant' && (
+            <div className="flex gap-2">
+              <Terminal className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" />
+              <LoaderCircle className="size-3.5 animate-spin text-muted-foreground" />
             </div>
-          )
-        })}
-        {error ? (
-          <div className="rounded-md bg-destructive/10 px-2.5 py-2 text-xs text-destructive">
-            {error}
-          </div>
-        ) : null}
+          )}
+        </div>
       </div>
 
-      <div className="flex shrink-0 items-end gap-2 border-t border-border/40 p-2">
-        <textarea
-          value={draft}
-          onChange={(e) => setDraft(e.target.value)}
-          rows={2}
-          placeholder="Ask Strands about this issue…"
-          disabled={starting || status === 'running'}
-          className="min-h-9 w-full resize-none rounded-md border border-input bg-transparent px-2.5 py-1.5 text-xs shadow-xs focus:border-ring focus:outline-none focus:ring-[3px] focus:ring-ring/50 disabled:opacity-60"
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' && !e.shiftKey && canSend) {
-              e.preventDefault()
-              void handleSend()
-            }
-          }}
-        />
-        <Button
-          size="sm"
-          disabled={!canSend}
-          onClick={() => void handleSend()}
-          className="shrink-0 gap-1"
-        >
-          {status === 'running' ? (
-            <LoaderCircle className="size-3.5 animate-spin" />
-          ) : (
+      {/* Composer */}
+      <div className="shrink-0 border-t border-border/50 p-2">
+        {error && status === 'error' && (
+          <p className="mb-1.5 px-1 text-[10px] text-destructive">{error}</p>
+        )}
+        <div className="flex gap-1.5">
+          <textarea
+            className="min-h-[36px] flex-1 resize-none rounded-md border border-border/50 bg-background px-2.5 py-2 text-xs placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring disabled:opacity-50"
+            placeholder="Ask pi about this issue…"
+            rows={1}
+            value={draft}
+            disabled={starting || status === 'running'}
+            onChange={(e) => setDraft(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault()
+                void handleSend()
+              }
+            }}
+          />
+          <Button
+            size="icon"
+            variant="ghost"
+            className="size-9 shrink-0"
+            disabled={!canSend}
+            onClick={() => void handleSend()}
+          >
             <Send className="size-3.5" />
-          )}
-          Send
-        </Button>
+          </Button>
+        </div>
       </div>
     </div>
   )

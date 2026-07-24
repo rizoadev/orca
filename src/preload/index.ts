@@ -19,6 +19,16 @@ import type { TerminalPaneSplitSource } from '../shared/feature-education-teleme
 import type { ProjectExecutionRuntimeResolution } from '../shared/project-execution-runtime'
 import type { StartupCommandDelivery } from '../shared/codex-startup-delivery'
 import type {
+  PiIssueChatStartArgs,
+  PiIssueChatSendArgs,
+  PiIssueChatEvent
+} from '../shared/pi-issue-chat-types'
+import type {
+  StrandsIssueChatStartArgs,
+  StrandsIssueChatSendArgs,
+  StrandsIssueChatEvent
+} from '../shared/strands-issue-chat-types'
+import type {
   AgentProviderSessionMetadata,
   SleepingAgentLaunchConfig
 } from '../shared/agent-session-resume'
@@ -2809,6 +2819,32 @@ const api = {
       connectionId?: string | null
     }): Promise<{ stdout: string; stderr: string; exitCode: number | null; error?: string }> =>
       ipcRenderer.invoke('notebook:runPythonCell', args)
+  },
+
+  strandsIssueChat: {
+    start: (args: StrandsIssueChatStartArgs) => ipcRenderer.invoke('strandsIssueChat:start', args),
+    get: (sessionId: string) => ipcRenderer.invoke('strandsIssueChat:get', sessionId),
+    send: (args: StrandsIssueChatSendArgs) => ipcRenderer.invoke('strandsIssueChat:send', args),
+    stop: (sessionId: string) => ipcRenderer.invoke('strandsIssueChat:stop', sessionId),
+    onEvent: (callback: (event: StrandsIssueChatEvent) => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, payload: StrandsIssueChatEvent) =>
+        callback(payload)
+      ipcRenderer.on('strandsIssueChat:event', listener)
+      return () => ipcRenderer.removeListener('strandsIssueChat:event', listener)
+    }
+  },
+
+  piIssueChat: {
+    start: (args: PiIssueChatStartArgs) => ipcRenderer.invoke('piIssueChat:start', args),
+    get: (sessionId: string) => ipcRenderer.invoke('piIssueChat:get', sessionId),
+    send: (args: PiIssueChatSendArgs) => ipcRenderer.invoke('piIssueChat:send', args),
+    stop: (sessionId: string) => ipcRenderer.invoke('piIssueChat:stop', sessionId),
+    onEvent: (callback: (event: PiIssueChatEvent) => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, payload: PiIssueChatEvent) =>
+        callback(payload)
+      ipcRenderer.on('piIssueChat:event', listener)
+      return () => ipcRenderer.removeListener('piIssueChat:event', listener)
+    }
   },
 
   fs: {

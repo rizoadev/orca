@@ -108,11 +108,14 @@
     "bench:compare": "node config/scripts/compare-benchmark-artifacts.mjs"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.112.4",
+    "@earendil-works/pi-coding-agent": "file:/home/rizoa/.local/share/pi-node/node-v22.23.1-linux-x64/lib/node_modules/@earendil-works/pi-coding-agent",
     "@electron-toolkit/preload": "^3.0.2",
     "@electron-toolkit/utils": "^4.0.0",
     "@floating-ui/dom": "1.7.6",
     "@linear/sdk": "^82.1.0",
     "@parcel/watcher": "^2.5.6",
+    "@strands-agents/sdk": "^1.10.0",
     "@xterm/addon-serialize": "0.15.0-beta.287",
     "@xterm/headless": "6.1.0-beta.287",
     "agent-browser": "~0.27.0",
@@ -120,6 +123,7 @@
     "i18next": "^26.3.1",
     "jsonc-parser": "^3.3.1",
     "node-pty": "^1.1.0",
+    "openai": "^6.48.0",
     "posthog-node": "^5.33.3",
     "qrcode": "^1.5.4",
     "react-i18next": "^17.0.8",
