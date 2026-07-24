@@ -515,8 +515,10 @@ import type { KeybindingActionId, KeybindingFileSnapshot } from '../shared/keybi
 import type {
   PiIssueChatStartArgs,
   PiIssueChatSendArgs,
+  PiIssueChatSetModelArgs,
   PiIssueChatSessionSnapshot,
-  PiIssueChatEvent
+  PiIssueChatEvent,
+  PiModelOption
 } from '../shared/pi-issue-chat-types'
 import type {
   StrandsIssueChatStartArgs,
@@ -524,6 +526,21 @@ import type {
   StrandsIssueChatSessionSnapshot,
   StrandsIssueChatEvent
 } from '../shared/strands-issue-chat-types'
+import type {
+  HiveAddCredentialArgs,
+  HiveApiResult,
+  HiveBuildSummary,
+  HiveCredentialPublic,
+  HiveDispatchArgs,
+  HiveEnvironmentSummary,
+  HiveLatestBuildArgs,
+  HiveListEnvironmentsArgs,
+  HiveListProjectsArgs,
+  HiveProjectSummary,
+  HiveTriggerBuildArgs,
+  HiveTriggerDeployArgs,
+  HiveUpdateCredentialArgs
+} from '../shared/hive-types'
 
 type GitLabRepoSelectorArgs = {
   repoPath: string
@@ -2520,6 +2537,9 @@ export type PreloadApi = {
     get: (sessionId: string) => Promise<PiIssueChatSessionSnapshot | null>
     send: (args: PiIssueChatSendArgs) => Promise<void>
     stop: (sessionId: string) => Promise<void>
+    listModels: () => Promise<PiModelOption[]>
+    setModel: (args: PiIssueChatSetModelArgs) => Promise<string>
+    detach: (sessionId: string) => Promise<void>
     onEvent: (callback: (event: PiIssueChatEvent) => void) => () => void
   }
   fs: {
@@ -3303,6 +3323,25 @@ export type PreloadApi = {
     toggle: (args: ProjectTodoToggleArgs) => Promise<ProjectTodoList>
     delete: (args: ProjectTodoDeleteArgs) => Promise<ProjectTodoList>
     clearDone: (args: ProjectTodoClearDoneArgs) => Promise<ProjectTodoList>
+  }
+  hive: {
+    listCredentials: () => Promise<HiveCredentialPublic[]>
+    addCredential: (args: HiveAddCredentialArgs) => Promise<HiveCredentialPublic>
+    updateCredential: (args: HiveUpdateCredentialArgs) => Promise<HiveCredentialPublic>
+    removeCredential: (id: string) => Promise<void>
+    probeCredential: (credentialId: string) => Promise<HiveApiResult<string | null>>
+    listProjects: (args: HiveListProjectsArgs) => Promise<HiveApiResult<HiveProjectSummary[]>>
+    listEnvironments: (
+      args: HiveListEnvironmentsArgs
+    ) => Promise<HiveApiResult<HiveEnvironmentSummary[]>>
+    latestBuild: (args: HiveLatestBuildArgs) => Promise<HiveApiResult<HiveBuildSummary | null>>
+    triggerBuild: (
+      args: HiveTriggerBuildArgs
+    ) => Promise<HiveApiResult<{ status?: string; buildId?: string }>>
+    triggerDeploy: (
+      args: HiveTriggerDeployArgs
+    ) => Promise<HiveApiResult<{ status?: string; deployId?: string }>>
+    dispatch: (args: HiveDispatchArgs) => Promise<HiveApiResult<unknown>>
   }
   wsl: {
     isAvailable: () => Promise<boolean>

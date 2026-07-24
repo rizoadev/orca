@@ -21,13 +21,25 @@ import type { StartupCommandDelivery } from '../shared/codex-startup-delivery'
 import type {
   PiIssueChatStartArgs,
   PiIssueChatSendArgs,
-  PiIssueChatEvent
+  PiIssueChatSetModelArgs,
+  PiIssueChatEvent,
+  PiModelOption
 } from '../shared/pi-issue-chat-types'
 import type {
   StrandsIssueChatStartArgs,
   StrandsIssueChatSendArgs,
   StrandsIssueChatEvent
 } from '../shared/strands-issue-chat-types'
+import type {
+  HiveAddCredentialArgs,
+  HiveDispatchArgs,
+  HiveLatestBuildArgs,
+  HiveListEnvironmentsArgs,
+  HiveListProjectsArgs,
+  HiveTriggerBuildArgs,
+  HiveTriggerDeployArgs,
+  HiveUpdateCredentialArgs
+} from '../shared/hive-types'
 import type {
   AgentProviderSessionMetadata,
   SleepingAgentLaunchConfig
@@ -2839,6 +2851,11 @@ const api = {
     get: (sessionId: string) => ipcRenderer.invoke('piIssueChat:get', sessionId),
     send: (args: PiIssueChatSendArgs) => ipcRenderer.invoke('piIssueChat:send', args),
     stop: (sessionId: string) => ipcRenderer.invoke('piIssueChat:stop', sessionId),
+    listModels: (): Promise<PiModelOption[]> => ipcRenderer.invoke('piIssueChat:listModels'),
+    setModel: (args: PiIssueChatSetModelArgs): Promise<string> =>
+      ipcRenderer.invoke('piIssueChat:setModel', args),
+    detach: (sessionId: string): Promise<void> =>
+      ipcRenderer.invoke('piIssueChat:detach', sessionId),
     onEvent: (callback: (event: PiIssueChatEvent) => void) => {
       const listener = (_event: Electron.IpcRendererEvent, payload: PiIssueChatEvent) =>
         callback(payload)
@@ -4421,6 +4438,23 @@ const api = {
       ipcRenderer.invoke('projectTodo:delete', args),
     clearDone: (args: ProjectTodoClearDoneArgs): Promise<ProjectTodoList> =>
       ipcRenderer.invoke('projectTodo:clearDone', args)
+  },
+
+  hive: {
+    listCredentials: () => ipcRenderer.invoke('hive:listCredentials'),
+    addCredential: (args: HiveAddCredentialArgs) => ipcRenderer.invoke('hive:addCredential', args),
+    updateCredential: (args: HiveUpdateCredentialArgs) =>
+      ipcRenderer.invoke('hive:updateCredential', args),
+    removeCredential: (id: string) => ipcRenderer.invoke('hive:removeCredential', id),
+    probeCredential: (credentialId: string) =>
+      ipcRenderer.invoke('hive:probeCredential', credentialId),
+    listProjects: (args: HiveListProjectsArgs) => ipcRenderer.invoke('hive:listProjects', args),
+    listEnvironments: (args: HiveListEnvironmentsArgs) =>
+      ipcRenderer.invoke('hive:listEnvironments', args),
+    latestBuild: (args: HiveLatestBuildArgs) => ipcRenderer.invoke('hive:latestBuild', args),
+    triggerBuild: (args: HiveTriggerBuildArgs) => ipcRenderer.invoke('hive:triggerBuild', args),
+    triggerDeploy: (args: HiveTriggerDeployArgs) => ipcRenderer.invoke('hive:triggerDeploy', args),
+    dispatch: (args: HiveDispatchArgs) => ipcRenderer.invoke('hive:dispatch', args)
   },
 
   e2e: {
