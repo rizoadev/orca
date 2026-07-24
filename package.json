@@ -259,7 +259,10 @@
   "pnpm": {
     "overrides": {
       "@modelcontextprotocol/sdk>@hono/node-server": "2.0.10",
-      "monaco-editor>dompurify": "3.4.12"
+      "monaco-editor>dompurify": "3.4.12",
+      "@earendil-works/pi-ai": "0.80.6",
+      "@earendil-works/pi-agent-core": "0.80.6",
+      "@earendil-works/pi-tui": "0.80.6"
     },
     "supportedArchitectures": {
       "os": [
