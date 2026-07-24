@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react'
-import { Ban, Check, ChevronDown, CircleDot, LoaderCircle } from 'lucide-react'
+import { Ban, Check, ChevronDown, CircleDot, Copy, LoaderCircle } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { cn } from '@/lib/utils'
@@ -13,21 +13,39 @@ export function StatusMenu({
   provider,
   state,
   busy,
+  issueNumber,
   onPick
 }: {
   provider: RepoIssueProvider
   state: IssueStateValue
   busy: boolean
-  onPick: (next: { state: IssueStateValue; stateReason?: GitHubIssueCloseReason }) => void
+  issueNumber?: number
+  onPick: (next: {
+    state: IssueStateValue
+    stateReason?: GitHubIssueCloseReason
+    duplicateOf?: number
+  }) => void
 }): React.JSX.Element {
   const [open, setOpen] = useState(false)
+  const [duplicateMode, setDuplicateMode] = useState(false)
+  const [duplicateDraft, setDuplicateDraft] = useState('')
   const isOpen = state === 'open' || state === 'opened'
   const label = isOpen
     ? translate('auto.components.right.sidebar.issuesPanel.statusOpen', 'Open')
     : translate('auto.components.right.sidebar.issuesPanel.statusClosed', 'Closed')
 
   return (
-    <Popover open={open} onOpenChange={setOpen} modal={false}>
+    <Popover
+      open={open}
+      onOpenChange={(next) => {
+        setOpen(next)
+        if (!next) {
+          setDuplicateMode(false)
+          setDuplicateDraft('')
+        }
+      }}
+      modal={false}
+    >
       <PopoverTrigger asChild>
         <Button
           type="button"
@@ -55,69 +73,151 @@ export function StatusMenu({
       <PopoverContent
         align="start"
         sideOffset={4}
-        className="z-[80] w-56 p-1"
+        className={cn('z-[80] p-1', duplicateMode ? 'w-64' : 'w-56')}
         onOpenAutoFocus={(event) => event.preventDefault()}
       >
-        <button
-          type="button"
-          className={cn(
-            'flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-xs hover:bg-accent',
-            isOpen && 'bg-accent/50'
-          )}
-          onClick={() => {
-            setOpen(false)
-            onPick({ state: provider === 'github' ? 'open' : 'opened' })
-          }}
-        >
-          <CircleDot className="size-3.5 text-emerald-500" />
-          {translate('auto.components.right.sidebar.issuesPanel.reopenIssue', 'Open')}
-        </button>
-        {provider === 'github' ? (
+        {duplicateMode ? (
+          <div className="space-y-2 p-1">
+            <div className="px-1 text-[11px] font-medium text-foreground">
+              {translate(
+                'auto.components.right.sidebar.issuesPanel.closeAsDuplicate',
+                'Close as duplicate'
+              )}
+            </div>
+            <input
+              autoFocus
+              value={duplicateDraft}
+              onChange={(event) => setDuplicateDraft(event.target.value)}
+              placeholder={translate(
+                'auto.components.right.sidebar.issuesPanel.duplicateOfPlaceholder',
+                'Issue number (e.g. 42)'
+              )}
+              className="h-7 w-full rounded-md border border-input bg-transparent px-2 text-xs shadow-xs focus:border-ring focus:outline-none focus:ring-[3px] focus:ring-ring/50"
+              onKeyDown={(event) => {
+                if (event.key !== 'Enter') {
+                  return
+                }
+                event.preventDefault()
+                const n = Number(duplicateDraft.replace(/[^0-9]/g, ''))
+                if (!Number.isFinite(n) || n <= 0 || n === issueNumber) {
+                  return
+                }
+                setOpen(false)
+                setDuplicateMode(false)
+                setDuplicateDraft('')
+                onPick({ state: 'closed', stateReason: 'duplicate', duplicateOf: n })
+              }}
+            />
+            <div className="flex justify-end gap-1">
+              <Button
+                type="button"
+                variant="ghost"
+                size="xs"
+                className="h-6 px-2 text-[11px]"
+                onClick={() => {
+                  setDuplicateMode(false)
+                  setDuplicateDraft('')
+                }}
+              >
+                {translate('auto.components.right.sidebar.issuesPanel.cancel', 'Cancel')}
+              </Button>
+              <Button
+                type="button"
+                size="xs"
+                className="h-6 px-2 text-[11px]"
+                onClick={() => {
+                  const n = Number(duplicateDraft.replace(/[^0-9]/g, ''))
+                  if (!Number.isFinite(n) || n <= 0 || n === issueNumber) {
+                    return
+                  }
+                  setOpen(false)
+                  setDuplicateMode(false)
+                  setDuplicateDraft('')
+                  onPick({ state: 'closed', stateReason: 'duplicate', duplicateOf: n })
+                }}
+              >
+                {translate('auto.components.right.sidebar.issuesPanel.closeIssueShort', 'Close')}
+              </Button>
+            </div>
+          </div>
+        ) : (
           <>
             <button
               type="button"
-              className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-xs hover:bg-accent"
+              className={cn(
+                'flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-xs hover:bg-accent',
+                isOpen && 'bg-accent/50'
+              )}
               onClick={() => {
                 setOpen(false)
-                onPick({ state: 'closed', stateReason: 'completed' })
+                onPick({ state: provider === 'github' ? 'open' : 'opened' })
               }}
             >
-              <Check className="size-3.5 text-muted-foreground" />
-              {translate(
-                'auto.components.right.sidebar.issuesPanel.closeAsCompleted',
-                'Close as completed'
-              )}
+              <CircleDot className="size-3.5 text-emerald-500" />
+              {translate('auto.components.right.sidebar.issuesPanel.reopenIssue', 'Open')}
             </button>
-            <button
-              type="button"
-              className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-xs hover:bg-accent"
-              onClick={() => {
-                setOpen(false)
-                onPick({ state: 'closed', stateReason: 'not_planned' })
-              }}
-            >
-              <Ban className="size-3.5 text-muted-foreground" />
-              {translate(
-                'auto.components.right.sidebar.issuesPanel.closeAsNotPlanned',
-                'Close as not planned'
-              )}
-            </button>
-          </>
-        ) : (
-          <button
-            type="button"
-            className={cn(
-              'flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-xs hover:bg-accent',
-              !isOpen && 'bg-accent/50'
+            {provider === 'github' ? (
+              <>
+                <button
+                  type="button"
+                  className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-xs hover:bg-accent"
+                  onClick={() => {
+                    setOpen(false)
+                    onPick({ state: 'closed', stateReason: 'completed' })
+                  }}
+                >
+                  <Check className="size-3.5 text-muted-foreground" />
+                  {translate(
+                    'auto.components.right.sidebar.issuesPanel.closeAsCompleted',
+                    'Close as completed'
+                  )}
+                </button>
+                <button
+                  type="button"
+                  className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-xs hover:bg-accent"
+                  onClick={() => {
+                    setOpen(false)
+                    onPick({ state: 'closed', stateReason: 'not_planned' })
+                  }}
+                >
+                  <Ban className="size-3.5 text-muted-foreground" />
+                  {translate(
+                    'auto.components.right.sidebar.issuesPanel.closeAsNotPlanned',
+                    'Close as not planned'
+                  )}
+                </button>
+                <button
+                  type="button"
+                  className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-xs hover:bg-accent"
+                  onClick={() => setDuplicateMode(true)}
+                >
+                  <Copy className="size-3.5 text-muted-foreground" />
+                  {translate(
+                    'auto.components.right.sidebar.issuesPanel.closeAsDuplicate',
+                    'Close as duplicate'
+                  )}
+                </button>
+              </>
+            ) : (
+              <button
+                type="button"
+                className={cn(
+                  'flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-xs hover:bg-accent',
+                  !isOpen && 'bg-accent/50'
+                )}
+                onClick={() => {
+                  setOpen(false)
+                  onPick({ state: 'closed' })
+                }}
+              >
+                <Ban className="size-3.5 text-muted-foreground" />
+                {translate(
+                  'auto.components.right.sidebar.issuesPanel.closeIssueShort',
+                  'Close issue'
+                )}
+              </button>
             )}
-            onClick={() => {
-              setOpen(false)
-              onPick({ state: 'closed' })
-            }}
-          >
-            <Ban className="size-3.5 text-muted-foreground" />
-            {translate('auto.components.right.sidebar.issuesPanel.closeIssueShort', 'Close issue')}
-          </button>
+          </>
         )}
       </PopoverContent>
     </Popover>

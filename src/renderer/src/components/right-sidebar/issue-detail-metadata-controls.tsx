@@ -143,6 +143,7 @@ export function IssueDetailMetadataControls(
     async (updates: {
       state?: 'open' | 'closed'
       stateReason?: GitHubIssueCloseReason
+      duplicateOf?: number
       addLabels?: string[]
       removeLabels?: string[]
       addAssignees?: string[]
@@ -177,6 +178,7 @@ export function IssueDetailMetadataControls(
   const handleStatePick = async (next: {
     state: IssueStateValue
     stateReason?: GitHubIssueCloseReason
+    duplicateOf?: number
   }): Promise<void> => {
     if (next.state === state && !next.stateReason) {
       return
@@ -189,7 +191,8 @@ export function IssueDetailMetadataControls(
         props.provider === 'github'
           ? await updateGitHub({
               state: next.state === 'opened' ? 'open' : next.state,
-              ...(next.stateReason ? { stateReason: next.stateReason } : {})
+              ...(next.stateReason ? { stateReason: next.stateReason } : {}),
+              ...(typeof next.duplicateOf === 'number' ? { duplicateOf: next.duplicateOf } : {})
             })
           : await updateGitLab({
               state: next.state === 'open' ? 'opened' : next.state
@@ -306,6 +309,7 @@ export function IssueDetailMetadataControls(
         provider={props.provider}
         state={state}
         busy={busyKey === 'state'}
+        issueNumber={props.issueNumber}
         onPick={(next) => {
           void handleStatePick(next)
         }}

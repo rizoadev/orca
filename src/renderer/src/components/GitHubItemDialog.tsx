@@ -7536,7 +7536,9 @@ export default function GitHubItemDialog({
           <div className="h-full min-h-0 overflow-y-auto scrollbar-sleek bg-background">
             {/* Why: full content width so the description isn't squeezed by a right rail; px-2 + ConversationTab px-4 = header px-6. */}
             <div className="w-full px-2 py-6">
-              {(canUseDetailsRepoContext || projectOrigin) && (
+              {/* Why: Issues panel injects status/assignees/labels via tabBarTrailingSlot;
+                  keep GHEditSection only when that slot is absent (Task page path). */}
+              {!tabBarTrailingSlot && (canUseDetailsRepoContext || projectOrigin) && (
                 <div className="mb-5 border-b border-border/60 px-4 pb-5">
                   <GHEditSection
                     item={workItem}
