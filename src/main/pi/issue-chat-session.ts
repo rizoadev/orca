@@ -99,7 +99,9 @@ async function createPiSession(args: {
   }
   if (!model) {
     const available = await modelRegistry.getAvailable()
-    model = available[0] ?? undefined
+    // Why: prefer localhost models — they return real streaming content vs
+    // some llmproxy routes that return empty content arrays.
+    model = available.find((m) => m.provider === 'localhost') ?? available[0] ?? undefined
   }
 
   // Build resource loader with issue context injected as system prompt
@@ -252,48 +254,79 @@ export async function sendPiIssueChatMessage(
   let assistantContent = ''
   let assistantEmitted = false
 
-  // Subscribe to pi SDK events for this turn
+  // Subscribe to pi SDK events for this turn.
+  // Why: handle both streaming (text_delta) and non-streaming (message_end)
+  // models — some providers emit text_delta, others only emit message_end.
   const unsubscribe = record.agentSession.subscribe(
     (event: {
       type: string
       assistantMessageEvent?: { type: string; delta?: string; name?: string }
+      message?: { role: string; content: { type: string; text?: string; name?: string }[] }
     }) => {
-      if (event.type !== 'message_update') {
-        return
-      }
-      const inner = event.assistantMessageEvent
-      if (!inner) {
-        return
-      }
+      // ── streaming path: text_delta events ──────────────────────────────────
+      if (event.type === 'message_update') {
+        const inner = event.assistantMessageEvent
+        if (!inner) {
+          return
+        }
 
-      if (inner.type === 'text_delta' && typeof inner.delta === 'string') {
-        assistantContent += inner.delta
-        if (!assistantEmitted) {
-          const message: PiIssueChatMessage = {
-            id: assistantId,
-            role: 'assistant',
-            content: assistantContent,
-            createdAt: Date.now()
+        if (inner.type === 'text_delta' && typeof inner.delta === 'string') {
+          assistantContent += inner.delta
+          if (!assistantEmitted) {
+            const message: PiIssueChatMessage = {
+              id: assistantId,
+              role: 'assistant',
+              content: assistantContent,
+              createdAt: Date.now()
+            }
+            record.messages.push(message)
+            assistantEmitted = true
+            emit({ type: 'message', sessionId, message })
+          } else {
+            const idx = record.messages.findIndex((m) => m.id === assistantId)
+            if (idx >= 0) {
+              record.messages[idx] = { ...record.messages[idx]!, content: assistantContent }
+            }
+            emit({ type: 'assistantDelta', sessionId, messageId: assistantId, delta: inner.delta })
           }
-          record.messages.push(message)
-          assistantEmitted = true
-          emit({ type: 'message', sessionId, message })
-        } else {
-          const idx = record.messages.findIndex((m) => m.id === assistantId)
-          if (idx >= 0) {
-            record.messages[idx] = { ...record.messages[idx]!, content: assistantContent }
-          }
-          emit({ type: 'assistantDelta', sessionId, messageId: assistantId, delta: inner.delta })
+          return
+        }
+
+        // Tool call start
+        if (inner.type === 'tool_start' && inner.name) {
+          const toolMessage = msg('tool', inner.name, inner.name)
+          record.messages.push(toolMessage)
+          emit({ type: 'tool', sessionId, toolName: inner.name, messageId: toolMessage.id })
+          emit({ type: 'message', sessionId, message: toolMessage })
         }
         return
       }
 
-      // Tool call start
-      if (inner.type === 'tool_start' && inner.name) {
-        const toolMessage = msg('tool', inner.name, inner.name)
-        record.messages.push(toolMessage)
-        emit({ type: 'tool', sessionId, toolName: inner.name, messageId: toolMessage.id })
-        emit({ type: 'message', sessionId, message: toolMessage })
+      // ── non-streaming fallback: message_end with full content ───────────────
+      // Why: some providers don't emit text_delta — only message_end with the
+      // complete content array. Capture full text here if no deltas arrived.
+      if (
+        event.type === 'message_end' &&
+        event.message?.role === 'assistant' &&
+        !assistantEmitted
+      ) {
+        const text = event.message.content
+          .filter((b) => b.type === 'text' && typeof b.text === 'string')
+          .map((b) => b.text ?? '')
+          .join('')
+        if (!text) {
+          return
+        }
+        assistantContent = text
+        const message: PiIssueChatMessage = {
+          id: assistantId,
+          role: 'assistant',
+          content: text,
+          createdAt: Date.now()
+        }
+        record.messages.push(message)
+        assistantEmitted = true
+        emit({ type: 'message', sessionId, message })
       }
     }
   )
