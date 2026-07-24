@@ -6,6 +6,7 @@ import { readFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import type { PiModelOption } from '../../shared/pi-issue-chat-types'
+import { importPiSdk } from './pi-session-factory'
 
 /** Read all models from ~/.pi/agent/models.json without SDK auth overhead. */
 export function listPiModels(): PiModelOption[] {
@@ -63,7 +64,7 @@ export async function setPiSessionModel(
     throw new Error('Session not found')
   }
 
-  const { AuthStorage, ModelRegistry } = await import('@earendil-works/pi-coding-agent')
+  const { AuthStorage, ModelRegistry } = await importPiSdk()
   const authStorage = AuthStorage.create()
   const modelRegistry = ModelRegistry.create(authStorage)
 

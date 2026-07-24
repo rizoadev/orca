@@ -5,13 +5,14 @@ import { statSync, unlinkSync } from 'node:fs'
 import { join } from 'node:path'
 import type { PiSessionInfo } from '../../shared/pi-issue-chat-types'
 import { ISSUE_SESSIONS_DIR_DEFAULT, sessionFileSlug } from './pi-session-factory'
+import { importPiSdk } from './pi-session-factory'
 
 export async function listPiIssueSessions(
   cwd: string,
   sessionId: string,
   activeFile?: string
 ): Promise<PiSessionInfo[]> {
-  const { SessionManager } = await import('@earendil-works/pi-coding-agent')
+  const { SessionManager } = await importPiSdk()
   const sessionDir = join(ISSUE_SESSIONS_DIR_DEFAULT, sessionFileSlug(sessionId))
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let raw: any[] = []

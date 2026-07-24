@@ -2,9 +2,10 @@
  * Factory for creating a pi AgentSession for an issue chat panel.
  * Extracted to keep issue-chat-session.ts under the max-lines limit.
  */
-import { mkdirSync, appendFileSync } from 'node:fs'
+import { mkdirSync, appendFileSync, existsSync, readdirSync } from 'node:fs'
 import { homedir } from 'node:os'
-import { join } from 'node:path'
+import { join, dirname } from 'node:path'
+import { pathToFileURL } from 'node:url'
 
 /** Directory where per-issue session JSONL files are stored. */
 export const ISSUE_SESSIONS_DIR_DEFAULT = join(homedir(), '.pi', 'agent', 'sessions', 'orca-issues')
@@ -18,6 +19,43 @@ export function sessionFileSlug(sessionId: string): string {
 export type CreatePiSessionResult = { agentSession: any; modelId: string; provider: string; sessionFile: string | undefined }
 
 const PI_CHAT_LOG = '/tmp/pi-chat-debug.log'
+
+/**
+ * Import pi SDK — tries standard import first (dev), falls back to
+ * scanning ~/.local/share/pi-node/ for the installed SDK (packaged app).
+ */
+async function importPiSdk(): Promise<typeof import('@earendil-works/pi-coding-agent')> {
+  try {
+    return await import('@earendil-works/pi-coding-agent')
+  } catch {
+    // Packaged app: scan pi-node installation dirs for the SDK
+    const candidates: string[] = []
+    const piNodeBase = join(homedir(), '.local', 'share', 'pi-node')
+    try {
+      for (const v of readdirSync(piNodeBase)) {
+        candidates.push(join(piNodeBase, v, 'lib', 'node_modules', '@earendil-works', 'pi-coding-agent'))
+      }
+    } catch { /* ignore */ }
+    // Also try finding from `which pi` binary location
+    try {
+      const { execSync } = await import('node:child_process')
+      const piBin = execSync('which pi 2>/dev/null || echo ""', { encoding: 'utf8' }).trim()
+      if (piBin) {
+        candidates.push(join(dirname(dirname(piBin)), 'lib', 'node_modules', '@earendil-works', 'pi-coding-agent'))
+      }
+    } catch { /* ignore */ }
+    for (const sdkPath of candidates) {
+      if (existsSync(join(sdkPath, 'package.json'))) {
+        piLog('importing pi SDK from fallback path:', sdkPath)
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        return import(pathToFileURL(join(sdkPath, 'dist', 'index.js')).href) as any
+      }
+    }
+    throw new Error(
+      '@earendil-works/pi-coding-agent not found. Make sure pi is installed: https://pi.tools'
+    )
+  }
+}
 
 export function piLog(...args: unknown[]): void {
   const line = `[${new Date().toISOString()}] [pi-chat] ${args.map(String).join(' ')}\n`
@@ -48,7 +86,7 @@ export async function createPiSession(
     SessionManager,
     DefaultResourceLoader,
     getAgentDir
-  } = await import('@earendil-works/pi-coding-agent')
+  } = await importPiSdk()
 
   const agentDir = getAgentDir()
   piLog(
