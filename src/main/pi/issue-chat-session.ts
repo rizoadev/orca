@@ -1,7 +1,7 @@
 /**
  * In-process pi AgentSession sessions for the issue-modal chat panel.
- * Why: replaces Strands with pi SDK so all models from ~/.pi/agent/models.json
- * are available and the full pi tool suite (read, bash, edit, write) is active.
+ * Sessions are KEPT ALIVE on panel unmount (soft-detach) to preserve
+ * history + model when switching modal ↔ window mode.
  */
 import { randomUUID } from 'node:crypto'
 import type {
@@ -24,13 +24,17 @@ type SessionRecord = {
   modelId: string
   provider: string
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  agentSession: any // AgentSession from @earendil-works/pi-coding-agent
+  agentSession: any
   running: boolean
+  /** Active emitter — set when panel attaches, cleared on detach. */
+  currentEmit: Emitter | null
+  currentAssistantId: string | null
+  currentAssistantContent: string
+  currentAssistantEmitted: boolean
 }
 
 const sessions = new Map<string, SessionRecord>()
 
-/** Exposed for model-switching helpers that need to mutate session records. */
 export function getSessionsMap(): Map<string, SessionRecord> {
   return sessions
 }
@@ -61,13 +65,107 @@ function snapshot(record: SessionRecord): PiIssueChatSessionSnapshot {
   }
 }
 
+/** Wire permanent SDK event subscription on a new record. */
+function attachSdkSubscription(record: SessionRecord): void {
+  record.agentSession.subscribe(
+    (event: {
+      type: string
+      assistantMessageEvent?: { type: string; delta?: string; name?: string }
+      message?: { role: string; content: { type: string; text?: string }[] }
+    }) => {
+      const emit = record.currentEmit
+      if (!emit) {
+        return
+      }
+      const { sessionId } = record
+
+      // ── streaming: text_delta ───────────────────────────────────────────────
+      if (event.type === 'message_update') {
+        const inner = event.assistantMessageEvent
+        if (!inner) {
+          return
+        }
+
+        if (inner.type === 'text_delta' && typeof inner.delta === 'string') {
+          record.currentAssistantContent += inner.delta
+          if (!record.currentAssistantEmitted && record.currentAssistantId) {
+            const message: PiIssueChatMessage = {
+              id: record.currentAssistantId,
+              role: 'assistant',
+              content: record.currentAssistantContent,
+              createdAt: Date.now()
+            }
+            record.messages.push(message)
+            record.currentAssistantEmitted = true
+            emit({ type: 'message', sessionId, message })
+          } else if (record.currentAssistantId) {
+            const idx = record.messages.findIndex((m) => m.id === record.currentAssistantId)
+            if (idx >= 0) {
+              record.messages[idx] = {
+                ...record.messages[idx]!,
+                content: record.currentAssistantContent
+              }
+            }
+            emit({
+              type: 'assistantDelta',
+              sessionId,
+              messageId: record.currentAssistantId,
+              delta: inner.delta
+            })
+          }
+          return
+        }
+
+        if (inner.type === 'tool_start' && inner.name) {
+          const toolMessage = msg('tool', inner.name, inner.name)
+          record.messages.push(toolMessage)
+          emit({ type: 'tool', sessionId, toolName: inner.name, messageId: toolMessage.id })
+          emit({ type: 'message', sessionId, message: toolMessage })
+        }
+        return
+      }
+
+      // ── non-streaming fallback: message_end with full content ───────────────
+      // Why: some providers don't emit text_delta, only message_end.
+      if (
+        event.type === 'message_end' &&
+        event.message?.role === 'assistant' &&
+        !record.currentAssistantEmitted &&
+        record.currentAssistantId
+      ) {
+        const text = event.message.content
+          .filter((b) => b.type === 'text' && typeof b.text === 'string')
+          .map((b) => b.text ?? '')
+          .join('')
+        if (!text) {
+          return
+        }
+        record.currentAssistantContent = text
+        const message: PiIssueChatMessage = {
+          id: record.currentAssistantId,
+          role: 'assistant',
+          content: text,
+          createdAt: Date.now()
+        }
+        record.messages.push(message)
+        record.currentAssistantEmitted = true
+        emit({ type: 'message', sessionId, message })
+      }
+    }
+  )
+}
+
 export async function startPiIssueChatSession(
   args: PiIssueChatStartArgs,
   emit: Emitter
 ): Promise<PiIssueChatSessionSnapshot> {
   const existing = sessions.get(args.sessionId)
   if (existing) {
-    return snapshot(existing)
+    // Re-attach emit to existing warm session — preserves history + model.
+    existing.currentEmit = emit
+    const snap = snapshot(existing)
+    emit({ type: 'snapshot', session: snap })
+    return snap
   }
 
   const { agentSession, modelId, provider } = await createPiSession(
@@ -80,7 +178,7 @@ export async function startPiIssueChatSession(
     ISSUE_SESSIONS_DIR_DEFAULT
   )
 
-  // Replay persisted messages from the resumed session so the UI shows history
+  // Replay persisted messages from resumed session file
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const persistedMessages: PiIssueChatMessage[] = ((agentSession as any).messages ?? [])
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -103,9 +201,14 @@ export async function startPiIssueChatSession(
     modelId,
     provider,
     agentSession,
-    running: false
+    running: false,
+    currentEmit: emit,
+    currentAssistantId: null,
+    currentAssistantContent: '',
+    currentAssistantEmitted: false
   }
 
+  attachSdkSubscription(record)
   sessions.set(args.sessionId, record)
   const snap = snapshot(record)
   emit({ type: 'snapshot', session: snap })
@@ -117,11 +220,25 @@ export function getPiIssueChatSession(sessionId: string): PiIssueChatSessionSnap
   return record ? snapshot(record) : null
 }
 
+/**
+ * Soft-detach: clear the emit reference so events stop flowing to the panel.
+ * Session stays warm — history and model are preserved for re-attach.
+/** Soft-detach: clear emit so events stop. Session stays warm. */
+export function detachPiIssueChatSession(sessionId: string): void {
+  const record = sessions.get(sessionId)
+  if (!record) {
+    return
+  }
+  record.currentEmit = null
+}
+
+/** Hard stop: dispose session and remove from Map. */
 export function stopPiIssueChatSession(sessionId: string): void {
   const record = sessions.get(sessionId)
   if (!record) {
     return
   }
+  record.currentEmit = null
   try {
     record.agentSession?.dispose?.()
   } catch {
@@ -147,6 +264,7 @@ export async function sendPiIssueChatMessage(
     throw new Error('Pi agent is still responding. Wait for the current turn to finish.')
   }
 
+  record.currentEmit = emit // re-attach in case panel re-mounted
   const userMessage = msg('user', trimmed)
   record.messages.push(userMessage)
   emit({ type: 'message', sessionId, message: userMessage })
@@ -154,111 +272,34 @@ export async function sendPiIssueChatMessage(
   record.running = true
   record.status = 'running'
   record.error = undefined
+  record.currentAssistantId = randomUUID()
+  record.currentAssistantContent = ''
+  record.currentAssistantEmitted = false
   emit({ type: 'status', sessionId, status: 'running' })
-
-  const assistantId = randomUUID()
-  let assistantContent = ''
-  let assistantEmitted = false
-
-  // Subscribe to pi SDK events for this turn.
-  // Why: handle both streaming (text_delta) and non-streaming (message_end)
-  // models — some providers emit text_delta, others only emit message_end.
-  const unsubscribe = record.agentSession.subscribe(
-    (event: {
-      type: string
-      assistantMessageEvent?: { type: string; delta?: string; name?: string }
-      message?: { role: string; content: { type: string; text?: string; name?: string }[] }
-    }) => {
-      // ── streaming path: text_delta events ──────────────────────────────────
-      if (event.type === 'message_update') {
-        const inner = event.assistantMessageEvent
-        if (!inner) {
-          return
-        }
-
-        if (inner.type === 'text_delta' && typeof inner.delta === 'string') {
-          assistantContent += inner.delta
-          if (!assistantEmitted) {
-            const message: PiIssueChatMessage = {
-              id: assistantId,
-              role: 'assistant',
-              content: assistantContent,
-              createdAt: Date.now()
-            }
-            record.messages.push(message)
-            assistantEmitted = true
-            emit({ type: 'message', sessionId, message })
-          } else {
-            const idx = record.messages.findIndex((m) => m.id === assistantId)
-            if (idx >= 0) {
-              record.messages[idx] = { ...record.messages[idx]!, content: assistantContent }
-            }
-            emit({ type: 'assistantDelta', sessionId, messageId: assistantId, delta: inner.delta })
-          }
-          return
-        }
-
-        // Tool call start
-        if (inner.type === 'tool_start' && inner.name) {
-          const toolMessage = msg('tool', inner.name, inner.name)
-          record.messages.push(toolMessage)
-          emit({ type: 'tool', sessionId, toolName: inner.name, messageId: toolMessage.id })
-          emit({ type: 'message', sessionId, message: toolMessage })
-        }
-        return
-      }
-
-      // ── non-streaming fallback: message_end with full content ───────────────
-      // Why: some providers don't emit text_delta — only message_end with the
-      // complete content array. Capture full text here if no deltas arrived.
-      if (
-        event.type === 'message_end' &&
-        event.message?.role === 'assistant' &&
-        !assistantEmitted
-      ) {
-        const text = event.message.content
-          .filter((b) => b.type === 'text' && typeof b.text === 'string')
-          .map((b) => b.text ?? '')
-          .join('')
-        if (!text) {
-          return
-        }
-        assistantContent = text
-        const message: PiIssueChatMessage = {
-          id: assistantId,
-          role: 'assistant',
-          content: text,
-          createdAt: Date.now()
-        }
-        record.messages.push(message)
-        assistantEmitted = true
-        emit({ type: 'message', sessionId, message })
-      }
-    }
-  )
 
   try {
     console.log('[pi-chat] calling prompt...')
     await record.agentSession.prompt(trimmed)
     console.log(
-      '[pi-chat] prompt done, assistantEmitted=%s content=%s',
-      assistantEmitted,
-      assistantContent.slice(0, 80)
+      '[pi-chat] prompt done, emitted=%s content=%s',
+      record.currentAssistantEmitted,
+      record.currentAssistantContent.slice(0, 80)
     )
     record.status = 'idle'
+    record.currentAssistantId = null
     emit({ type: 'status', sessionId, status: 'idle' })
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
     console.error('[pi-chat] prompt ERROR:', message)
     record.status = 'error'
     record.error = message
+    record.currentAssistantId = null
     const errMsg = msg('system', `Error: ${message}`)
     record.messages.push(errMsg)
     emit({ type: 'message', sessionId, message: errMsg })
     emit({ type: 'status', sessionId, status: 'error', error: message })
   } finally {
     record.running = false
-    unsubscribe()
   }
 }
 

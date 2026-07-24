@@ -10,6 +10,7 @@ import type {
 import {
   getPiIssueChatSession,
   getSessionsMap,
+  detachPiIssueChatSession,
   sendPiIssueChatMessage,
   startPiIssueChatSession,
   stopPiIssueChatSession
@@ -74,6 +75,15 @@ export function registerPiIssueChatHandlers(): void {
       return
     }
     stopPiIssueChatSession(sessionId)
+  })
+
+  // Why: detach is a soft disconnect — panel unmounts but session stays warm.
+  // Preserves history + model when switching modal ↔ window mode.
+  ipcMain.handle('piIssueChat:detach', async (_event, sessionId: string): Promise<void> => {
+    if (typeof sessionId !== 'string' || !sessionId) {
+      return
+    }
+    detachPiIssueChatSession(sessionId)
   })
 
   ipcMain.handle('piIssueChat:listModels', async (): Promise<PiModelOption[]> => {

@@ -199,7 +199,9 @@ export function IssueStrandsChatPanel({
     return () => {
       cancelled = true
       unsub()
-      void piApi.stop(sessionId)
+      // Why: detach (not stop) so session stays warm — history + model
+      // preserved when switching modal ↔ window or re-opening the issue.
+      void piApi.detach(sessionId)
     }
   }, [applySnapshot, cwd, sessionId])
 
