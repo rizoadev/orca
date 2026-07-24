@@ -134,6 +134,9 @@ import type {
   GitLabProjectRef,
   GitLabRetryJobResult,
   GitLabSnippet,
+  GitLabSnippetCreateInput,
+  GitLabSnippetDetail,
+  GitLabSnippetUpdateInput,
   GitLabTodo,
   GitLabViewer,
   GitLabWorkItem,
@@ -519,7 +522,8 @@ import type {
   PiIssueChatSetModelArgs,
   PiIssueChatSessionSnapshot,
   PiIssueChatEvent,
-  PiModelOption
+  PiModelOption,
+  PiSessionInfo
 } from '../shared/pi-issue-chat-types'
 import type {
   StrandsIssueChatStartArgs,
@@ -1923,6 +1927,25 @@ export type PreloadApi = {
         limit?: number
       }
     ) => Promise<{ items: GitLabSnippet[]; error?: ClassifiedError }>
+    getProjectSnippet: (
+      args: GitLabRepoSelectorArgs & {
+        snippetId: number
+      }
+    ) => Promise<{ ok: true; snippet: GitLabSnippetDetail } | { ok: false; error: string }>
+    createProjectSnippet: (
+      args: GitLabRepoSelectorArgs & GitLabSnippetCreateInput
+    ) => Promise<{ ok: true; snippet: GitLabSnippetDetail } | { ok: false; error: string }>
+    updateProjectSnippet: (
+      args: GitLabRepoSelectorArgs & {
+        snippetId: number
+        updates: GitLabSnippetUpdateInput
+      }
+    ) => Promise<{ ok: true; snippet: GitLabSnippetDetail } | { ok: false; error: string }>
+    deleteProjectSnippet: (
+      args: GitLabRepoSelectorArgs & {
+        snippetId: number
+      }
+    ) => Promise<{ ok: true } | { ok: false; error: string }>
     /** Aggregated dialog payload — body + discussions + pipeline jobs. */
     workItemDetails: (
       args: GitLabRepoSelectorArgs & {
@@ -2553,6 +2576,10 @@ export type PreloadApi = {
     listModels: () => Promise<PiModelOption[]>
     setModel: (args: PiIssueChatSetModelArgs) => Promise<string>
     detach: (sessionId: string) => Promise<void>
+    listSessions: (args: { sessionId: string; cwd: string }) => Promise<PiSessionInfo[]>
+    newSession: (args: PiIssueChatStartArgs) => Promise<PiIssueChatSessionSnapshot>
+    switchSession: (args: { sessionId: string; cwd: string; issueContext: string; sessionPath: string }) => Promise<PiIssueChatSessionSnapshot>
+    deleteSession: (args: { sessionId: string; sessionPath: string }) => Promise<void>
     onEvent: (callback: (event: PiIssueChatEvent) => void) => () => void
   }
   fs: {

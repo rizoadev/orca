@@ -23,7 +23,8 @@ import type {
   PiIssueChatSendArgs,
   PiIssueChatSetModelArgs,
   PiIssueChatEvent,
-  PiModelOption
+  PiModelOption,
+  PiSessionInfo
 } from '../shared/pi-issue-chat-types'
 import type {
   StrandsIssueChatStartArgs,
@@ -2860,6 +2861,14 @@ const api = {
       ipcRenderer.invoke('piIssueChat:setModel', args),
     detach: (sessionId: string): Promise<void> =>
       ipcRenderer.invoke('piIssueChat:detach', sessionId),
+    listSessions: (args: { sessionId: string; cwd: string }): Promise<PiSessionInfo[]> =>
+      ipcRenderer.invoke('piIssueChat:listSessions', args),
+    newSession: (args: PiIssueChatStartArgs): Promise<import('../shared/pi-issue-chat-types').PiIssueChatSessionSnapshot> =>
+      ipcRenderer.invoke('piIssueChat:newSession', args),
+    switchSession: (args: { sessionId: string; cwd: string; issueContext: string; sessionPath: string }): Promise<import('../shared/pi-issue-chat-types').PiIssueChatSessionSnapshot> =>
+      ipcRenderer.invoke('piIssueChat:switchSession', args),
+    deleteSession: (args: { sessionId: string; sessionPath: string }): Promise<void> =>
+      ipcRenderer.invoke('piIssueChat:deleteSession', args),
     onEvent: (callback: (event: PiIssueChatEvent) => void) => {
       const listener = (_event: Electron.IpcRendererEvent, payload: PiIssueChatEvent) =>
         callback(payload)

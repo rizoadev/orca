@@ -5,7 +5,8 @@ import type {
   PiIssueChatSessionSnapshot,
   PiIssueChatStartArgs,
   PiIssueChatSetModelArgs,
-  PiModelOption
+  PiModelOption,
+  PiSessionInfo
 } from '../../shared/pi-issue-chat-types'
 import {
   getPiIssueChatSession,
@@ -16,6 +17,7 @@ import {
   stopPiIssueChatSession
 } from '../pi/issue-chat-session'
 import { listPiModels, setPiSessionModel } from '../pi/pi-model-registry'
+import { listPiIssueSessions, deletePiIssueSession } from '../pi/pi-session-manager'
 
 function emitToSender(sender: WebContents, event: PiIssueChatEvent): void {
   if (sender.isDestroyed()) {
@@ -97,6 +99,57 @@ export function registerPiIssueChatHandlers(): void {
         throw new Error('Invalid piIssueChat:setModel args')
       }
       return setPiSessionModel(getSessionsMap(), args.sessionId, args.modelRef)
+    }
+  )
+
+  ipcMain.handle(
+    'piIssueChat:listSessions',
+    async (_event, args: { sessionId: string; cwd: string }): Promise<PiSessionInfo[]> => {
+      if (!args?.sessionId || !args.cwd) { return [] }
+      const record = getSessionsMap().get(args.sessionId)
+      return listPiIssueSessions(args.cwd, args.sessionId, record?.sessionFile)
+    }
+  )
+
+  ipcMain.handle(
+    'piIssueChat:newSession',
+    async (event, args: PiIssueChatStartArgs): Promise<PiIssueChatSessionSnapshot> => {
+      if (!args?.sessionId || !args.cwd || typeof args.issueContext !== 'string') {
+        throw new Error('Invalid piIssueChat:newSession args')
+      }
+      // Stop existing warm session so start creates a fresh one
+      stopPiIssueChatSession(args.sessionId)
+      return startPiIssueChatSession(
+        { ...args, sessionMode: 'new' },
+        (payload) => emitToSender(event.sender, payload)
+      )
+    }
+  )
+
+  ipcMain.handle(
+    'piIssueChat:switchSession',
+    async (event, args: { sessionId: string; cwd: string; issueContext: string; sessionPath: string }): Promise<PiIssueChatSessionSnapshot> => {
+      if (!args?.sessionId || !args.cwd || !args.sessionPath) {
+        throw new Error('Invalid piIssueChat:switchSession args')
+      }
+      stopPiIssueChatSession(args.sessionId)
+      return startPiIssueChatSession(
+        { sessionId: args.sessionId, cwd: args.cwd, issueContext: args.issueContext, sessionMode: { type: 'open', path: args.sessionPath } },
+        (payload) => emitToSender(event.sender, payload)
+      )
+    }
+  )
+
+  ipcMain.handle(
+    'piIssueChat:deleteSession',
+    async (_event, args: { sessionId: string; sessionPath: string }): Promise<void> => {
+      if (!args?.sessionPath) { return }
+      deletePiIssueSession(args.sessionPath)
+      // If deleting active session, stop it so next open starts fresh
+      const record = getSessionsMap().get(args.sessionId)
+      if (record?.sessionFile === args.sessionPath) {
+        stopPiIssueChatSession(args.sessionId)
+      }
     }
   )
 }
