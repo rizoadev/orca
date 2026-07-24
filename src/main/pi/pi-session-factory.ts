@@ -24,7 +24,7 @@ const PI_CHAT_LOG = '/tmp/pi-chat-debug.log'
  * Import pi SDK — tries standard import first (dev), falls back to
  * scanning ~/.local/share/pi-node/ for the installed SDK (packaged app).
  */
-async function importPiSdk(): Promise<typeof import('@earendil-works/pi-coding-agent')> {
+export async function importPiSdk(): Promise<typeof import('@earendil-works/pi-coding-agent')> {
   try {
     return await import('@earendil-works/pi-coding-agent')
   } catch {
