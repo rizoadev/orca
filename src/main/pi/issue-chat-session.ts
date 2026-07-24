@@ -332,11 +332,18 @@ export async function sendPiIssueChatMessage(
   )
 
   try {
+    console.log('[pi-chat] calling prompt...')
     await record.agentSession.prompt(trimmed)
+    console.log(
+      '[pi-chat] prompt done, assistantEmitted=%s content=%s',
+      assistantEmitted,
+      assistantContent.slice(0, 80)
+    )
     record.status = 'idle'
     emit({ type: 'status', sessionId, status: 'idle' })
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
+    console.error('[pi-chat] prompt ERROR:', message)
     record.status = 'error'
     record.error = message
     const errMsg = msg('system', `Error: ${message}`)
