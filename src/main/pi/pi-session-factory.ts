@@ -72,9 +72,17 @@ export async function createPiSession(
   }
   if (!model) {
     const available = await modelRegistry.getAvailable()
-    // Why: prefer localhost models — they return real streaming content vs
-    // some llmproxy routes that return empty content arrays.
-    model = available.find((m) => m.provider === 'localhost') ?? available[0] ?? undefined
+    // Why: prefer models known to return real content. Some localhost models
+    // (e.g. amanai/*) return empty responses. Prefer cb/* and kr/* first.
+    const PREFERRED = ['cb/kimi-k3', 'cb/default-model', 'cb/gpt-5.5', 'kr/claude-sonnet-4.5', 'kr/auto']
+    model =
+      PREFERRED.reduce<unknown>(
+        (found, id) => found ?? available.find((m) => m.id === id),
+        undefined
+      ) ??
+      available.find((m) => m.provider === 'localhost' && !m.id.startsWith('amanai/')) ??
+      available[0] ??
+      undefined
   }
 
   const systemPrompt = [
