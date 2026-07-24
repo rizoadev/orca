@@ -9,12 +9,12 @@ import type {
 } from '../../shared/pi-issue-chat-types'
 import {
   getPiIssueChatSession,
-  listPiModels,
+  getSessionsMap,
   sendPiIssueChatMessage,
-  setPiSessionModel,
   startPiIssueChatSession,
   stopPiIssueChatSession
 } from '../pi/issue-chat-session'
+import { listPiModels, setPiSessionModel } from '../pi/pi-model-registry'
 
 function emitToSender(sender: WebContents, event: PiIssueChatEvent): void {
   if (sender.isDestroyed()) {
@@ -86,7 +86,7 @@ export function registerPiIssueChatHandlers(): void {
       if (!args?.sessionId || !args.modelRef) {
         throw new Error('Invalid piIssueChat:setModel args')
       }
-      return setPiSessionModel(args.sessionId, args.modelRef)
+      return setPiSessionModel(getSessionsMap(), args.sessionId, args.modelRef)
     }
   )
 }

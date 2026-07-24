@@ -41,13 +41,20 @@ export function listPiModels(): PiModelOption[] {
   return result
 }
 
+type MinimalSessionRecord = {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  agentSession: any
+  modelId: string
+  provider: string
+}
+
 /**
  * Switch the model on an existing session in-place via session.setModel().
  * Returns the resolved model label "provider/id".
+ * Why: accepts the sessions Map to avoid circular imports with issue-chat-session.ts.
  */
 export async function setPiSessionModel(
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  sessions: Map<string, { agentSession: any; modelId: string; provider: string }>,
+  sessions: Map<string, MinimalSessionRecord>,
   sessionId: string,
   modelRef: string
 ): Promise<string> {

@@ -30,6 +30,11 @@ type SessionRecord = {
 
 const sessions = new Map<string, SessionRecord>()
 
+/** Exposed for model-switching helpers that need to mutate session records. */
+export function getSessionsMap(): Map<string, SessionRecord> {
+  return sessions
+}
+
 function msg(
   role: PiIssueChatMessage['role'],
   content: string,
