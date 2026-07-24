@@ -4,6 +4,9 @@
  * are available and the full pi tool suite (read, bash, edit, write) is active.
  */
 import { randomUUID } from 'node:crypto'
+import { homedir } from 'node:os'
+import { join } from 'node:path'
+import { mkdirSync } from 'node:fs'
 import type {
   PiIssueChatEvent,
   PiIssueChatMessage,
@@ -23,11 +26,19 @@ type SessionRecord = {
   modelId: string
   provider: string
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  session: any // AgentSession from @earendil-works/pi-coding-agent
+  agentSession: any // AgentSession from @earendil-works/pi-coding-agent
   running: boolean
 }
 
 const sessions = new Map<string, SessionRecord>()
+
+/** Directory where per-issue session JSONL files are stored. */
+const ISSUE_SESSIONS_DIR = join(homedir(), '.pi', 'agent', 'sessions', 'orca-issues')
+
+/** Sanitize an issue sessionId into a safe filename prefix. */
+function sessionFileSlug(sessionId: string): string {
+  return sessionId.replace(/[^a-zA-Z0-9_-]/g, '-').slice(0, 80)
+}
 
 function msg(
   role: PiIssueChatMessage['role'],
@@ -58,13 +69,21 @@ function snapshot(record: SessionRecord): PiIssueChatSessionSnapshot {
 async function createPiSession(args: {
   cwd: string
   issueContext: string
+  sessionId: string
   modelRef?: string
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-}): Promise<{ session: any; modelId: string; provider: string }> {
+}): Promise<{ agentSession: any; modelId: string; provider: string }> {
   // Why: lazy import keeps Electron main startup fast when chat panel is not open.
-  const { createAgentSession, AuthStorage, ModelRegistry, SessionManager } =
-    await import('@earendil-works/pi-coding-agent')
+  const {
+    createAgentSession,
+    AuthStorage,
+    ModelRegistry,
+    SessionManager,
+    DefaultResourceLoader,
+    getAgentDir
+  } = await import('@earendil-works/pi-coding-agent')
 
+  const agentDir = getAgentDir()
   const authStorage = AuthStorage.create()
   const modelRegistry = ModelRegistry.create(authStorage)
 
@@ -72,26 +91,23 @@ async function createPiSession(args: {
   let model: unknown
   if (args.modelRef) {
     const parts = args.modelRef.split('/')
-    // modelRef format: "providerName/model/id" — last segment(s) are model id,
-    // first is the pi provider name. Try exact registry lookup.
     if (parts.length >= 2) {
       const providerName = parts[0]
       const modelId = parts.slice(1).join('/')
       model = modelRegistry.find(providerName, modelId) ?? undefined
     }
   }
-
-  // Fall back to first available model (has valid API key)
   if (!model) {
     const available = await modelRegistry.getAvailable()
     model = available[0] ?? undefined
   }
 
+  // Build resource loader with issue context injected as system prompt
   const systemPrompt = [
     'You are a coding agent inside Orca issue chat.',
     'You can chat, call tools, edit files, and run shell commands in the project worktree.',
     `Project root (use absolute paths under this dir): ${args.cwd}`,
-    `For bash tool, always cd to project root first: cd ${JSON.stringify(args.cwd)} && …`,
+    `For bash tool, always start with: cd ${JSON.stringify(args.cwd)} &&`,
     'Prefer small, reviewable edits. Do not force-push or open PRs unless asked.',
     'Stay scoped to the issue context below.',
     '',
@@ -99,23 +115,45 @@ async function createPiSession(args: {
     args.issueContext.trim() || '(no description)'
   ].join('\n')
 
-  const { session } = await createAgentSession({
+  const loader = new DefaultResourceLoader({
+    cwd: args.cwd,
+    agentDir,
+    // Why: replace default pi system prompt with issue-scoped context
+    systemPromptOverride: () => systemPrompt,
+    // Why: skip appending APPEND_SYSTEM.md so prompt stays clean
+    appendSystemPromptOverride: () => []
+  })
+  await loader.reload()
+
+  // Per-issue session persistence: each unique issue gets its own JSONL file
+  mkdirSync(ISSUE_SESSIONS_DIR, { recursive: true })
+  const slug = sessionFileSlug(args.sessionId)
+  const sessionDir = join(ISSUE_SESSIONS_DIR, slug)
+  mkdirSync(sessionDir, { recursive: true })
+
+  // Why: continueRecent resumes the last session for this issue if it exists,
+  // otherwise creates a new one — giving the user conversation history per issue.
+  const sessionManager = SessionManager.continueRecent(args.cwd, sessionDir)
+
+  const { session, modelFallbackMessage } = await createAgentSession({
     ...(model ? { model: model as never } : {}),
-    // Why: in-memory session — issue chat is ephemeral, no disk persistence needed.
-    sessionManager: SessionManager.inMemory(),
+    resourceLoader: loader,
+    sessionManager,
     authStorage,
     modelRegistry,
-    systemPrompt,
-    cwd: args.cwd,
     tools: ['read', 'bash', 'edit', 'write']
   })
+
+  if (modelFallbackMessage) {
+    console.warn('[pi-issue-chat] model fallback:', modelFallbackMessage)
+  }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const resolvedModel = (session as any).model
   const modelId: string = resolvedModel?.id ?? 'unknown'
   const provider: string = resolvedModel?.provider ?? 'pi'
 
-  return { session, modelId, provider }
+  return { agentSession: session, modelId, provider }
 }
 
 export async function startPiIssueChatSession(
@@ -127,20 +165,36 @@ export async function startPiIssueChatSession(
     return snapshot(existing)
   }
 
-  const { session, modelId, provider } = await createPiSession({
+  const { agentSession, modelId, provider } = await createPiSession({
     cwd: args.cwd,
     issueContext: args.issueContext,
+    sessionId: args.sessionId,
     modelRef: args.modelRef
   })
+
+  // Replay persisted messages from the resumed session so the UI shows history
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const persistedMessages: PiIssueChatMessage[] = ((agentSession as any).messages ?? [])
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    .flatMap((m: any) => {
+      const role: PiIssueChatMessage['role'] =
+        m.role === 'user' ? 'user' : m.role === 'assistant' ? 'assistant' : 'system'
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const text = m.blocks?.find((b: any) => b.type === 'text')?.text ?? ''
+      if (!text) {
+        return []
+      }
+      return [msg(role, text)]
+    })
 
   const record: SessionRecord = {
     sessionId: args.sessionId,
     cwd: args.cwd,
     status: 'idle',
-    messages: [],
+    messages: persistedMessages,
     modelId,
     provider,
-    session,
+    agentSession,
     running: false
   }
 
@@ -161,9 +215,9 @@ export function stopPiIssueChatSession(sessionId: string): void {
     return
   }
   try {
-    record.session?.dispose?.()
+    record.agentSession?.dispose?.()
   } catch {
-    // ignore dispose errors on cleanup
+    // ignore dispose errors
   }
   sessions.delete(sessionId)
 }
@@ -199,7 +253,7 @@ export async function sendPiIssueChatMessage(
   let assistantEmitted = false
 
   // Subscribe to pi SDK events for this turn
-  const unsubscribe = record.session.subscribe(
+  const unsubscribe = record.agentSession.subscribe(
     (event: {
       type: string
       assistantMessageEvent?: { type: string; delta?: string; name?: string }
@@ -245,7 +299,7 @@ export async function sendPiIssueChatMessage(
   )
 
   try {
-    await record.session.prompt(trimmed)
+    await record.agentSession.prompt(trimmed)
     record.status = 'idle'
     emit({ type: 'status', sessionId, status: 'idle' })
   } catch (error) {
