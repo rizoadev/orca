@@ -26,7 +26,17 @@ export function registerPiIssueChatHandlers(): void {
       if (!args?.sessionId || !args.cwd || typeof args.issueContext !== 'string') {
         throw new Error('Invalid piIssueChat:start args')
       }
-      return await startPiIssueChatSession(args, (payload) => emitToSender(event.sender, payload))
+      console.log('[pi-chat] start sessionId=%s cwd=%s', args.sessionId, args.cwd)
+      try {
+        const result = await startPiIssueChatSession(args, (payload) =>
+          emitToSender(event.sender, payload)
+        )
+        console.log('[pi-chat] session ready model=%s/%s', result.provider, result.modelId)
+        return result
+      } catch (err) {
+        console.error('[pi-chat] start FAILED:', err)
+        throw err
+      }
     }
   )
 
@@ -44,9 +54,15 @@ export function registerPiIssueChatHandlers(): void {
     if (!args?.sessionId || typeof args.text !== 'string') {
       throw new Error('Invalid piIssueChat:send args')
     }
-    await sendPiIssueChatMessage(args.sessionId, args.text, (payload) =>
-      emitToSender(event.sender, payload)
-    )
+    console.log('[pi-chat] send sessionId=%s text=%s', args.sessionId, args.text.slice(0, 60))
+    try {
+      await sendPiIssueChatMessage(args.sessionId, args.text, (payload) =>
+        emitToSender(event.sender, payload)
+      )
+    } catch (err) {
+      console.error('[pi-chat] send FAILED:', err)
+      throw err
+    }
   })
 
   ipcMain.handle('piIssueChat:stop', async (_event, sessionId: string): Promise<void> => {
