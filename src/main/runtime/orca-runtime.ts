@@ -532,6 +532,7 @@ import {
   addMRComment as addGitLabMRComment,
   addDiscussionNote as addGitLabDiscussionNote,
   listTodos as listGitLabTodos,
+  listProjectSnippets as listGitLabProjectSnippets,
   listIssues as listGitLabIssues,
   listLabels as listGitLabLabels,
   listMergeRequests as listGitLabMergeRequests,
@@ -16333,6 +16334,20 @@ export class OrcaRuntimeService {
     const repo = await this.resolveRepoSelector(repoSelector)
     return listGitLabTodos(
       repo.path,
+      repo.connectionId ?? null,
+      ...this.getLocalGitExecutionOptionArgs(repo)
+    )
+  }
+
+  async listGitLabRepoProjectSnippets(
+    repoSelector: string,
+    limit?: number
+  ): Promise<Awaited<ReturnType<typeof listGitLabProjectSnippets>>> {
+    const repo = await this.resolveRepoSelector(repoSelector)
+    return listGitLabProjectSnippets(
+      repo.path,
+      normalizeGitLabPositiveInteger(limit, 50, 100),
+      repo.issueSourcePreference,
       repo.connectionId ?? null,
       ...this.getLocalGitExecutionOptionArgs(repo)
     )

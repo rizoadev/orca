@@ -30,6 +30,8 @@ export type PiIssueChatStartArgs = {
   issueContext: string
   /** Optional explicit model ref e.g. "localhost/cb/kimi-k3". */
   modelRef?: string
+  /** Session mode: continue latest (default), start new, or open specific file. */
+  sessionMode?: 'continue' | 'new' | { type: 'open'; path: string }
 }
 
 export type PiIssueChatSendArgs = {
@@ -51,6 +53,17 @@ export type PiModelOption = {
   name: string
   contextWindow: number
   maxTokens: number
+}
+
+/** A persisted session file entry for an issue. */
+export type PiSessionInfo = {
+  path: string
+  id: string
+  firstMessage: string
+  /** Epoch ms from file mtime */
+  createdAt: number
+  /** Whether this is the currently active session */
+  isActive: boolean
 }
 
 export type PiIssueChatEvent =

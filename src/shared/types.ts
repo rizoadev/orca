@@ -1927,6 +1927,8 @@ export type {
   GitLabProjectSettings,
   GitLabRetryJobResult,
   GitLabReaction,
+  GitLabSnippet,
+  GitLabSnippetVisibility,
   GitLabTodo,
   GitLabTodoTargetType,
   GitLabViewer,
@@ -3189,6 +3191,7 @@ export type RightSidebarTab =
   | 'hive'
   | 'remote-chat'
   | 'todos'
+  | 'snippets'
 export type ActiveRightSidebarTab = Exclude<RightSidebarTab, 'search'>
 export type RightSidebarExplorerView = 'files' | 'search'
 

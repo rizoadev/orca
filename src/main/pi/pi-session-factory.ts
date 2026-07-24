@@ -9,12 +9,13 @@ import { join } from 'node:path'
 /** Directory where per-issue session JSONL files are stored. */
 export const ISSUE_SESSIONS_DIR_DEFAULT = join(homedir(), '.pi', 'agent', 'sessions', 'orca-issues')
 
-function sessionFileSlug(sessionId: string): string {
+export function sessionFileSlug(sessionId: string): string {
   return sessionId.replace(/[^a-zA-Z0-9_-]/g, '-').slice(0, 80)
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-type CreatePiSessionResult = { agentSession: any; modelId: string; provider: string }
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export type CreatePiSessionResult = { agentSession: any; modelId: string; provider: string; sessionFile: string | undefined }
 
 const PI_CHAT_LOG = '/tmp/pi-chat-debug.log'
 
@@ -27,12 +28,15 @@ export function piLog(...args: unknown[]): void {
   }
 }
 
+export type SessionMode = 'continue' | 'new' | { type: 'open'; path: string }
+
 export async function createPiSession(
   args: {
     cwd: string
     issueContext: string
     sessionId: string
     modelRef?: string
+    sessionMode?: SessionMode
   },
   issueSessionsDir: string
 ): Promise<CreatePiSessionResult> {
@@ -98,7 +102,13 @@ export async function createPiSession(
   const sessionDir = join(issueSessionsDir, sessionFileSlug(args.sessionId))
   mkdirSync(sessionDir, { recursive: true })
 
-  const sessionManager = SessionManager.continueRecent(args.cwd, sessionDir)
+  const mode = args.sessionMode ?? 'continue'
+  const sessionManager =
+    mode === 'new'
+      ? SessionManager.create(args.cwd, sessionDir)
+      : typeof mode === 'object' && mode.type === 'open'
+        ? SessionManager.open(mode.path)
+        : SessionManager.continueRecent(args.cwd, sessionDir)
 
   const { session, modelFallbackMessage } = await createAgentSession({
     ...(model ? { model: model as never } : {}),
@@ -110,7 +120,6 @@ export async function createPiSession(
   })
 
   if (modelFallbackMessage) {
-    console.warn('[pi-issue-chat] model fallback:', modelFallbackMessage)
     piLog('model fallback:', modelFallbackMessage)
   }
 
@@ -118,7 +127,9 @@ export async function createPiSession(
   const resolvedModel = (session as any).model
   const modelId: string = resolvedModel?.id ?? 'unknown'
   const provider: string = resolvedModel?.provider ?? 'pi'
-  piLog('session ready model=%s/%s', provider, modelId)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const sessionFile: string | undefined = (session as any).sessionFile
+  piLog('session ready model=%s/%s file=%s', provider, modelId, sessionFile ?? 'none')
 
-  return { agentSession: session, modelId, provider }
+  return { agentSession: session, modelId, provider, sessionFile }
 }

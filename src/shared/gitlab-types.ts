@@ -201,6 +201,22 @@ export type GitLabProjectSettings = {
   recent: { host: string; path: string; lastOpenedAt: string }[]
 }
 
+export type GitLabSnippetVisibility = 'private' | 'internal' | 'public'
+
+/** Project-scoped GitLab snippet row for the right-sidebar Snippets panel. */
+export type GitLabSnippet = {
+  id: number
+  title: string
+  fileName: string
+  description: string
+  visibility: GitLabSnippetVisibility
+  webUrl: string
+  rawUrl: string
+  /** ISO timestamp from GitLab. */
+  updatedAt: string
+  authorUsername: string
+}
+
 // Why: only the four Todo target types Orca renders meaningfully; others (e.g. DesignManagement::Design) fall back to a generic "open URL".
 export type GitLabTodoTargetType = 'MergeRequest' | 'Issue' | 'Commit' | 'Note'
 

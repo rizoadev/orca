@@ -31,6 +31,10 @@ type SessionRecord = {
   currentAssistantId: string | null
   currentAssistantContent: string
   currentAssistantEmitted: boolean
+  /** Path to the active session JSONL file (for history UI). */
+  sessionFile: string | undefined
+  /** Stored issue context for session reconstruction (new/switch). */
+  issueContext: string
 }
 
 const sessions = new Map<string, SessionRecord>()
@@ -74,9 +78,8 @@ function attachSdkSubscription(record: SessionRecord): void {
       message?: { role: string; content: { type: string; text?: string }[] }
     }) => {
       const emit = record.currentEmit
-      if (!emit) {
-        return
-      }
+      piLog('sdk-event type=%s emit=%s assistantId=%s', event.type, emit ? 'yes' : 'NO', record.currentAssistantId ?? 'null')
+      if (!emit) { return }
       const { sessionId } = record
 
       // ── streaming: text_delta ───────────────────────────────────────────────
@@ -173,12 +176,13 @@ export async function startPiIssueChatSession(
     return snap
   }
 
-  const { agentSession, modelId, provider } = await createPiSession(
+  const { agentSession, modelId, provider, sessionFile } = await createPiSession(
     {
       cwd: args.cwd,
       issueContext: args.issueContext,
       sessionId: args.sessionId,
-      modelRef: args.modelRef
+      modelRef: args.modelRef,
+      sessionMode: args.sessionMode
     },
     ISSUE_SESSIONS_DIR_DEFAULT
   )
@@ -210,7 +214,9 @@ export async function startPiIssueChatSession(
     currentEmit: emit,
     currentAssistantId: null,
     currentAssistantContent: '',
-    currentAssistantEmitted: false
+    currentAssistantEmitted: false,
+    sessionFile,
+    issueContext: args.issueContext
   }
   attachSdkSubscription(record)
   sessions.set(args.sessionId, record)

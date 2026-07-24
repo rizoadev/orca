@@ -89,6 +89,13 @@ export const glApi = {
   todos: (args: GitLabRepoSelectorArgs): Promise<unknown[]> =>
     ipcRenderer.invoke('gitlab:todos', args),
 
+  listProjectSnippets: (
+    args: GitLabRepoSelectorArgs & {
+      limit?: number
+    }
+  ): Promise<{ items: unknown[]; error?: unknown }> =>
+    ipcRenderer.invoke('gitlab:listProjectSnippets', args),
+
   workItemDetails: (
     args: GitLabRepoSelectorArgs & {
       iid: number

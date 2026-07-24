@@ -18,6 +18,7 @@ describe('gitlab RPC methods', () => {
       listGitLabRepoWorkItems: vi.fn().mockResolvedValue({ items: [] }),
       listGitLabRepoIssues: vi.fn().mockResolvedValue({ items: [] }),
       listGitLabRepoTodos: vi.fn().mockResolvedValue([{ id: 1 }]),
+      listGitLabRepoProjectSnippets: vi.fn().mockResolvedValue({ items: [] }),
       listGitLabRepoLabels: vi.fn().mockResolvedValue(['bug']),
       createGitLabRepoIssue: vi.fn().mockResolvedValue({ ok: true, number: 7 }),
       updateGitLabRepoIssue: vi.fn().mockResolvedValue({ ok: true }),
@@ -75,6 +76,9 @@ describe('gitlab RPC methods', () => {
       })
     )
     await dispatcher.dispatch(makeRequest('gitlab.todos', { repo: 'id:repo-1' }))
+    await dispatcher.dispatch(
+      makeRequest('gitlab.listProjectSnippets', { repo: 'id:repo-1', limit: 40 })
+    )
     await dispatcher.dispatch(makeRequest('gitlab.listLabels', { repo: 'id:repo-1' }))
     await dispatcher.dispatch(
       makeRequest('gitlab.updateIssue', {
@@ -205,6 +209,7 @@ describe('gitlab RPC methods', () => {
     expect(runtime.listGitLabRepoIssues).toHaveBeenCalledWith('id:repo-1', 'opened', '@me', 50)
     expect(runtime.createGitLabRepoIssue).toHaveBeenCalledWith('id:repo-1', 'Fix bug', 'Details')
     expect(runtime.listGitLabRepoTodos).toHaveBeenCalledWith('id:repo-1')
+    expect(runtime.listGitLabRepoProjectSnippets).toHaveBeenCalledWith('id:repo-1', 40)
     expect(runtime.listGitLabRepoLabels).toHaveBeenCalledWith('id:repo-1')
     expect(runtime.updateGitLabRepoIssue).toHaveBeenCalledWith(
       'id:repo-1',

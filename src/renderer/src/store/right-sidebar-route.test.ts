@@ -23,6 +23,13 @@ describe('normalizeRightSidebarRoute', () => {
     })
   })
 
+  it('preserves the GitLab snippets route', () => {
+    expect(normalizeRightSidebarRoute('snippets')).toEqual({
+      rightSidebarTab: 'snippets',
+      rightSidebarExplorerView: 'files'
+    })
+  })
+
   it('still normalizes invalid tabs to Explorer files', () => {
     expect(normalizeRightSidebarRoute('missing')).toEqual({
       rightSidebarTab: 'explorer',

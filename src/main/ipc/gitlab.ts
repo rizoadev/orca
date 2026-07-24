@@ -41,6 +41,7 @@ import {
   listIssues,
   listLabels,
   listMergeRequests,
+  listProjectSnippets,
   listTodos,
   listWorkItems,
   mergeMR,
@@ -586,6 +587,26 @@ export function registerGitLabHandlers(store: Store): void {
     const repo = assertRegisteredRepo(args, store)
     return listTodos(repo.path, repoConnectionId(repo), ...localGitOptionArgs(store, repo))
   })
+
+  // Why: project-scoped snippets for the right-sidebar Snippets tab.
+  ipcMain.handle(
+    'gitlab:listProjectSnippets',
+    async (
+      _event,
+      args: GitLabRepoSelectorArgs & {
+        limit?: number
+      }
+    ) => {
+      const repo = assertRegisteredRepo(args, store)
+      return listProjectSnippets(
+        repo.path,
+        normalizeGitLabPositiveInteger(args.limit, 50, 100),
+        repo.issueSourcePreference,
+        repoConnectionId(repo),
+        ...localGitOptionArgs(store, repo)
+      )
+    }
+  )
 
   // Why: paste-URL flow in the picker. The user pastes a GitLab URL that
   // may target a project different from the local checkout's remote, so

@@ -363,6 +363,7 @@ type WebGitLabRouteKey =
   | 'addIssueComment'
   | 'listLabels'
   | 'todos'
+  | 'listProjectSnippets'
   | 'workItemDetails'
   | 'closeMR'
   | 'reopenMR'
@@ -387,6 +388,7 @@ type WebGitLabRuntimeMethod =
   | 'gitlab.addIssueComment'
   | 'gitlab.listLabels'
   | 'gitlab.todos'
+  | 'gitlab.listProjectSnippets'
   | 'gitlab.workItemDetails'
   | 'gitlab.updateMRState'
   | 'gitlab.mergeMR'
@@ -466,6 +468,7 @@ export const GITLAB_WEB_RPC_METHODS = {
   addIssueComment: 'gitlab.addIssueComment',
   listLabels: 'gitlab.listLabels',
   todos: 'gitlab.todos',
+  listProjectSnippets: 'gitlab.listProjectSnippets',
   workItemDetails: 'gitlab.workItemDetails',
   closeMR: 'gitlab.updateMRState',
   reopenMR: 'gitlab.updateMRState',
@@ -2388,6 +2391,11 @@ function createGitLabApi(): WebGitLabApi {
       route<WebGitLabResult<'listLabels'>>(GITLAB_WEB_RPC_METHODS.listLabels, args),
     listAssignableUsers: () => Promise.resolve([]),
     todos: (args) => route<WebGitLabResult<'todos'>>(GITLAB_WEB_RPC_METHODS.todos, args),
+    listProjectSnippets: (args) =>
+      route<WebGitLabResult<'listProjectSnippets'>>(
+        GITLAB_WEB_RPC_METHODS.listProjectSnippets,
+        args
+      ),
     workItemDetails: (args) =>
       route<WebGitLabResult<'workItemDetails'>>(GITLAB_WEB_RPC_METHODS.workItemDetails, args),
     closeMR: (args) =>

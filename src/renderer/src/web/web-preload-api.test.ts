@@ -3516,6 +3516,12 @@ describe('web GitLab preload API', () => {
         expectedParams: { repoPath, repo: repoPath }
       },
       {
+        key: 'listProjectSnippets',
+        invoke: (gl) => gl.listProjectSnippets({ repoPath, limit: 40 }),
+        expectedMethod: 'gitlab.listProjectSnippets',
+        expectedParams: { repoPath, repo: repoPath, limit: 40 }
+      },
+      {
         key: 'workItemDetails',
         invoke: (gl) => gl.workItemDetails({ repoPath, iid: 8, type: 'mr' }),
         expectedMethod: 'gitlab.workItemDetails',

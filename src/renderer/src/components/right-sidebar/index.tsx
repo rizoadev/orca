@@ -9,7 +9,8 @@ import {
   PanelRight,
   Rocket,
   Workflow,
-  MessageCircle
+  MessageCircle,
+  FileCode2
 } from 'lucide-react'
 import { useAppStore } from '@/store'
 import type { ActiveRightSidebarTab } from '@/store/slices/editor'
@@ -53,6 +54,7 @@ import { useMeasuredWidth } from './right-sidebar-measured-width'
 import { normalizeRightSidebarRoute } from '@/store/right-sidebar-route'
 import { AgentSessionHistoryIcon } from './agent-session-history-icon'
 import { resolveRightSidebarEffectiveTab } from './right-sidebar-effective-tab'
+import { detectRepoIssueProvider } from './repo-issue-provider'
 import {
   isPairedWebClientWindow,
   shouldRenderDesktopWindowChrome
@@ -94,6 +96,7 @@ function RightSidebarInner(): React.JSX.Element {
   const isFolderWorkspace = activeWorkspaceScope?.type === 'folder'
   const isFolder = isFolderWorkspace || (activeRepo ? isFolderRepo(activeRepo) : false)
   const isSshRepo = Boolean(activeRepo?.connectionId)
+  const isGitLabRepo = detectRepoIssueProvider(activeRepo) === 'gitlab'
 
   const activityItems = useMemo<ActivityBarItem[]>(
     () => [
@@ -155,6 +158,14 @@ function RightSidebarInner(): React.JSX.Element {
         gitOnly: true
       },
       {
+        id: 'snippets',
+        icon: FileCode2,
+        title: translate('auto.components.right.sidebar.index.snippets', 'Snippets'),
+        shortcut: '',
+        gitOnly: true,
+        gitlabOnly: true
+      },
+      {
         id: 'ports',
         icon: Plug,
         title: translate('auto.components.right.sidebar.index.441733b630', 'Ports'),
@@ -176,9 +187,10 @@ function RightSidebarInner(): React.JSX.Element {
       getVisibleRightSidebarActivityItems(activityItems, {
         isFolder,
         isFolderWorkspace,
-        isSshRepo
+        isSshRepo,
+        isGitLabRepo
       }),
-    [activityItems, isFolder, isFolderWorkspace, isSshRepo]
+    [activityItems, isFolder, isFolderWorkspace, isGitLabRepo, isSshRepo]
   )
 
   const rememberedFolderTabByWorkspaceKeyRef = useRef<Record<string, ActiveRightSidebarTab>>({})

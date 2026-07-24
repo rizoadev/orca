@@ -36,6 +36,10 @@ const IssuesList = RepoSelector.extend({
   limit: OptionalFiniteNumber
 })
 
+const ProjectSnippetsList = RepoSelector.extend({
+  limit: OptionalFiniteNumber
+})
+
 const CreateIssue = RepoSelector.extend({
   title: requiredString('Missing title'),
   body: z.string()
@@ -192,6 +196,12 @@ export const GITLAB_METHODS: RpcMethod[] = [
     name: 'gitlab.todos',
     params: RepoSelector,
     handler: async (params, { runtime }) => runtime.listGitLabRepoTodos(params.repo)
+  }),
+  defineMethod({
+    name: 'gitlab.listProjectSnippets',
+    params: ProjectSnippetsList,
+    handler: async (params, { runtime }) =>
+      runtime.listGitLabRepoProjectSnippets(params.repo, params.limit)
   }),
   defineMethod({
     name: 'gitlab.diagnoseAuth',

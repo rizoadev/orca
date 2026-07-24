@@ -13,6 +13,7 @@ const FolderWorkspaceWorktreesPanel = lazy(() => import('./FolderWorkspaceWorktr
 const FolderWorkspacePrChecksPanel = lazy(() => import('./FolderWorkspacePrChecksPanel'))
 const TelegramBridgePanel = lazy(() => import('./TelegramBridgePanel'))
 const ProjectTodoPanel = lazy(() => import('./ProjectTodoPanel'))
+const GitLabSnippetsPanel = lazy(() => import('./GitLabSnippetsPanel'))
 
 type RightSidebarPanelContentProps = {
   effectiveTab: ActiveRightSidebarTab
@@ -53,6 +54,9 @@ export function RightSidebarPanelContent({
         )}
         {effectiveTab === 'todos' && (
           <ProjectTodoPanel isVisible={rightSidebarOpen && effectiveTab === 'todos'} />
+        )}
+        {effectiveTab === 'snippets' && (
+          <GitLabSnippetsPanel isVisible={rightSidebarOpen && effectiveTab === 'snippets'} />
         )}
       </Suspense>
     </div>

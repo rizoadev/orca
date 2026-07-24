@@ -40,6 +40,14 @@ const items: ActivityBarItem[] = [
     shortcut: '',
     gitOnly: true
   },
+  {
+    id: 'snippets',
+    icon: Files,
+    title: 'Snippets',
+    shortcut: '',
+    gitOnly: true,
+    gitlabOnly: true
+  },
   { id: 'ports', icon: Files, title: 'Ports', shortcut: '', sshOnly: true }
 ]
 
@@ -60,6 +68,26 @@ describe('getVisibleRightSidebarActivityItems', () => {
         isSshRepo: true
       }).map((item) => item.id)
     ).toEqual(['explorer', 'source-control', 'checks', 'issues', 'ports'])
+  })
+
+  it('shows snippets only for GitLab git repos', () => {
+    expect(
+      getVisibleRightSidebarActivityItems(items, {
+        isFolder: false,
+        isFolderWorkspace: false,
+        isSshRepo: false,
+        isGitLabRepo: true
+      }).map((item) => item.id)
+    ).toEqual(['explorer', 'source-control', 'checks', 'issues', 'snippets'])
+
+    expect(
+      getVisibleRightSidebarActivityItems(items, {
+        isFolder: true,
+        isFolderWorkspace: false,
+        isSshRepo: false,
+        isGitLabRepo: true
+      }).map((item) => item.id)
+    ).toEqual(['explorer'])
   })
 
   it('shows Workspaces only for folder workspaces and hides git tabs for all folder scopes', () => {

@@ -133,6 +133,7 @@ import type {
   GitLabMRUpdate,
   GitLabProjectRef,
   GitLabRetryJobResult,
+  GitLabSnippet,
   GitLabTodo,
   GitLabViewer,
   GitLabWorkItem,
@@ -1916,6 +1917,12 @@ export type PreloadApi = {
     listAssignableUsers: (args: GitLabRepoSelectorArgs) => Promise<GitLabAssignableUser[]>
     /** Cross-project user-scoped todos (gitlab.com/dashboard/todos). */
     todos: (args: GitLabRepoSelectorArgs) => Promise<GitLabTodo[]>
+    /** Project-scoped snippets for the active GitLab repo. */
+    listProjectSnippets: (
+      args: GitLabRepoSelectorArgs & {
+        limit?: number
+      }
+    ) => Promise<{ items: GitLabSnippet[]; error?: ClassifiedError }>
     /** Aggregated dialog payload — body + discussions + pipeline jobs. */
     workItemDetails: (
       args: GitLabRepoSelectorArgs & {
