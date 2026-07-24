@@ -3,11 +3,15 @@ import type {
   PiIssueChatEvent,
   PiIssueChatSendArgs,
   PiIssueChatSessionSnapshot,
-  PiIssueChatStartArgs
+  PiIssueChatStartArgs,
+  PiIssueChatSetModelArgs,
+  PiModelOption
 } from '../../shared/pi-issue-chat-types'
 import {
   getPiIssueChatSession,
+  listPiModels,
   sendPiIssueChatMessage,
+  setPiSessionModel,
   startPiIssueChatSession,
   stopPiIssueChatSession
 } from '../pi/issue-chat-session'
@@ -71,4 +75,18 @@ export function registerPiIssueChatHandlers(): void {
     }
     stopPiIssueChatSession(sessionId)
   })
+
+  ipcMain.handle('piIssueChat:listModels', async (): Promise<PiModelOption[]> => {
+    return listPiModels()
+  })
+
+  ipcMain.handle(
+    'piIssueChat:setModel',
+    async (_event, args: PiIssueChatSetModelArgs): Promise<string> => {
+      if (!args?.sessionId || !args.modelRef) {
+        throw new Error('Invalid piIssueChat:setModel args')
+      }
+      return setPiSessionModel(args.sessionId, args.modelRef)
+    }
+  )
 }

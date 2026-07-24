@@ -28,14 +28,29 @@ export type PiIssueChatStartArgs = {
   cwd: string
   /** Injected once as system context (issue title/body). */
   issueContext: string
-  /** Optional explicit model ref matching a key in ~/.pi/agent/models.json,
-   *  e.g. "localhost/cb/kimi-k3". Falls back to pi's own model selection. */
+  /** Optional explicit model ref e.g. "localhost/cb/kimi-k3". */
   modelRef?: string
 }
 
 export type PiIssueChatSendArgs = {
   sessionId: string
   text: string
+}
+
+export type PiIssueChatSetModelArgs = {
+  sessionId: string
+  modelRef: string
+}
+
+/** A model entry from ~/.pi/agent/models.json */
+export type PiModelOption = {
+  /** Full reference: "providerName/modelId" */
+  ref: string
+  provider: string
+  modelId: string
+  name: string
+  contextWindow: number
+  maxTokens: number
 }
 
 export type PiIssueChatEvent =

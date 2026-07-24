@@ -4,9 +4,6 @@
  * are available and the full pi tool suite (read, bash, edit, write) is active.
  */
 import { randomUUID } from 'node:crypto'
-import { homedir } from 'node:os'
-import { join } from 'node:path'
-import { mkdirSync } from 'node:fs'
 import type {
   PiIssueChatEvent,
   PiIssueChatMessage,
@@ -14,6 +11,7 @@ import type {
   PiIssueChatStartArgs,
   PiIssueChatStatus
 } from '../../shared/pi-issue-chat-types'
+import { createPiSession, ISSUE_SESSIONS_DIR_DEFAULT } from './pi-session-factory'
 
 type Emitter = (event: PiIssueChatEvent) => void
 
@@ -31,14 +29,6 @@ type SessionRecord = {
 }
 
 const sessions = new Map<string, SessionRecord>()
-
-/** Directory where per-issue session JSONL files are stored. */
-const ISSUE_SESSIONS_DIR = join(homedir(), '.pi', 'agent', 'sessions', 'orca-issues')
-
-/** Sanitize an issue sessionId into a safe filename prefix. */
-function sessionFileSlug(sessionId: string): string {
-  return sessionId.replace(/[^a-zA-Z0-9_-]/g, '-').slice(0, 80)
-}
 
 function msg(
   role: PiIssueChatMessage['role'],
@@ -66,98 +56,6 @@ function snapshot(record: SessionRecord): PiIssueChatSessionSnapshot {
   }
 }
 
-async function createPiSession(args: {
-  cwd: string
-  issueContext: string
-  sessionId: string
-  modelRef?: string
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-}): Promise<{ agentSession: any; modelId: string; provider: string }> {
-  // Why: lazy import keeps Electron main startup fast when chat panel is not open.
-  const {
-    createAgentSession,
-    AuthStorage,
-    ModelRegistry,
-    SessionManager,
-    DefaultResourceLoader,
-    getAgentDir
-  } = await import('@earendil-works/pi-coding-agent')
-
-  const agentDir = getAgentDir()
-  const authStorage = AuthStorage.create()
-  const modelRegistry = ModelRegistry.create(authStorage)
-
-  // Resolve model from modelRef if provided (matches ~/.pi/agent/models.json keys)
-  let model: unknown
-  if (args.modelRef) {
-    const parts = args.modelRef.split('/')
-    if (parts.length >= 2) {
-      const providerName = parts[0]
-      const modelId = parts.slice(1).join('/')
-      model = modelRegistry.find(providerName, modelId) ?? undefined
-    }
-  }
-  if (!model) {
-    const available = await modelRegistry.getAvailable()
-    // Why: prefer localhost models — they return real streaming content vs
-    // some llmproxy routes that return empty content arrays.
-    model = available.find((m) => m.provider === 'localhost') ?? available[0] ?? undefined
-  }
-
-  // Build resource loader with issue context injected as system prompt
-  const systemPrompt = [
-    'You are a coding agent inside Orca issue chat.',
-    'You can chat, call tools, edit files, and run shell commands in the project worktree.',
-    `Project root (use absolute paths under this dir): ${args.cwd}`,
-    `For bash tool, always start with: cd ${JSON.stringify(args.cwd)} &&`,
-    'Prefer small, reviewable edits. Do not force-push or open PRs unless asked.',
-    'Stay scoped to the issue context below.',
-    '',
-    '--- Issue context ---',
-    args.issueContext.trim() || '(no description)'
-  ].join('\n')
-
-  const loader = new DefaultResourceLoader({
-    cwd: args.cwd,
-    agentDir,
-    // Why: replace default pi system prompt with issue-scoped context
-    systemPromptOverride: () => systemPrompt,
-    // Why: skip appending APPEND_SYSTEM.md so prompt stays clean
-    appendSystemPromptOverride: () => []
-  })
-  await loader.reload()
-
-  // Per-issue session persistence: each unique issue gets its own JSONL file
-  mkdirSync(ISSUE_SESSIONS_DIR, { recursive: true })
-  const slug = sessionFileSlug(args.sessionId)
-  const sessionDir = join(ISSUE_SESSIONS_DIR, slug)
-  mkdirSync(sessionDir, { recursive: true })
-
-  // Why: continueRecent resumes the last session for this issue if it exists,
-  // otherwise creates a new one — giving the user conversation history per issue.
-  const sessionManager = SessionManager.continueRecent(args.cwd, sessionDir)
-
-  const { session, modelFallbackMessage } = await createAgentSession({
-    ...(model ? { model: model as never } : {}),
-    resourceLoader: loader,
-    sessionManager,
-    authStorage,
-    modelRegistry,
-    tools: ['read', 'bash', 'edit', 'write']
-  })
-
-  if (modelFallbackMessage) {
-    console.warn('[pi-issue-chat] model fallback:', modelFallbackMessage)
-  }
-
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const resolvedModel = (session as any).model
-  const modelId: string = resolvedModel?.id ?? 'unknown'
-  const provider: string = resolvedModel?.provider ?? 'pi'
-
-  return { agentSession: session, modelId, provider }
-}
-
 export async function startPiIssueChatSession(
   args: PiIssueChatStartArgs,
   emit: Emitter
@@ -167,12 +65,15 @@ export async function startPiIssueChatSession(
     return snapshot(existing)
   }
 
-  const { agentSession, modelId, provider } = await createPiSession({
-    cwd: args.cwd,
-    issueContext: args.issueContext,
-    sessionId: args.sessionId,
-    modelRef: args.modelRef
-  })
+  const { agentSession, modelId, provider } = await createPiSession(
+    {
+      cwd: args.cwd,
+      issueContext: args.issueContext,
+      sessionId: args.sessionId,
+      modelRef: args.modelRef
+    },
+    ISSUE_SESSIONS_DIR_DEFAULT
+  )
 
   // Replay persisted messages from the resumed session so the UI shows history
   // eslint-disable-next-line @typescript-eslint/no-explicit-any

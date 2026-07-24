@@ -1,11 +1,9 @@
 /**
- * In-modal pi agent chat for issues: message list + composer, no terminal.
- * Why: replaces Strands with pi SDK so all models from ~/.pi/agent/models.json
- * are available and the full pi tool suite is active.
+ * In-modal pi agent chat for issues: message list + composer + model picker.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useAppStore } from '@/store'
-import { LoaderCircle, Send, Sparkles, Terminal, Wrench } from 'lucide-react'
+import { ChevronDown, LoaderCircle, Send, Sparkles, Terminal, Wrench } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import CommentMarkdown from '@/components/sidebar/CommentMarkdown'
 import { cn } from '@/lib/utils'
@@ -13,7 +11,8 @@ import type {
   PiIssueChatEvent,
   PiIssueChatMessage,
   PiIssueChatSessionSnapshot,
-  PiIssueChatStatus
+  PiIssueChatStatus,
+  PiModelOption
 } from '../../../../shared/pi-issue-chat-types'
 
 export type IssueStrandsChatPanelProps = {
@@ -43,7 +42,6 @@ function upsertMessage(
 function groupMessagesForRender(messages: PiIssueChatMessage[]): ChatRenderItem[] {
   const items: ChatRenderItem[] = []
   let toolBatch: PiIssueChatMessage[] = []
-
   for (const message of messages) {
     if (message.role === 'tool') {
       toolBatch.push(message)
@@ -61,6 +59,15 @@ function groupMessagesForRender(messages: PiIssueChatMessage[]): ChatRenderItem[
   return items
 }
 
+/** Group models by provider for the picker dropdown. */
+function groupByProvider(models: PiModelOption[]): Record<string, PiModelOption[]> {
+  const out: Record<string, PiModelOption[]> = {}
+  for (const m of models) {
+    ;(out[m.provider] ??= []).push(m)
+  }
+  return out
+}
+
 export function IssueStrandsChatPanel({
   sessionId,
   cwd,
@@ -73,6 +80,13 @@ export function IssueStrandsChatPanel({
   const [draft, setDraft] = useState('')
   const [starting, setStarting] = useState(true)
   const [modelLabel, setModelLabel] = useState<string | null>(null)
+
+  // model picker state
+  const [models, setModels] = useState<PiModelOption[]>([])
+  const [pickerOpen, setPickerOpen] = useState(false)
+  const [switching, setSwitching] = useState(false)
+  const pickerRef = useRef<HTMLDivElement>(null)
+
   const listRef = useRef<HTMLDivElement | null>(null)
   const sendInFlight = useRef(false)
 
@@ -88,6 +102,33 @@ export function IssueStrandsChatPanel({
   const issueContextRef = useRef(issueContext)
   issueContextRef.current = issueContext
 
+  // Load model list once
+  useEffect(() => {
+    const piApi = window.api.piIssueChat
+    if (!piApi) {
+      return
+    }
+    piApi
+      .listModels()
+      .then(setModels)
+      .catch(() => {})
+  }, [])
+
+  // Close picker on outside click
+  useEffect(() => {
+    if (!pickerOpen) {
+      return
+    }
+    const handler = (e: MouseEvent) => {
+      if (!pickerRef.current?.contains(e.target as Node)) {
+        setPickerOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [pickerOpen])
+
+  // Start session
   useEffect(() => {
     let cancelled = false
     const piApi = window.api.piIssueChat
@@ -132,7 +173,6 @@ export function IssueStrandsChatPanel({
       setMessages([])
       setError(null)
       try {
-        // Why: read selected model from Orca settings to honour model preference
         const settings = useAppStore.getState().settings
         const modelRef = settings?.agentDefaultEnv?.['strands']?.['ORCA_STRANDS_MODEL'] ?? undefined
         const session = await piApi.start({
@@ -171,11 +211,31 @@ export function IssueStrandsChatPanel({
     el.scrollTop = el.scrollHeight
   }, [messages, status])
 
-  const canSend = useMemo(() => {
-    return draft.trim().length > 0 && status !== 'running' && !starting && !sendInFlight.current
-  }, [draft, starting, status])
+  // Switch model
+  const handleModelSelect = async (ref: string): Promise<void> => {
+    setPickerOpen(false)
+    const piApi = window.api.piIssueChat
+    if (!piApi) {
+      return
+    }
+    setSwitching(true)
+    try {
+      const newLabel = await piApi.setModel({ sessionId, modelRef: ref })
+      setModelLabel(newLabel)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setSwitching(false)
+    }
+  }
+
+  const canSend = useMemo(
+    () => draft.trim().length > 0 && status !== 'running' && !starting && !sendInFlight.current,
+    [draft, starting, status]
+  )
 
   const renderItems = useMemo(() => groupMessagesForRender(messages), [messages])
+  const groupedModels = useMemo(() => groupByProvider(models), [models])
 
   const handleSend = async (): Promise<void> => {
     const text = draft.trim()
@@ -208,11 +268,55 @@ export function IssueStrandsChatPanel({
       {/* Header */}
       <div className="flex shrink-0 items-center gap-2 border-b border-border/50 px-3 py-2">
         <Sparkles className="size-3.5 shrink-0 text-muted-foreground" />
-        <span className="min-w-0 truncate text-xs text-muted-foreground">
-          {modelLabel ?? 'Issue chat · pi'}
-        </span>
+
+        {/* Model picker */}
+        <div ref={pickerRef} className="relative min-w-0 flex-1">
+          <button
+            className="flex min-w-0 items-center gap-1 text-xs text-muted-foreground hover:text-foreground disabled:opacity-50"
+            disabled={starting || switching}
+            onClick={() => setPickerOpen((v) => !v)}
+            title="Switch model"
+          >
+            <span className="truncate">
+              {switching ? 'Switching…' : (modelLabel ?? 'Issue chat · pi')}
+            </span>
+            <ChevronDown className="size-3 shrink-0 opacity-60" />
+          </button>
+
+          {/* Dropdown */}
+          {pickerOpen && models.length > 0 && (
+            <div className="absolute left-0 top-full z-50 mt-1 max-h-72 w-72 overflow-y-auto rounded-md border border-border bg-popover shadow-lg">
+              {Object.entries(groupedModels).map(([provider, providerModels]) => (
+                <div key={provider}>
+                  <div className="sticky top-0 bg-popover px-2 py-1 font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
+                    {provider}
+                  </div>
+                  {providerModels.map((m) => (
+                    <button
+                      key={m.ref}
+                      className={cn(
+                        'w-full px-3 py-1.5 text-left text-xs hover:bg-accent hover:text-accent-foreground',
+                        modelLabel === `${m.provider}/${m.modelId}` &&
+                          'bg-accent/40 font-medium text-accent-foreground'
+                      )}
+                      onClick={() => void handleModelSelect(m.ref)}
+                    >
+                      <span className="block truncate">
+                        {m.name !== m.modelId ? m.name : m.modelId}
+                      </span>
+                      <span className="text-[10px] text-muted-foreground">
+                        {Math.round(m.contextWindow / 1000)}k ctx
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
         {status === 'running' && (
-          <LoaderCircle className="ml-auto size-3.5 shrink-0 animate-spin text-muted-foreground" />
+          <LoaderCircle className="size-3.5 shrink-0 animate-spin text-muted-foreground" />
         )}
       </div>
 
@@ -263,7 +367,6 @@ export function IssueStrandsChatPanel({
                 </div>
               )
             }
-            // assistant
             return (
               <div key={message.id} className="flex gap-2">
                 <Terminal className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" />
