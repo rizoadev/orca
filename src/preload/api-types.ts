@@ -531,12 +531,18 @@ import type {
   HiveApiResult,
   HiveBuildSummary,
   HiveCredentialPublic,
+  HiveDeployEnvironmentArgs,
   HiveDispatchArgs,
+  HiveEnvFile,
   HiveEnvironmentSummary,
+  HiveGetEnvFilesArgs,
   HiveLatestBuildArgs,
   HiveListEnvironmentsArgs,
   HiveListProjectsArgs,
   HiveProjectSummary,
+  HiveSaveEnvFilesArgs,
+  HiveStreamHistoryArgs,
+  HiveStreamLogLine,
   HiveTriggerBuildArgs,
   HiveTriggerDeployArgs,
   HiveUpdateCredentialArgs
@@ -3342,6 +3348,10 @@ export type PreloadApi = {
       args: HiveTriggerDeployArgs
     ) => Promise<HiveApiResult<{ status?: string; deployId?: string }>>
     dispatch: (args: HiveDispatchArgs) => Promise<HiveApiResult<unknown>>
+    getEnvFiles: (args: HiveGetEnvFilesArgs) => Promise<HiveApiResult<HiveEnvFile[]>>
+    saveEnvFiles: (args: HiveSaveEnvFilesArgs) => Promise<HiveApiResult<HiveEnvFile[]>>
+    streamHistory: (args: HiveStreamHistoryArgs) => Promise<HiveApiResult<HiveStreamLogLine[]>>
+    deployEnvironment: (args: HiveDeployEnvironmentArgs) => Promise<HiveApiResult<unknown>>
   }
   wsl: {
     isAvailable: () => Promise<boolean>

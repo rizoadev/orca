@@ -102,21 +102,28 @@ function DashboardBucketCounts({
 // agent-status churn only updates this opt-in row, not the full navigation.
 function AgentDashboardSidebarEntry(): React.JSX.Element {
   const dashboardBucketCounts = useAgentBucketCounts()
+  const openAgentDashboardPage = useAppStore((s) => s.openAgentDashboardPage)
+  const activeView = useAppStore((s) => s.activeView)
+  const active = activeView === 'agent-dashboard'
 
   return (
     <button
       type="button"
       onClick={() => {
-        void window.api.dashboard.openPopout()
+        // Why: open in the main content area (same shell as Issue Board / Tasks), not a second Electron window.
+        openAgentDashboardPage()
       }}
+      aria-current={active ? 'page' : undefined}
       className={cn(
         'flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[13px] font-medium tracking-tight transition-colors',
-        'text-worktree-sidebar-foreground/60 hover:bg-worktree-sidebar-foreground/8'
+        active
+          ? 'bg-worktree-sidebar-accent text-worktree-sidebar-accent-foreground'
+          : 'text-worktree-sidebar-foreground/60 hover:bg-worktree-sidebar-foreground/8'
       )}
     >
       <LayoutDashboard
-        className="size-4 shrink-0 text-worktree-sidebar-foreground/30"
-        strokeWidth={1.75}
+        className={cn('size-4 shrink-0', !active && 'text-worktree-sidebar-foreground/30')}
+        strokeWidth={active ? 2.25 : 1.75}
       />
       <span className="flex-1">{translate('dashboard.sidebar.label', 'Agent Dashboard')}</span>
       <DashboardBucketCounts counts={dashboardBucketCounts} />

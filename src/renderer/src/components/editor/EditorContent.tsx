@@ -1,5 +1,5 @@
 /* eslint-disable max-lines -- Why: dispatch surface for every editor mode; keeping the mode-selection branches colocated beats scattering the switch across per-mode wrappers. */
-import React from 'react'
+import React, { Suspense } from 'react'
 import { lazyWithRetry as lazy } from '@/lib/lazy-with-retry'
 import { AlertCircle, RefreshCw } from 'lucide-react'
 import { detectLanguage } from '@/lib/language-detect'
@@ -29,6 +29,9 @@ import { getDiffContentSignature } from './diff-content-signature'
 import { translate } from '@/i18n/i18n'
 import { CheckRunDetailsPanel } from './CheckRunDetailsPanel'
 import { ExternalFileChangeBanner } from './ExternalFileChangeBanner'
+
+const GitHubItemDialog = lazy(() => import('@/components/GitHubItemDialog'))
+const GitLabItemDialog = lazy(() => import('@/components/GitLabItemDialog'))
 
 const MonacoEditor = lazy(() => import('./MonacoEditor'))
 const DiffViewer = lazy(() => import('./DiffViewer'))
@@ -630,6 +633,79 @@ export function EditorContent({
           void reloadOpenCheckRunDetailsTab(activeFile.id)
         }}
       />
+    )
+  }
+
+  if (activeFile.mode === 'issue-details') {
+    const issueDetails = activeFile.issueDetails
+    if (!issueDetails) {
+      return (
+        <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
+          {translate(
+            'auto.components.editor.EditorContent.issueDetailsUnavailable',
+            'Issue details are unavailable.'
+          )}
+        </div>
+      )
+    }
+    // Why: reuse the same dialog surfaces as the Issues panel, but as a full main-box tab body.
+    if (issueDetails.provider === 'github' && issueDetails.githubItem) {
+      return (
+        <div className="flex h-full min-h-0 flex-col overflow-hidden">
+          <Suspense
+            fallback={
+              <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
+                Loading issue…
+              </div>
+            }
+          >
+            <GitHubItemDialog
+              workItem={issueDetails.githubItem}
+              repoPath={issueDetails.repoPath}
+              repoId={issueDetails.repoId}
+              sourceContext={issueDetails.sourceContext}
+              backLabel={translate(
+                'auto.components.editor.EditorContent.issueDetailsBack',
+                'Close'
+              )}
+              onUse={() => {
+                // Workspace create stays on Issues / Task flows for now.
+              }}
+              onClose={() => closeFile(activeFile.id)}
+            />
+          </Suspense>
+        </div>
+      )
+    }
+    if (issueDetails.provider === 'gitlab' && issueDetails.gitlabItem) {
+      return (
+        <div className="flex h-full min-h-0 flex-col overflow-hidden">
+          <Suspense
+            fallback={
+              <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
+                Loading issue…
+              </div>
+            }
+          >
+            <GitLabItemDialog
+              item={issueDetails.gitlabItem}
+              repoPath={issueDetails.repoPath}
+              repoId={issueDetails.repoId}
+              sourceContext={issueDetails.sourceContext}
+              presentation="inline"
+              onClose={() => closeFile(activeFile.id)}
+            />
+          </Suspense>
+        </div>
+      )
+    }
+    return (
+      <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
+        {translate(
+          'auto.components.editor.EditorContent.issueDetailsUnavailable',
+          'Issue details are unavailable.'
+        )}
+      </div>
     )
   }
 

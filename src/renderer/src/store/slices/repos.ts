@@ -121,6 +121,7 @@ export type RepoUpdate = Partial<
 > & {
   sourceControlAi?: Repo['sourceControlAi'] | null
   externalWorktreeDiscoverySuppressedAt?: Repo['externalWorktreeDiscoverySuppressedAt'] | null
+  hive?: Repo['hive'] | null
 }
 
 type ProjectUpdate = ProjectUpdateArgs['updates']
@@ -3007,6 +3008,7 @@ export const createRepoSlice: StateCreator<AppState, [], [], RepoSlice> = (set, 
             const {
               sourceControlAi,
               externalWorktreeDiscoverySuppressedAt,
+              hive,
               ...updatesWithoutClearSentinels
             } = sanitizedUpdates
             mergedRepo = { ...mergedRepo, ...updatesWithoutClearSentinels }
@@ -3016,6 +3018,12 @@ export const createRepoSlice: StateCreator<AppState, [], [], RepoSlice> = (set, 
               mergedRepo = repoWithoutSourceControlAi
             } else if (sourceControlAi !== undefined) {
               mergedRepo = { ...mergedRepo, sourceControlAi }
+            }
+            if (hive === null) {
+              const { hive: _hive, ...repoWithoutHive } = mergedRepo
+              mergedRepo = repoWithoutHive
+            } else if (hive !== undefined) {
+              mergedRepo = { ...mergedRepo, hive }
             }
             if (externalWorktreeDiscoverySuppressedAt === null) {
               const {

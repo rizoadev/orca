@@ -88,7 +88,14 @@ function KanbanColumn({
 }
 
 /** The pop-out agent board: status columns fed by the relayed snapshot. */
-export function AgentKanbanBoard({ snapshot }: { snapshot: DashboardSnapshot }): React.JSX.Element {
+export function AgentKanbanBoard({
+  snapshot,
+  className
+}: {
+  snapshot: DashboardSnapshot
+  /** Override root layout (defaults to full popout window size). */
+  className?: string
+}): React.JSX.Element {
   const grouped = useMemo(() => groupByBucket(snapshot.cards), [snapshot.cards])
   const hasRelativeTimestamps = useMemo(
     () => snapshot.cards.some((card) => (card.finishedAt ?? card.startedAt) > 0),
@@ -148,7 +155,7 @@ export function AgentKanbanBoard({ snapshot }: { snapshot: DashboardSnapshot }):
   }, [dialogCard?.unseen, dialogCard?.paneKey])
 
   return (
-    <div className="flex h-screen w-screen flex-col bg-background text-foreground">
+    <div className={cn('flex h-screen w-screen flex-col bg-background text-foreground', className)}>
       <div className="flex shrink-0 items-center gap-2 border-b border-border px-4 py-2.5">
         <h1 className="text-[13px] font-semibold">
           {translate('dashboardPopout.title', 'Agents')}

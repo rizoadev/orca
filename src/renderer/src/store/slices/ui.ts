@@ -612,6 +612,7 @@ export type UISlice = {
     | 'skills'
     | 'mobile'
     | 'issues-board'
+    | 'agent-dashboard'
   previousViewBeforeSettings:
     | 'terminal'
     | 'tasks'
@@ -621,6 +622,7 @@ export type UISlice = {
     | 'skills'
     | 'mobile'
     | 'issues-board'
+    | 'agent-dashboard'
   previousViewBeforeActivity:
     | 'terminal'
     | 'settings'
@@ -630,6 +632,7 @@ export type UISlice = {
     | 'skills'
     | 'mobile'
     | 'issues-board'
+    | 'agent-dashboard'
   previousViewBeforeAutomations:
     | 'terminal'
     | 'settings'
@@ -639,6 +642,7 @@ export type UISlice = {
     | 'skills'
     | 'mobile'
     | 'issues-board'
+    | 'agent-dashboard'
   previousViewBeforeSpace:
     | 'terminal'
     | 'settings'
@@ -648,6 +652,7 @@ export type UISlice = {
     | 'skills'
     | 'mobile'
     | 'issues-board'
+    | 'agent-dashboard'
   previousViewBeforeSkills:
     | 'terminal'
     | 'settings'
@@ -657,6 +662,7 @@ export type UISlice = {
     | 'space'
     | 'mobile'
     | 'issues-board'
+    | 'agent-dashboard'
   previousViewBeforeMobile:
     | 'terminal'
     | 'settings'
@@ -666,6 +672,7 @@ export type UISlice = {
     | 'space'
     | 'skills'
     | 'issues-board'
+    | 'agent-dashboard'
   previousViewBeforeIssuesBoard:
     | 'terminal'
     | 'settings'
@@ -676,8 +683,22 @@ export type UISlice = {
     | 'skills'
     | 'mobile'
     | 'issues-board'
+    | 'agent-dashboard'
+  previousViewBeforeAgentDashboard:
+    | 'terminal'
+    | 'settings'
+    | 'tasks'
+    | 'activity'
+    | 'automations'
+    | 'space'
+    | 'skills'
+    | 'mobile'
+    | 'issues-board'
+    | 'agent-dashboard'
   openIssuesBoardPage: () => void
   closeIssuesBoardPage: () => void
+  openAgentDashboardPage: () => void
+  closeAgentDashboardPage: () => void
   setActiveView: (view: UISlice['activeView']) => void
   taskPageData: {
     preselectedRepoId?: string
@@ -1235,6 +1256,7 @@ export const createUISlice: StateCreator<AppState, [], [], UISlice> = (set, get)
   previousViewBeforeSkills: 'terminal',
   previousViewBeforeMobile: 'terminal',
   previousViewBeforeIssuesBoard: 'terminal',
+  previousViewBeforeAgentDashboard: 'terminal',
   setActiveView: (view) => set({ activeView: view }),
   taskPageData: {},
   taskResumeState: undefined,
@@ -1501,6 +1523,18 @@ export const createUISlice: StateCreator<AppState, [], [], UISlice> = (set, get)
   closeIssuesBoardPage: () =>
     set((state) => ({
       activeView: state.previousViewBeforeIssuesBoard
+    })),
+  openAgentDashboardPage: () =>
+    set((state) => ({
+      activeView: 'agent-dashboard',
+      previousViewBeforeAgentDashboard:
+        state.activeView === 'agent-dashboard'
+          ? state.previousViewBeforeAgentDashboard
+          : (state.activeView as UISlice['previousViewBeforeAgentDashboard'])
+    })),
+  closeAgentDashboardPage: () =>
+    set((state) => ({
+      activeView: state.previousViewBeforeAgentDashboard
     })),
   setNewWorkspaceDraft: (draft) => set({ newWorkspaceDraft: draft }),
   clearNewWorkspaceDraft: () => set({ newWorkspaceDraft: null }),

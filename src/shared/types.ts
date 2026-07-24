@@ -38,6 +38,7 @@ import type { TerminalCustomTheme } from './terminal-custom-themes'
 import type { UiLanguage } from './ui-language'
 import type { ForkSyncMode } from './git-fork-sync'
 import type { GitRemoteIdentity } from './git-remote-identity'
+import type { HiveRepoBinding } from './hive-types'
 import type {
   GlobalWindowsRuntimeDefault,
   LocalWindowsRuntimePreference
@@ -291,6 +292,8 @@ export type Repo = {
   sourceControlAi?: RepoSourceControlAiOverrides
   /** Transitional source for ProjectHostSetup.setupMethod while Repo remains compatibility storage. */
   projectHostSetupMethod?: RepoProjectHostSetupMethod
+  /** Hive deploy binding for this repo (token lives in main-process credential store). */
+  hive?: HiveRepoBinding | null
 }
 
 export type ProjectGroupCreatedFrom = 'manual' | 'folder-scan' | 'migration'
@@ -791,6 +794,7 @@ export type TabContentType =
   | 'diff'
   | 'conflict-review'
   | 'check-details'
+  | 'issue-details'
   | 'browser'
   | 'simulator'
 
@@ -2499,6 +2503,7 @@ export type TuiAgent =
   | 'grok' // xAI Grok CLI
   | 'devin' // Devin CLI
   | 'ante' // Ante (Antigma Labs)
+  | 'strands' // Strands Agents SDK via `orca strands`
 
 export type TaskViewPresetId = 'all' | 'issues' | 'review' | 'my-issues' | 'my-prs' | 'prs'
 
@@ -3181,6 +3186,7 @@ export type RightSidebarTab =
   | 'checks'
   | 'issues'
   | 'ports'
+  | 'hive'
   | 'remote-chat'
   | 'todos'
 export type ActiveRightSidebarTab = Exclude<RightSidebarTab, 'search'>
@@ -3206,6 +3212,7 @@ export type TopLevelView =
   | 'skills'
   | 'mobile'
   | 'issues-board'
+  | 'agent-dashboard'
 
 export type PersistedUIState = {
   lastActiveRepoId: string | null

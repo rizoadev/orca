@@ -38,7 +38,8 @@ describe('right sidebar visibility helpers', () => {
       'space',
       'skills',
       'mobile',
-      'issues-board'
+      'issues-board',
+      'agent-dashboard'
     ]) {
       expect(canShowRightSidebarForView(view as AppState['activeView'])).toBe(false)
     }

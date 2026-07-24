@@ -32,10 +32,14 @@ import type {
 } from '../shared/strands-issue-chat-types'
 import type {
   HiveAddCredentialArgs,
+  HiveDeployEnvironmentArgs,
   HiveDispatchArgs,
+  HiveGetEnvFilesArgs,
   HiveLatestBuildArgs,
   HiveListEnvironmentsArgs,
   HiveListProjectsArgs,
+  HiveSaveEnvFilesArgs,
+  HiveStreamHistoryArgs,
   HiveTriggerBuildArgs,
   HiveTriggerDeployArgs,
   HiveUpdateCredentialArgs
@@ -4454,7 +4458,12 @@ const api = {
     latestBuild: (args: HiveLatestBuildArgs) => ipcRenderer.invoke('hive:latestBuild', args),
     triggerBuild: (args: HiveTriggerBuildArgs) => ipcRenderer.invoke('hive:triggerBuild', args),
     triggerDeploy: (args: HiveTriggerDeployArgs) => ipcRenderer.invoke('hive:triggerDeploy', args),
-    dispatch: (args: HiveDispatchArgs) => ipcRenderer.invoke('hive:dispatch', args)
+    dispatch: (args: HiveDispatchArgs) => ipcRenderer.invoke('hive:dispatch', args),
+    getEnvFiles: (args: HiveGetEnvFilesArgs) => ipcRenderer.invoke('hive:getEnvFiles', args),
+    saveEnvFiles: (args: HiveSaveEnvFilesArgs) => ipcRenderer.invoke('hive:saveEnvFiles', args),
+    streamHistory: (args: HiveStreamHistoryArgs) => ipcRenderer.invoke('hive:streamHistory', args),
+    deployEnvironment: (args: HiveDeployEnvironmentArgs) =>
+      ipcRenderer.invoke('hive:deployEnvironment', args)
   },
 
   e2e: {

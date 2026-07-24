@@ -277,6 +277,12 @@ function getGitHubRepositoryLabelsUrl(itemUrl: string): string | null {
 }
 
 const MonacoCodeExcerpt = lazy(() => import('@/components/editor/MonacoCodeExcerpt'))
+// Why: keep Strands out of the IssuesPanel eager graph so chat HMR can't blank the dialog.
+const IssueStrandsChatPanel = lazy(() =>
+  import('@/components/right-sidebar/issue-strands-chat-panel').then((m) => ({
+    default: m.IssueStrandsChatPanel
+  }))
+)
 
 export type ItemDialogTab = 'conversation' | 'checks' | 'files'
 
@@ -351,6 +357,8 @@ type GitHubItemDialogProps = {
     reviewRequests: GitHubAssignableUser[]
   ) => void
   onClose: () => void
+  /** Open this issue in the main Tasks canvas instead of the sidebar modal. */
+  onOpenInMainView?: (item: GitHubWorkItem) => void
   /** Optional Project-origin context; when set, edits route via slug-addressed IPCs against the row's repo (slug routing wins for writes). */
   projectOrigin?: GitHubItemDialogProjectOrigin
   /** Slot rendered on the right side of the tab bar (Conversation / Checks / Files). */
@@ -6708,6 +6716,7 @@ export default function GitHubItemDialog({
   onUse,
   onReviewRequestsChange,
   onClose,
+  onOpenInMainView,
   tabBarTrailingSlot
 }: GitHubItemDialogProps): React.JSX.Element {
   const workItemId = workItem?.id
@@ -7208,6 +7217,30 @@ export default function GitHubItemDialog({
                 </div>
               ) : null}
               <div className={cn('flex items-center gap-1', !tabBarTrailingSlot && 'ml-auto')}>
+                {onOpenInMainView && isIssuePage ? (
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon-sm"
+                        onClick={() => onOpenInMainView(workItem)}
+                        aria-label={translate(
+                          'auto.components.GitHubItemDialog.openInMainView',
+                          'Open in main view'
+                        )}
+                      >
+                        <PanelLeftOpen className="size-4" />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent side="bottom" sideOffset={6}>
+                      {translate(
+                        'auto.components.GitHubItemDialog.openInMainView',
+                        'Open in main view'
+                      )}
+                    </TooltipContent>
+                  </Tooltip>
+                ) : null}
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <Button
@@ -7529,233 +7562,261 @@ export default function GitHubItemDialog({
         />
       )}
 
-      <div className="min-h-0 flex-1">
-        {error ? (
-          <div className="px-4 py-6 text-[12px] text-destructive">{error}</div>
-        ) : isIssuePage ? (
-          <div className="h-full min-h-0 overflow-y-auto scrollbar-sleek bg-background">
-            {/* Why: full content width so the description isn't squeezed by a right rail; px-2 + ConversationTab px-4 = header px-6. */}
-            <div className="w-full px-2 py-6">
-              {/* Why: Issues panel injects status/assignees/labels via tabBarTrailingSlot;
+      <div className="flex min-h-0 flex-1 overflow-hidden">
+        <div className="min-h-0 min-w-0 flex-1 overflow-hidden">
+          {error ? (
+            <div className="px-4 py-6 text-[12px] text-destructive">{error}</div>
+          ) : isIssuePage ? (
+            <div className="h-full min-h-0 overflow-y-auto overscroll-contain bg-background scrollbar-sleek">
+              {/* Why: full content width; Strands sits in a modal-level right sidebar, not inside this scroll. */}
+              <div className="w-full px-2 py-6">
+                {/* Why: Issues panel injects status/assignees/labels via tabBarTrailingSlot;
                   keep GHEditSection only when that slot is absent (Task page path). */}
-              {!tabBarTrailingSlot && (canUseDetailsRepoContext || projectOrigin) && (
-                <div className="mb-5 border-b border-border/60 px-4 pb-5">
-                  <GHEditSection
-                    item={workItem}
-                    repoPath={repoPath}
-                    repoId={effectiveRepoId}
-                    sourceContext={sourceContext}
-                    projectOrigin={projectOrigin}
-                    localState={localState}
-                    localLabels={localLabels}
-                    onStateChange={setLocalState}
-                    onLabelsChange={setLocalLabels}
-                    onMutated={invalidateCurrentDetailsCache}
-                    assignees={details?.assignees ?? []}
-                    onUse={onUse}
-                    onOpenOrUse={handleOpenOrUseIssueWorkspace}
-                    attachedWorkspaceLabel={issueAttachedWorkspaceLabel}
-                    layout="top-columns"
-                  />
-                </div>
-              )}
-              <div className="min-w-0">
-                <ConversationTab
-                  item={displayWorkItem ?? workItem}
-                  repoPath={repoPath}
-                  repoId={effectiveRepoId}
-                  sourceContext={sourceContext}
-                  body={body}
-                  comments={comments}
-                  timelineItems={timelineItems}
-                  files={files}
-                  headSha={details?.headSha}
-                  baseSha={details?.baseSha}
-                  loading={loading}
-                  detailsLoaded={detailsLoaded}
-                  checks={checks}
-                  localState={localState}
-                  onStateChange={setLocalState}
-                  projectOrigin={projectOrigin}
-                  onMutated={invalidateCurrentDetailsCache}
-                  onChecksUpdated={(nextChecks) => {
-                    if (detailsCacheKey) {
-                      patchCachedPRChecks(detailsCacheKey, nextChecks)
-                    }
-                  }}
-                  onBodyUpdated={(nextBody) => {
-                    if (detailsCacheKey) {
-                      patchCachedWorkItemBody(detailsCacheKey, nextBody)
-                    }
-                  }}
-                  onCommentAdded={appendOptimisticComment}
-                  onReviewersRequested={(nextReviewRequests) => {
-                    if (detailsCacheKey) {
-                      patchCachedPRReviewRequests(detailsCacheKey, nextReviewRequests)
-                    }
-                    onReviewRequestsChange?.(
-                      { id: workItem.id, repoId: workItem.repoId },
-                      nextReviewRequests
-                    )
-                  }}
-                />
-              </div>
-            </div>
-          </div>
-        ) : (
-          <Tabs
-            value={tab}
-            onValueChange={(value) => setTab(value as ItemDialogTab)}
-            className="flex h-full min-h-0 flex-col gap-0"
-          >
-            <div className="mx-4 mt-2 flex flex-wrap items-center gap-2 border-b border-border/60">
-              <TabsList variant="line" className="justify-start gap-3 border-0 bg-transparent">
-                <TabsTrigger value="conversation" className="px-2">
-                  <MessageSquare className="size-3.5" />
-                  {translate('auto.components.GitHubItemDialog.e30a5470c9', 'Conversation')}
-                </TabsTrigger>
-                {workItem.type === 'pr' && (
-                  <>
-                    <TabsTrigger value="checks" className="px-2">
-                      <ListChecks className="size-3.5" />
-                      {translate('auto.components.GitHubItemDialog.4bd1f5b055', 'Checks')}
-                      {checks.length > 0 && (
-                        <span className="ml-1 text-[10px] text-muted-foreground">
-                          {checks.length}
-                        </span>
-                      )}
-                    </TabsTrigger>
-                    <TabsTrigger value="files" className="px-2">
-                      <FileText className="size-3.5" />
-                      {translate('auto.components.GitHubItemDialog.999b5ad7d9', 'Files')}
-                      {files.length > 0 && (
-                        <span className="ml-1 text-[10px] text-muted-foreground">
-                          {files.length}
-                        </span>
-                      )}
-                    </TabsTrigger>
-                  </>
-                )}
-              </TabsList>
-              {tabBarTrailingSlot ? (
-                <div className="ml-auto flex flex-wrap items-center gap-1.5 pb-1">
-                  {tabBarTrailingSlot}
-                </div>
-              ) : null}
-            </div>
-
-            <div className="min-h-0 flex-1 overflow-y-auto scrollbar-sleek">
-              <TabsContent value="conversation" className="mt-0">
-                <ConversationTab
-                  item={displayWorkItem ?? workItem}
-                  repoPath={repoPath}
-                  repoId={effectiveRepoId}
-                  sourceContext={sourceContext}
-                  body={body}
-                  comments={comments}
-                  timelineItems={timelineItems}
-                  files={files}
-                  headSha={details?.headSha}
-                  baseSha={details?.baseSha}
-                  loading={loading}
-                  detailsLoaded={detailsLoaded}
-                  checks={checks}
-                  localState={localState}
-                  onStateChange={setLocalState}
-                  projectOrigin={projectOrigin}
-                  onMutated={invalidateCurrentDetailsCache}
-                  onChecksUpdated={(nextChecks) => {
-                    if (detailsCacheKey) {
-                      patchCachedPRChecks(detailsCacheKey, nextChecks)
-                    }
-                  }}
-                  onBodyUpdated={(nextBody) => {
-                    if (detailsCacheKey) {
-                      patchCachedWorkItemBody(detailsCacheKey, nextBody)
-                    }
-                  }}
-                  onCommentAdded={appendOptimisticComment}
-                  onReviewersRequested={(nextReviewRequests) => {
-                    if (detailsCacheKey) {
-                      patchCachedPRReviewRequests(detailsCacheKey, nextReviewRequests)
-                    }
-                    onReviewRequestsChange?.(
-                      { id: workItem.id, repoId: workItem.repoId },
-                      nextReviewRequests
-                    )
-                  }}
-                />
-              </TabsContent>
-
-              {workItem.type === 'pr' && (
-                <>
-                  <TabsContent value="checks" className="mt-0">
-                    <ChecksTab
-                      item={displayWorkItem ?? workItem}
+                {!tabBarTrailingSlot && (canUseDetailsRepoContext || projectOrigin) && (
+                  <div className="mb-5 border-b border-border/60 px-4 pb-5">
+                    <GHEditSection
+                      item={workItem}
                       repoPath={repoPath}
                       repoId={effectiveRepoId}
                       sourceContext={sourceContext}
-                      headSha={details?.headSha}
-                      checks={checks}
-                      loading={loading || !detailsLoaded}
-                      variant="page"
-                      onChecksUpdated={(nextChecks) => {
-                        if (detailsCacheKey) {
-                          patchCachedPRChecks(detailsCacheKey, nextChecks)
-                        }
-                      }}
+                      projectOrigin={projectOrigin}
+                      localState={localState}
+                      localLabels={localLabels}
+                      onStateChange={setLocalState}
+                      onLabelsChange={setLocalLabels}
+                      onMutated={invalidateCurrentDetailsCache}
+                      assignees={details?.assignees ?? []}
+                      onUse={onUse}
+                      onOpenOrUse={handleOpenOrUseIssueWorkspace}
+                      attachedWorkspaceLabel={issueAttachedWorkspaceLabel}
+                      layout="top-columns"
                     />
-                  </TabsContent>
+                  </div>
+                )}
+                <div className="min-w-0">
+                  <ConversationTab
+                    item={displayWorkItem ?? workItem}
+                    repoPath={repoPath}
+                    repoId={effectiveRepoId}
+                    sourceContext={sourceContext}
+                    body={body}
+                    comments={comments}
+                    timelineItems={timelineItems}
+                    files={files}
+                    headSha={details?.headSha}
+                    baseSha={details?.baseSha}
+                    loading={loading}
+                    detailsLoaded={detailsLoaded}
+                    checks={checks}
+                    localState={localState}
+                    onStateChange={setLocalState}
+                    projectOrigin={projectOrigin}
+                    onMutated={invalidateCurrentDetailsCache}
+                    onChecksUpdated={(nextChecks) => {
+                      if (detailsCacheKey) {
+                        patchCachedPRChecks(detailsCacheKey, nextChecks)
+                      }
+                    }}
+                    onBodyUpdated={(nextBody) => {
+                      if (detailsCacheKey) {
+                        patchCachedWorkItemBody(detailsCacheKey, nextBody)
+                      }
+                    }}
+                    onCommentAdded={appendOptimisticComment}
+                    onReviewersRequested={(nextReviewRequests) => {
+                      if (detailsCacheKey) {
+                        patchCachedPRReviewRequests(detailsCacheKey, nextReviewRequests)
+                      }
+                      onReviewRequestsChange?.(
+                        { id: workItem.id, repoId: workItem.repoId },
+                        nextReviewRequests
+                      )
+                    }}
+                  />
+                </div>
+              </div>
+            </div>
+          ) : (
+            <Tabs
+              value={tab}
+              onValueChange={(value) => setTab(value as ItemDialogTab)}
+              className="flex h-full min-h-0 flex-col gap-0"
+            >
+              <div className="mx-4 mt-2 flex flex-wrap items-center gap-2 border-b border-border/60">
+                <TabsList variant="line" className="justify-start gap-3 border-0 bg-transparent">
+                  <TabsTrigger value="conversation" className="px-2">
+                    <MessageSquare className="size-3.5" />
+                    {translate('auto.components.GitHubItemDialog.e30a5470c9', 'Conversation')}
+                  </TabsTrigger>
+                  {workItem.type === 'pr' && (
+                    <>
+                      <TabsTrigger value="checks" className="px-2">
+                        <ListChecks className="size-3.5" />
+                        {translate('auto.components.GitHubItemDialog.4bd1f5b055', 'Checks')}
+                        {checks.length > 0 && (
+                          <span className="ml-1 text-[10px] text-muted-foreground">
+                            {checks.length}
+                          </span>
+                        )}
+                      </TabsTrigger>
+                      <TabsTrigger value="files" className="px-2">
+                        <FileText className="size-3.5" />
+                        {translate('auto.components.GitHubItemDialog.999b5ad7d9', 'Files')}
+                        {files.length > 0 && (
+                          <span className="ml-1 text-[10px] text-muted-foreground">
+                            {files.length}
+                          </span>
+                        )}
+                      </TabsTrigger>
+                    </>
+                  )}
+                </TabsList>
+                {tabBarTrailingSlot ? (
+                  <div className="ml-auto flex flex-wrap items-center gap-1.5 pb-1">
+                    {tabBarTrailingSlot}
+                  </div>
+                ) : null}
+              </div>
 
-                  <TabsContent value="files" className="mt-0 h-full min-h-0 overflow-hidden">
-                    {loading && files.length === 0 ? (
-                      <div className="flex items-center justify-center py-10">
-                        <LoaderCircle className="size-5 animate-spin text-muted-foreground" />
-                      </div>
-                    ) : filesUnavailable && files.length === 0 ? (
-                      // Why: file fetch failed (rate limit, auth, unresolved remote); offer a retry instead of implying the PR is empty.
-                      <div className="flex flex-col items-center gap-3 px-4 py-10 text-center">
-                        <div className="text-[12px] text-muted-foreground">
+              <div className="min-h-0 flex-1 overflow-y-auto scrollbar-sleek">
+                <TabsContent value="conversation" className="mt-0">
+                  <ConversationTab
+                    item={displayWorkItem ?? workItem}
+                    repoPath={repoPath}
+                    repoId={effectiveRepoId}
+                    sourceContext={sourceContext}
+                    body={body}
+                    comments={comments}
+                    timelineItems={timelineItems}
+                    files={files}
+                    headSha={details?.headSha}
+                    baseSha={details?.baseSha}
+                    loading={loading}
+                    detailsLoaded={detailsLoaded}
+                    checks={checks}
+                    localState={localState}
+                    onStateChange={setLocalState}
+                    projectOrigin={projectOrigin}
+                    onMutated={invalidateCurrentDetailsCache}
+                    onChecksUpdated={(nextChecks) => {
+                      if (detailsCacheKey) {
+                        patchCachedPRChecks(detailsCacheKey, nextChecks)
+                      }
+                    }}
+                    onBodyUpdated={(nextBody) => {
+                      if (detailsCacheKey) {
+                        patchCachedWorkItemBody(detailsCacheKey, nextBody)
+                      }
+                    }}
+                    onCommentAdded={appendOptimisticComment}
+                    onReviewersRequested={(nextReviewRequests) => {
+                      if (detailsCacheKey) {
+                        patchCachedPRReviewRequests(detailsCacheKey, nextReviewRequests)
+                      }
+                      onReviewRequestsChange?.(
+                        { id: workItem.id, repoId: workItem.repoId },
+                        nextReviewRequests
+                      )
+                    }}
+                  />
+                </TabsContent>
+
+                {workItem.type === 'pr' && (
+                  <>
+                    <TabsContent value="checks" className="mt-0">
+                      <ChecksTab
+                        item={displayWorkItem ?? workItem}
+                        repoPath={repoPath}
+                        repoId={effectiveRepoId}
+                        sourceContext={sourceContext}
+                        headSha={details?.headSha}
+                        checks={checks}
+                        loading={loading || !detailsLoaded}
+                        variant="page"
+                        onChecksUpdated={(nextChecks) => {
+                          if (detailsCacheKey) {
+                            patchCachedPRChecks(detailsCacheKey, nextChecks)
+                          }
+                        }}
+                      />
+                    </TabsContent>
+
+                    <TabsContent value="files" className="mt-0 h-full min-h-0 overflow-hidden">
+                      {loading && files.length === 0 ? (
+                        <div className="flex items-center justify-center py-10">
+                          <LoaderCircle className="size-5 animate-spin text-muted-foreground" />
+                        </div>
+                      ) : filesUnavailable && files.length === 0 ? (
+                        // Why: file fetch failed (rate limit, auth, unresolved remote); offer a retry instead of implying the PR is empty.
+                        <div className="flex flex-col items-center gap-3 px-4 py-10 text-center">
+                          <div className="text-[12px] text-muted-foreground">
+                            {translate(
+                              'auto.components.GitHubItemDialog.filesUnavailable',
+                              "Couldn't load changed files."
+                            )}
+                          </div>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={invalidateCurrentDetailsCache}
+                          >
+                            <RefreshCw className="size-3.5" />
+                            {translate('auto.components.GitHubItemDialog.filesRetry', 'Retry')}
+                          </Button>
+                        </div>
+                      ) : files.length === 0 ? (
+                        <div className="px-4 py-10 text-center text-[12px] text-muted-foreground">
                           {translate(
-                            'auto.components.GitHubItemDialog.filesUnavailable',
-                            "Couldn't load changed files."
+                            'auto.components.GitHubItemDialog.3cd5ae5b7b',
+                            'No files changed.'
                           )}
                         </div>
-                        <Button variant="outline" size="sm" onClick={invalidateCurrentDetailsCache}>
-                          <RefreshCw className="size-3.5" />
-                          {translate('auto.components.GitHubItemDialog.filesRetry', 'Retry')}
-                        </Button>
-                      </div>
-                    ) : files.length === 0 ? (
-                      <div className="px-4 py-10 text-center text-[12px] text-muted-foreground">
-                        {translate(
-                          'auto.components.GitHubItemDialog.3cd5ae5b7b',
-                          'No files changed.'
-                        )}
-                      </div>
-                    ) : (
-                      <PRFilesCombinedDiffViewer
-                        files={files}
-                        comments={comments}
-                        repoPath={repoPath ?? ''}
-                        repoId={effectiveRepoId ?? ''}
-                        sourceContext={sourceContext}
-                        prNumber={workItem.number}
-                        prRepo={resolvePullRequestRepo(workItem, projectOrigin)}
-                        prUrl={workItem.url}
-                        headSha={details?.headSha}
-                        baseSha={details?.baseSha}
-                        pendingViewedPaths={pendingViewedPaths}
-                        onCommentAdded={appendOptimisticComment}
-                        onViewedChange={handlePRFileViewedChange}
-                      />
-                    )}
-                  </TabsContent>
-                </>
-              )}
-            </div>
-          </Tabs>
-        )}
+                      ) : (
+                        <PRFilesCombinedDiffViewer
+                          files={files}
+                          comments={comments}
+                          repoPath={repoPath ?? ''}
+                          repoId={effectiveRepoId ?? ''}
+                          sourceContext={sourceContext}
+                          prNumber={workItem.number}
+                          prRepo={resolvePullRequestRepo(workItem, projectOrigin)}
+                          prUrl={workItem.url}
+                          headSha={details?.headSha}
+                          baseSha={details?.baseSha}
+                          pendingViewedPaths={pendingViewedPaths}
+                          onCommentAdded={appendOptimisticComment}
+                          onViewedChange={handlePRFileViewedChange}
+                        />
+                      )}
+                    </TabsContent>
+                  </>
+                )}
+              </div>
+            </Tabs>
+          )}
+        </div>
+        {isIssuePage && repoPath ? (
+          <aside className="flex w-[min(380px,36vw)] shrink-0 flex-col overflow-hidden border-l border-border/50 bg-muted/15">
+            <Suspense
+              fallback={
+                <div className="flex flex-1 items-center justify-center text-xs text-muted-foreground">
+                  Loading chat…
+                </div>
+              }
+            >
+              <IssueStrandsChatPanel
+                sessionId={`github:${effectiveRepoId ?? repoPath}:#${workItem.number}`}
+                cwd={repoPath}
+                issueContext={[
+                  `GitHub issue #${workItem.number}: ${workItem.title}`,
+                  body ? `\n\n${body}` : '',
+                  workItem.url ? `\n\nURL: ${workItem.url}` : ''
+                ].join('')}
+                className="h-full min-h-0 flex-1 rounded-none border-0 bg-transparent"
+              />
+            </Suspense>
+          </aside>
+        ) : null}
       </div>
     </div>
   ) : null

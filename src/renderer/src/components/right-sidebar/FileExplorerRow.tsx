@@ -36,7 +36,7 @@ import { cn } from '@/lib/utils'
 import { useAppStore } from '@/store'
 import { useShortcutLabel } from '@/hooks/useShortcutLabel'
 import { detectLanguage } from '@/lib/language-detect'
-import { getFileTypeIcon } from '@/lib/file-type-icons'
+import { getFileTypeIcon, getFileTypeIconColorClass } from '@/lib/file-type-icons'
 import { openFileInBrowserTab } from '@/lib/file-preview'
 import {
   encodeWorkspaceFilePaths,
@@ -476,7 +476,11 @@ export function FileExplorerRow({
   const copyPathShortcutLabel = useShortcutLabel('fileExplorer.copyPath')
   const copyRelativePathShortcutLabel = useShortcutLabel('fileExplorer.copyRelativePath')
   const findInFolderShortcutLabel = useShortcutLabel('sidebar.search.toggle')
-  const FileIcon = getFileTypeIcon(node.relativePath || node.name)
+  const fileIconPath = node.relativePath || node.name
+  const FileIcon = getFileTypeIcon(fileIconPath)
+  // Why: language tint on the filename (not the icon) — scans like syntax-highlight
+  // colors without painting every glyph the same muted gray.
+  const fileNameColorClass = node.isDirectory ? undefined : getFileTypeIconColorClass(fileIconPath)
   const rowDropDir = node.isDirectory ? node.path : targetDir
   const showRemoteDownloadAction = shouldShowRemoteDownloadAction(
     node,
@@ -637,11 +641,13 @@ export function FileExplorerRow({
           <span
             className={cn(
               'truncate',
+              // Language tint for files; selection/ignored still win over it.
+              !isSelected && !isIgnored && fileNameColorClass,
               isSelected && !nodeStatus && !isIgnored && 'text-accent-foreground',
               // Why: italic glyphs overhang their advance width; truncate's
               // overflow:hidden clips it, shaving the last char (".md" → ".ma").
               // pr-0.5 reserves room for the slant so the final letter survives.
-              isIgnored && 'italic pr-0.5'
+              isIgnored && 'italic pr-0.5 text-muted-foreground'
             )}
             style={
               nodeStatus

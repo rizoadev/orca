@@ -1929,12 +1929,14 @@ export function registerRepoHandlers(
             | 'importedExternalWorktreePaths'
             | 'projectGroupId'
             | 'projectGroupOrder'
+            | 'hive'
           >
         > & {
           sourceControlAi?: Repo['sourceControlAi'] | null
           externalWorktreeDiscoverySuppressedAt?:
             | Repo['externalWorktreeDiscoverySuppressedAt']
             | null
+          hive?: Repo['hive'] | null
         }
       }
     ) => {
@@ -2035,6 +2037,20 @@ export function registerRepoHandlers(
         const value = updates.importedExternalWorktreePaths as unknown
         if (!Array.isArray(value) || !value.every((entry) => typeof entry === 'string')) {
           delete updates.importedExternalWorktreePaths
+        }
+      }
+      // Why: null clears Hive binding on the repo row.
+      if ('hive' in updates && updates.hive === null) {
+        updates.hive = undefined
+      } else if ('hive' in updates && updates.hive !== undefined && updates.hive !== null) {
+        const hive = updates.hive as unknown
+        if (
+          !hive ||
+          typeof hive !== 'object' ||
+          typeof (hive as { credentialId?: unknown }).credentialId !== 'string' ||
+          typeof (hive as { projectId?: unknown }).projectId !== 'string'
+        ) {
+          delete updates.hive
         }
       }
       // Why: null is the transport sentinel for clearing Source Control AI, so flow it through as undefined instead of deleting.

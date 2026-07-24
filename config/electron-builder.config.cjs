@@ -131,7 +131,17 @@ module.exports = {
     'node_modules/tweetnacl/**',
     'node_modules/zod/**',
     'node_modules/yaml/**',
-    'node_modules/sherpa-onnx*/**'
+    'node_modules/sherpa-onnx*/**',
+    // Why: `orca strands` loads the SDK via require() under ELECTRON_RUN_AS_NODE,
+    // which cannot see packages only inside app.asar. Include the Bedrock AWS
+    // client tree Strands pulls in as hard deps.
+    'node_modules/@strands-agents/**',
+    'node_modules/@anthropic-ai/**',
+    'node_modules/openai/**',
+    'node_modules/@aws-sdk/**',
+    'node_modules/@smithy/**',
+    'node_modules/@types/json-schema/**',
+    'node_modules/uuid/**'
   ],
   afterPack: async (context) => {
     // Why: a Linux runner-image glibc bump silently shipped a node-pty pty.node

@@ -4356,10 +4356,12 @@ export class Store {
         | 'projectGroupId'
         | 'projectGroupOrder'
         | 'projectHostSetupMethod'
+        | 'hive'
       >
     > & {
       sourceControlAi?: Repo['sourceControlAi'] | null
       externalWorktreeDiscoverySuppressedAt?: Repo['externalWorktreeDiscoverySuppressedAt'] | null
+      hive?: Repo['hive'] | null
     }
   ): Repo | null {
     const repo = this.state.repos.find((r) => r.id === id)
@@ -4415,6 +4417,13 @@ export class Store {
     ) {
       delete repo.externalWorktreeDiscoverySuppressedAt
       delete sanitizedUpdates.externalWorktreeDiscoverySuppressedAt
+    }
+    if (
+      'hive' in sanitizedUpdates &&
+      (sanitizedUpdates.hive === undefined || sanitizedUpdates.hive === null)
+    ) {
+      delete repo.hive
+      delete sanitizedUpdates.hive
     }
     if (
       'sourceControlAi' in sanitizedUpdates &&

@@ -35,6 +35,8 @@ const HOST_INTERACTIVE_COMMANDS: Record<string, string> = {
     'orca serve starts a foreground headless Orca server and cannot run through the SSH relay bridge. Run it directly on the machine that should host Orca.',
   'claude-teams':
     'orca claude-teams starts an interactive Claude Code session and cannot run through the SSH relay bridge. Run it in a terminal on the Orca host machine.',
+  strands:
+    'orca strands starts an interactive Strands agent session and cannot run through the SSH relay bridge. Run it in a terminal on the Orca host machine.',
   'agent-teams-tmux':
     'orca agent-teams-tmux is a tmux pane shim for the Orca host machine and cannot run through the SSH relay bridge.'
 }

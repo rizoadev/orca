@@ -203,10 +203,18 @@ describe('agent process recognition', () => {
       agent: 'claude-agent-teams',
       processName: 'orca'
     })
+    expect(recognizeAgentProcessFromCommandLine('orca strands')).toEqual({
+      agent: 'strands',
+      processName: 'orca'
+    })
     expect(recognizeAgentProcessFromCommandLine('orca status')).toBeNull()
     expect(recognizeAgentProcessFromCommandLine('orca-dev terminal list')).toBeNull()
     expect(recognizeAgentProcessFromCommandLine('node /usr/local/bin/orca claude-teams')).toEqual({
       agent: 'claude-agent-teams',
+      processName: 'orca'
+    })
+    expect(recognizeAgentProcessFromCommandLine('node /usr/local/bin/orca strands')).toEqual({
+      agent: 'strands',
       processName: 'orca'
     })
     expect(recognizeAgentProcessFromCommandLine('node /usr/local/bin/orca status')).toBeNull()

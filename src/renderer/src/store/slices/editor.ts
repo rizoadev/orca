@@ -11,6 +11,11 @@ import {
   getCheckRunDetailsTabLabel,
   type OpenCheckRunDetailsState
 } from '@/components/editor/check-run-details-tab'
+import {
+  buildIssueDetailsTabId,
+  getIssueDetailsTabLabel,
+  type OpenIssueDetailsState
+} from '@/components/editor/issue-details-tab'
 import { openHttpLink, type HttpLinkSourceOwner } from '@/lib/http-link-routing'
 import { getConnectionIdForFileFromState } from '@/lib/connection-owner-resolution'
 import { isLocalPathOpenBlocked, showLocalPathOpenBlockedToast } from '@/lib/local-path-open-guard'
@@ -253,13 +258,15 @@ export type OpenFile = {
   fileContentReloadNonce?: number
   /** Why: CI check-details tabs are virtual editor tabs backed by fetched PR check-run metadata, not a file on disk. */
   checkRunDetails?: OpenCheckRunDetailsState
+  /** Why: issue-details tabs host GitHub/GitLab issue UI in the main tab strip (not a Tasks drawer). */
+  issueDetails?: OpenIssueDetailsState
   /** Why: web-client tab mirrored from the host snapshot; only mirrored tabs may be culled when they vanish, locally-opened tabs must survive. */
   mirroredFromRuntimeSession?: boolean
   /** Why: orthogonal to `mode` — an edit-mode tab that must never accept edits/autosave/rename (AI Vault View Log). Persisted only when true. */
   readOnly?: boolean
   /** Why: explicit live tail, only meaningful for a read-only local log. */
   liveTail?: boolean
-  mode: 'edit' | 'diff' | 'conflict-review' | 'markdown-preview' | 'check-details'
+  mode: 'edit' | 'diff' | 'conflict-review' | 'markdown-preview' | 'check-details' | 'issue-details'
 }
 
 export type ActivityBarPosition = 'top' | 'side'
@@ -541,6 +548,7 @@ export type EditorSlice = {
     check: OpenCheckRunDetailsState['check'],
     state: Pick<OpenCheckRunDetailsState, 'details' | 'loading' | 'error'>
   ) => void
+  openIssueDetails: (worktreeId: string, issueDetails: OpenIssueDetailsState) => void
   patchOpenCheckRunDetails: (
     worktreeId: string,
     contextKey: string,
@@ -700,7 +708,7 @@ function openWorkspaceEditorItem(
   fileId: string,
   worktreeId: string,
   label: string,
-  contentType: 'editor' | 'diff' | 'conflict-review' | 'check-details',
+  contentType: 'editor' | 'diff' | 'conflict-review' | 'check-details' | 'issue-details',
   isPreview?: boolean,
   targetGroupId?: string
 ): string {
@@ -732,7 +740,8 @@ function isEditorTabContentType(contentType: Tab['contentType']): boolean {
     contentType === 'editor' ||
     contentType === 'diff' ||
     contentType === 'conflict-review' ||
-    contentType === 'check-details'
+    contentType === 'check-details' ||
+    contentType === 'issue-details'
   )
 }
 
@@ -1582,14 +1591,21 @@ export const createEditorSlice: StateCreator<AppState, [], [], EditorSlice> = (s
     let editorItemWorktreeId = file.worktreeId
     let editorItemFileId = file.filePath
     let editorItemLabel = file.relativePath
-    let editorItemContentType: 'editor' | 'diff' | 'conflict-review' | 'check-details' =
+    let editorItemContentType:
+      | 'editor'
+      | 'diff'
+      | 'conflict-review'
+      | 'check-details'
+      | 'issue-details' =
       file.mode === 'conflict-review'
         ? 'conflict-review'
         : file.mode === 'check-details'
           ? 'check-details'
-          : file.mode === 'diff'
-            ? 'diff'
-            : 'editor'
+          : file.mode === 'issue-details'
+            ? 'issue-details'
+            : file.mode === 'diff'
+              ? 'diff'
+              : 'editor'
     let editorItemTargetGroupId = options?.targetGroupId
     set((s) => {
       const worktreeId = file.worktreeId
@@ -3346,6 +3362,66 @@ export const createEditorSlice: StateCreator<AppState, [], [], EditorSlice> = (s
     void openWorkspaceEditorItem(get(), id, worktreeId, label, 'check-details')
   },
 
+  // Why: Issues-panel modal is quick look; open the same issue as a real main-box workspace tab.
+  openIssueDetails: (worktreeId, issueDetails) => {
+    const number =
+      issueDetails.provider === 'github'
+        ? issueDetails.githubItem?.number
+        : issueDetails.gitlabItem?.number
+    const title =
+      issueDetails.provider === 'github'
+        ? (issueDetails.githubItem?.title ?? '')
+        : (issueDetails.gitlabItem?.title ?? '')
+    if (typeof number !== 'number') {
+      return
+    }
+    const repoKey = issueDetails.repoId ?? issueDetails.repoPath
+    const id = buildIssueDetailsTabId(worktreeId, issueDetails.provider, number, repoKey)
+    const label = getIssueDetailsTabLabel({ number, title })
+    set((s) => {
+      const existing = s.openFiles.find((f) => f.id === id)
+      if (existing) {
+        return {
+          openFiles: s.openFiles.map((f) =>
+            f.id === id
+              ? {
+                  ...f,
+                  mode: 'issue-details' as const,
+                  relativePath: label,
+                  language: 'plaintext',
+                  issueDetails
+                }
+              : f
+          ),
+          activeFileId: id,
+          activeTabType: 'editor',
+          activeFileIdByWorktree: { ...s.activeFileIdByWorktree, [worktreeId]: id },
+          activeTabTypeByWorktree: { ...s.activeTabTypeByWorktree, [worktreeId]: 'editor' }
+        }
+      }
+
+      const newFile: OpenFile = {
+        id,
+        filePath: id,
+        relativePath: label,
+        worktreeId,
+        language: 'plaintext',
+        isDirty: false,
+        mode: 'issue-details',
+        issueDetails
+      }
+
+      return {
+        openFiles: [...s.openFiles, newFile],
+        activeFileId: id,
+        activeTabType: 'editor',
+        activeFileIdByWorktree: { ...s.activeFileIdByWorktree, [worktreeId]: id },
+        activeTabTypeByWorktree: { ...s.activeTabTypeByWorktree, [worktreeId]: 'editor' }
+      }
+    })
+    void openWorkspaceEditorItem(get(), id, worktreeId, label, 'issue-details')
+  },
+
   // Why: sidebar detail fetches can finish after the full-details tab is open; update the snapshot without stealing focus.
   patchOpenCheckRunDetails: (worktreeId, contextKey, check, state) => {
     const id = buildCheckRunDetailsTabId(worktreeId, check)
@@ -4696,7 +4772,11 @@ function reconcileOpenFilesForStatus(
       return [file]
     }
 
-    if (file.mode === 'conflict-review' || file.mode === 'check-details') {
+    if (
+      file.mode === 'conflict-review' ||
+      file.mode === 'check-details' ||
+      file.mode === 'issue-details'
+    ) {
       return [file]
     }
 

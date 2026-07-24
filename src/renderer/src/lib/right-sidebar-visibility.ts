@@ -11,7 +11,8 @@ const RIGHT_SIDEBAR_SUPPRESSED_VIEWS = new Set<ActiveView>([
   'space',
   'skills',
   'mobile',
-  'issues-board'
+  'issues-board',
+  'agent-dashboard'
 ])
 
 export function canShowRightSidebarForView(activeView: ActiveView): boolean {

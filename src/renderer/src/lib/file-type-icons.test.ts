@@ -19,7 +19,7 @@ import {
   FileVideo
 } from 'lucide-react'
 import { describe, expect, it } from 'vitest'
-import { getFileTypeIcon } from './file-type-icons'
+import { getFileTypeIcon, getFileTypeIconColorClass } from './file-type-icons'
 
 describe('getFileTypeIcon', () => {
   it('prefers known filenames over generic extensions', () => {
@@ -57,5 +57,18 @@ describe('getFileTypeIcon', () => {
 
   it('falls back to the generic file icon for unknown files', () => {
     expect(getFileTypeIcon('unknown.customtype')).toBe(File)
+  })
+})
+
+describe('getFileTypeIconColorClass', () => {
+  it('tints common languages distinctly', () => {
+    expect(getFileTypeIconColorClass('src/app.ts')).toContain('sky')
+    expect(getFileTypeIconColorClass('lib/main.js')).toContain('amber')
+    expect(getFileTypeIconColorClass('train.py')).toContain('yellow')
+    expect(getFileTypeIconColorClass('styles.css')).toContain('pink')
+  })
+
+  it('falls back to muted for unknown types', () => {
+    expect(getFileTypeIconColorClass('weird.customtype')).toBe('text-muted-foreground')
   })
 })

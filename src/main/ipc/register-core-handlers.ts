@@ -47,6 +47,7 @@ import { registerLocalhostWorktreeLabelHandlers } from './localhost-worktree-lab
 import { registerAutomationHandlers } from './automations'
 import { registerTelegramBridgeHandlers } from './telegram-bridge'
 import { registerProjectTodoHandlers } from './project-todo'
+import { registerHiveHandlers } from './hive'
 import { registerKeybindingHandlers } from './keybindings'
 import { registerTelemetryHandlers } from './telemetry'
 import { registerBrowserHandlers } from './browser'
@@ -182,6 +183,7 @@ export function registerCoreHandlers(
     registerTelegramBridgeHandlers(telegramBridge)
   }
   registerProjectTodoHandlers()
+  registerHiveHandlers()
   if (keybindings) {
     registerKeybindingHandlers(keybindings)
   }

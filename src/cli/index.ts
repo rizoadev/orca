@@ -50,6 +50,10 @@ export async function main(
     await runClaudeTeams(argv.slice(1), cwd)
     return
   }
+  if (argv[0] === 'strands') {
+    await runStrands(argv.slice(1), cwd)
+    return
+  }
   const parsed = normalizeCommandPositionals(COMMAND_SPECS, parseArgs(argv, COMMAND_PATHS))
   const helpPath = resolveHelpPath(parsed)
   if (helpPath !== null) {
@@ -121,6 +125,23 @@ async function runClaudeTeams(argv: string[], cwd: string): Promise<void> {
     })
   } catch (error) {
     reportCliError(error, false, { commandPath: ['claude-teams'] })
+    process.exitCode = 1
+  }
+}
+
+async function runStrands(argv: string[], cwd: string): Promise<void> {
+  try {
+    // Why: prompt text after `orca strands` is free-form user content, not Orca flags.
+    const client = new RuntimeClient(undefined, undefined, null, null)
+    await dispatch(['strands'], {
+      flags: new Map(),
+      client,
+      cwd,
+      json: false,
+      rawArgs: argv
+    })
+  } catch (error) {
+    reportCliError(error, false, { commandPath: ['strands'] })
     process.exitCode = 1
   }
 }

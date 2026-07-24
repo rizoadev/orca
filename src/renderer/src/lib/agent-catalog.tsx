@@ -290,6 +290,13 @@ export const getAgentCatalog = createLocalizedCatalog((): AgentCatalogEntry[] =>
     cmd: 'openclaw',
     faviconDomain: 'openclaw.ai',
     homepageUrl: 'https://github.com/openclaw/openclaw'
+  },
+  {
+    id: 'strands',
+    label: translate('auto.lib.agent.catalog.strands_label', 'Strands'),
+    cmd: getTuiAgentLaunchCommand(TUI_AGENT_CONFIG.strands, getCatalogPlatform()),
+    faviconDomain: 'strandsagents.com',
+    homepageUrl: 'https://strandsagents.com/'
   }
 ])
 

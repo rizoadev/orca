@@ -58,6 +58,10 @@ function getOptionalServePort(flags: Map<string, string | boolean>): string | nu
 }
 
 export const CORE_HANDLERS: Record<string, CommandHandler> = {
+  strands: async ({ rawArgs, cwd }) => {
+    const { runStrandsAgent } = await import('../strands-agent.js')
+    await runStrandsAgent(rawArgs ?? [], cwd)
+  },
   'claude-teams': async ({ client, rawArgs }) => {
     if (process.platform === 'win32') {
       throw new RuntimeClientError(

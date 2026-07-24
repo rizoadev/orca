@@ -7,6 +7,7 @@ import {
   ListChecks,
   CircleDot,
   PanelRight,
+  Rocket,
   Workflow,
   MessageCircle
 } from 'lucide-react'
@@ -143,6 +144,13 @@ function RightSidebarInner(): React.JSX.Element {
         id: 'issues',
         icon: CircleDot,
         title: translate('auto.components.right.sidebar.index.issues', 'Issues'),
+        shortcut: '',
+        gitOnly: true
+      },
+      {
+        id: 'hive',
+        icon: Rocket,
+        title: translate('auto.components.right.sidebar.index.hive', 'Hive'),
         shortcut: '',
         gitOnly: true
       },

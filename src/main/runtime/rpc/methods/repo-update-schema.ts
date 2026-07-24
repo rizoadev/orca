@@ -57,7 +57,20 @@ export function createRepoUpdateSchema<T extends z.ZodRawShape>(
       externalWorktreeDiscoverySuppressedAt: z.number().finite().nullable().optional(),
       projectGroupId: OptionalString.nullable().optional(),
       projectGroupOrder: OptionalFiniteNumber,
-      sourceControlAi: RepoSourceControlAiOverrides
+      sourceControlAi: RepoSourceControlAiOverrides,
+      // Why: per-repo Hive binding (credentialId + projectId); null clears.
+      hive: z
+        .union([
+          z.null(),
+          z.object({
+            credentialId: z.string().min(1),
+            projectId: z.string().min(1),
+            projectName: z.string().optional(),
+            defaultEnv: z.string().optional(),
+            remoteHint: z.string().optional()
+          })
+        ])
+        .optional()
     })
   }) as z.ZodObject<T & { updates: z.ZodObject<z.ZodRawShape> }>
 }

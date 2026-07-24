@@ -4445,7 +4445,8 @@ export const createWorktreeSlice: StateCreator<AppState, [], [], WorktreeSlice> 
           activeUnifiedTab.contentType === 'editor' ||
           activeUnifiedTab.contentType === 'diff' ||
           activeUnifiedTab.contentType === 'conflict-review' ||
-          activeUnifiedTab.contentType === 'check-details'
+          activeUnifiedTab.contentType === 'check-details' ||
+          activeUnifiedTab.contentType === 'issue-details'
             ? activeUnifiedTab.entityId
             : fileStillOpen
               ? restoredFileId
@@ -4721,7 +4722,8 @@ export const createWorktreeSlice: StateCreator<AppState, [], [], WorktreeSlice> 
         activeUnifiedTab?.contentType === 'editor' ||
         activeUnifiedTab?.contentType === 'diff' ||
         activeUnifiedTab?.contentType === 'conflict-review' ||
-        activeUnifiedTab?.contentType === 'check-details'
+        activeUnifiedTab?.contentType === 'check-details' ||
+        activeUnifiedTab?.contentType === 'issue-details'
           ? activeUnifiedTab.entityId
           : fileStillOpen
             ? restoredFileId

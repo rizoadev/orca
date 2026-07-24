@@ -758,6 +758,38 @@ function createWebPreloadApi(): Partial<PreloadApi> {
     },
     runtime: createRuntimeApi(),
     nativeChat: createNativeChatApi(),
+    strandsIssueChat: {
+      start: async () => {
+        throw new Error('Strands issue chat is only available in the desktop app.')
+      },
+      get: async () => null,
+      send: async () => {
+        throw new Error('Strands issue chat is only available in the desktop app.')
+      },
+      stop: async () => {},
+      onEvent: () => () => {}
+    },
+    hive: {
+      listCredentials: async () => [],
+      addCredential: async () => {
+        throw new Error('Hive is only available in the desktop app.')
+      },
+      updateCredential: async () => {
+        throw new Error('Hive is only available in the desktop app.')
+      },
+      removeCredential: async () => {},
+      probeCredential: async () => ({ ok: false as const, error: 'Hive is desktop-only' }),
+      listProjects: async () => ({ ok: false as const, error: 'Hive is desktop-only' }),
+      listEnvironments: async () => ({ ok: false as const, error: 'Hive is desktop-only' }),
+      latestBuild: async () => ({ ok: false as const, error: 'Hive is desktop-only' }),
+      triggerBuild: async () => ({ ok: false as const, error: 'Hive is desktop-only' }),
+      triggerDeploy: async () => ({ ok: false as const, error: 'Hive is desktop-only' }),
+      dispatch: async () => ({ ok: false as const, error: 'Hive is desktop-only' }),
+      getEnvFiles: async () => ({ ok: false as const, error: 'Hive is desktop-only' }),
+      saveEnvFiles: async () => ({ ok: false as const, error: 'Hive is desktop-only' }),
+      streamHistory: async () => ({ ok: false as const, error: 'Hive is desktop-only' }),
+      deployEnvironment: async () => ({ ok: false as const, error: 'Hive is desktop-only' })
+    },
     runtimeEnvironments: createRuntimeEnvironmentsApi(),
     repos: createReposApi(),
     worktrees: createWorktreesApi(),

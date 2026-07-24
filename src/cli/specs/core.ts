@@ -31,6 +31,19 @@ export const CORE_COMMAND_SPECS: CommandSpec[] = [
     examples: ['orca claude-teams', 'orca claude-teams --resume <session-id>']
   },
   {
+    path: ['strands'],
+    argumentMode: 'passthrough',
+    summary: 'Start the Strands Agents coding agent (chat + tools + file edits)',
+    usage: 'orca strands [prompt...]',
+    allowedFlags: [...GLOBAL_FLAGS],
+    notes: [
+      'Runs the Strands Agents SDK with bash, file-editor, http, and notebook tools in the current worktree.',
+      'Auth: ANTHROPIC_API_KEY, OPENAI_API_KEY, or AWS credentials for Bedrock (default).',
+      'Optional: ORCA_STRANDS_PROVIDER=anthropic|openai|bedrock and ORCA_STRANDS_MODEL=<id>.'
+    ],
+    examples: ['orca strands', 'orca strands Fix the failing login test']
+  },
+  {
     path: ['repo', 'list'],
     summary: 'List repos registered in Orca',
     usage: 'orca repo list [--json]',

@@ -3,6 +3,7 @@ import type { AgentType } from './agent-status-types'
 import type { TuiAgent } from './types'
 import { filterHeadlessOneShotAgentCommand } from './agent-headless-command'
 import { getFirstCommandToken } from './command-token-scanner'
+import { refineOrcaHostedAgentRecognition } from './orca-hosted-agent-recognition'
 
 export type RecognizedAgentProcess = { agent: TuiAgent; processName: string }
 
@@ -295,10 +296,8 @@ export function recognizeAgentProcessFromCommandLine(
   const tokens = tokenizeCommandLine(commandLine)
   const firstNormalized = normalizeProcessName(tokens[0])
   let direct = recognizeAgentProcess(tokens[0])
-  // Why: the generic Orca CLI is not an agent; only this subcommand launches its TUI mode.
-  if (direct?.agent === 'claude-agent-teams' && tokens[1]?.toLowerCase() !== 'claude-teams') {
-    direct = null
-  }
+  // Why: the generic Orca CLI is not an agent; only specific subcommands launch agent modes.
+  direct = refineOrcaHostedAgentRecognition(direct, tokens[1])
   const directRecognition = keep ? direct : filterHeadlessOneShotAgentCommand(direct, tokens)
   if (directRecognition) {
     return directRecognition
@@ -310,14 +309,13 @@ export function recognizeAgentProcessFromCommandLine(
   const viaEntrypoint = isPythonProcessName(firstNormalized)
     ? recognizePythonEntrypoint(tokens, entrypoint)
     : (recognizeAgentProcess(entrypoint) ?? recognizeNodeScriptEntrypoint(entrypoint))
-  if (
-    viaEntrypoint?.agent === 'claude-agent-teams' &&
-    tokens[tokens.indexOf(entrypoint, 1) + 1]?.toLowerCase() !== 'claude-teams'
-  ) {
-    return null
-  }
-  return keep ? viaEntrypoint : filterHeadlessOneShotAgentCommand(viaEntrypoint, tokens)
+  const refinedVia = refineOrcaHostedAgentRecognition(
+    viaEntrypoint,
+    tokens[tokens.indexOf(entrypoint, 1) + 1]
+  )
+  return keep ? refinedVia : filterHeadlessOneShotAgentCommand(refinedVia, tokens)
 }
+
 export function isAgentForegroundWrapperProcess(processName: string | null | undefined): boolean {
   const normalized = normalizeProcessName(processName)
   return (

@@ -292,6 +292,19 @@ export const TUI_AGENT_CONFIG: Record<TuiAgent, TuiAgentConfig> = {
     expectedProcess: 'devin',
     // Why: `devin -- <prompt>` auto-submits immediately (docs.devin.ai/cli), so start the REPL with no argv prompt.
     promptInjectionMode: 'stdin-after-start'
+  },
+  strands: {
+    // Why: Strands is Orca-hosted (`orca strands`), not a separate PATH binary; detect via the Orca CLI.
+    detectCmd: 'orca',
+    detectCmdAliases: ['orca-dev', 'orca-ide'],
+    launchCmd: 'orca strands',
+    launchCmdByPlatform: {
+      linux: `${getOrcaCliCommandNameForPlatform('linux')} strands`,
+      win32: `${getOrcaCliCommandNameForPlatform('win32')} strands`
+    },
+    expectedProcess: 'orca',
+    // Why: one-shot `orca strands <prompt>` exits after the turn; keep the REPL and inject after start.
+    promptInjectionMode: 'stdin-after-start'
   }
 }
 

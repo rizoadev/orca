@@ -1,7 +1,8 @@
-import React, { useEffect, useState } from 'react'
+import React, { useCallback, useEffect, useState } from 'react'
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog'
 import GitHubItemDialog from '@/components/GitHubItemDialog'
 import GitLabItemDialog from '@/components/GitLabItemDialog'
+import { useAppStore } from '@/store'
 import type { GitHubWorkItem, GitLabWorkItem, Repo } from '../../../../shared/types'
 import { translate } from '@/i18n/i18n'
 import { IssueDetailActionBar } from './issue-detail-action-bar'
@@ -24,6 +25,43 @@ export function IssuesPanelDetailModals({
   onUseGitHub: (item: GitHubWorkItem) => void
   onUseGitLab: (item: GitLabWorkItem) => void
 }): React.JSX.Element {
+  const openIssueDetails = useAppStore((s) => s.openIssueDetails)
+  const activeWorktreeId = useAppStore((s) => s.activeWorktreeId)
+
+  // Why: open a real workspace tab in the main tab strip (like check-details), not Tasks drawer/sheet.
+  const openGitHubInMainView = useCallback(
+    (item: GitHubWorkItem) => {
+      if (!activeWorktreeId) {
+        return
+      }
+      onCloseGitHub()
+      openIssueDetails(activeWorktreeId, {
+        provider: 'github',
+        repoPath: activeRepo.path,
+        repoId: activeRepo.id,
+        sourceContext: getRepoIssueSourceContext(activeRepo, 'github'),
+        githubItem: item
+      })
+    },
+    [activeRepo, activeWorktreeId, onCloseGitHub, openIssueDetails]
+  )
+
+  const openGitLabInMainView = useCallback(
+    (item: GitLabWorkItem) => {
+      if (!activeWorktreeId) {
+        return
+      }
+      onCloseGitLab()
+      openIssueDetails(activeWorktreeId, {
+        provider: 'gitlab',
+        repoPath: activeRepo.path,
+        repoId: activeRepo.id,
+        sourceContext: getRepoIssueSourceContext(activeRepo, 'gitlab'),
+        gitlabItem: item
+      })
+    },
+    [activeRepo, activeWorktreeId, onCloseGitLab, openIssueDetails]
+  )
   const [githubState, setGithubState] = useState<'open' | 'closed'>('open')
   const [githubLabels, setGithubLabels] = useState<string[]>([])
   const [githubAssignees, setGithubAssignees] = useState<string[]>([])
@@ -136,7 +174,7 @@ export function IssuesPanelDetailModals({
       >
         <DialogContent
           showCloseButton={false}
-          className="flex h-[min(820px,90vh)] w-[min(920px,calc(100vw-2rem))] max-w-[min(920px,calc(100vw-2rem))] flex-col gap-0 overflow-hidden p-0 sm:max-w-[min(920px,calc(100vw-2rem))]"
+          className="flex h-[min(860px,92vh)] w-[min(1280px,calc(100vw-2rem))] max-w-[min(1280px,calc(100vw-2rem))] flex-col gap-0 overflow-hidden p-0 sm:max-w-[min(1280px,calc(100vw-2rem))]"
         >
           <DialogTitle className="sr-only">
             {selectedGitHubItem
@@ -165,6 +203,7 @@ export function IssuesPanelDetailModals({
                   onCloseGitHub()
                   onUseGitHub(item)
                 }}
+                onOpenInMainView={openGitHubInMainView}
                 onClose={onCloseGitHub}
               />
             </div>
@@ -184,6 +223,7 @@ export function IssuesPanelDetailModals({
           onCloseGitLab()
           onUseGitLab(item)
         }}
+        onOpenInMainView={openGitLabInMainView}
         onClose={onCloseGitLab}
       />
     </>

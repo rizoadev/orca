@@ -26,6 +26,7 @@ export function normalizeRightSidebarRoute(
     tab === 'checks' ||
     tab === 'issues' ||
     tab === 'ports' ||
+    tab === 'hive' ||
     tab === 'remote-chat' ||
     tab === 'todos'
   ) {
