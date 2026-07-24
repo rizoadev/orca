@@ -1,31 +1,20 @@
 import React, { useMemo, useState } from 'react'
-import {
-  Bot,
-  ChevronDown,
-  ExternalLink,
-  FolderPlus,
-  LoaderCircle,
-  Sparkles,
-  XCircle
-} from 'lucide-react'
+import { Bot, ChevronDown, ExternalLink, LoaderCircle, Sparkles } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
-import { useConfirmationDialog } from '@/components/confirmation-dialog'
 import { useDetectedAgents } from '@/hooks/useDetectedAgents'
 import { AgentIcon, getAgentCatalog } from '@/lib/agent-catalog'
 import { useAppStore } from '@/store'
 import { useActiveWorktree } from '@/store/selectors'
 import { translate } from '@/i18n/i18n'
 import { filterEnabledTuiAgents } from '../../../../shared/tui-agent-selection'
-import type { Repo, TuiAgent } from '../../../../shared/types'
+import type { GitHubWorkItem, GitLabWorkItem, Repo, TuiAgent } from '../../../../shared/types'
 import { IssueAiWorkActions } from './issue-ai-work-actions'
 import { IssueAiWorkBadge } from './issue-ai-work-badge'
+import { IssueDetailMetadataControls } from './issue-detail-metadata-controls'
 import { launchIssueAiPlanCommenter } from './issues-panel-ai-plan'
 import { launchIssueAiWorker, type IssueAiWorkMode } from './issues-panel-ai-work'
-import { closeRepoIssue } from './issues-panel-create-actions'
-import { confirmCloseIssue } from './issues-panel-close-confirm'
-import type { IssueRow } from './issues-panel-rows'
 import type { RepoIssueProvider } from './repo-issue-provider'
 import { cn } from '@/lib/utils'
 
@@ -36,20 +25,16 @@ type DetailActionBarProps = {
   issueTitle: string
   issueUrl: string
   issueBody?: string
+  labels?: string[]
+  assignees?: string[]
+  state?: 'open' | 'closed' | 'opened'
+  githubItem?: GitHubWorkItem | null
+  gitlabItem?: GitLabWorkItem | null
   onIssueClosed?: () => void
   onCreateWorkspace?: () => void
-}
-
-function toRowLike(props: DetailActionBarProps): IssueRow {
-  return {
-    id: `${props.provider}:${props.issueNumber}`,
-    number: props.issueNumber,
-    title: props.issueTitle,
-    stateLabel: '',
-    stateTone: '',
-    url: props.issueUrl,
-    provider: props.provider
-  }
+  onStateChanged?: (state: 'open' | 'closed' | 'opened') => void
+  onLabelsChanged?: (labels: string[]) => void
+  onAssigneesChanged?: (assignees: string[]) => void
 }
 
 function orderAgents(
@@ -176,11 +161,21 @@ export function IssueDetailActionBar(props: DetailActionBarProps): React.JSX.Ele
   const { detectedIds, isLoading: detectingAgents } = useDetectedAgents(
     props.repo.connectionId ?? null
   )
-  const confirm = useConfirmationDialog()
 
   const [planning, setPlanning] = useState(false)
   const [working, setWorking] = useState(false)
-  const [closing, setClosing] = useState(false)
+  const issueState =
+    props.state ??
+    (props.provider === 'github'
+      ? props.githubItem?.state === 'closed'
+        ? 'closed'
+        : 'open'
+      : props.gitlabItem?.state === 'closed'
+        ? 'closed'
+        : 'opened')
+  const issueLabels = props.labels ?? props.githubItem?.labels ?? props.gitlabItem?.labels ?? []
+  const issueAssignees =
+    props.assignees ?? props.githubItem?.assignees?.map((user) => user.login) ?? []
 
   const agents = useMemo(() => {
     if (!detectedIds) {
@@ -248,24 +243,26 @@ export function IssueDetailActionBar(props: DetailActionBarProps): React.JSX.Ele
     }
   }
 
-  const runClose = async (): Promise<void> => {
-    const row = toRowLike(props)
-    const ok = await confirmCloseIssue(confirm, row)
-    if (!ok) {
-      return
-    }
-    try {
-      const success = await closeRepoIssue({ repo: props.repo, row })
-      if (success) {
-        props.onIssueClosed?.()
-      }
-    } finally {
-      setClosing(false)
-    }
-  }
-
   return (
     <div className="flex flex-wrap items-center gap-1.5">
+      <IssueDetailMetadataControls
+        repo={props.repo}
+        provider={props.provider}
+        issueNumber={props.issueNumber}
+        issueTitle={props.issueTitle}
+        issueUrl={props.issueUrl}
+        labels={issueLabels}
+        assignees={issueAssignees}
+        state={issueState}
+        githubItem={props.githubItem}
+        gitlabItem={props.gitlabItem}
+        onIssueClosed={props.onIssueClosed}
+        onCreateWorkspace={props.onCreateWorkspace}
+        onStateChanged={props.onStateChanged}
+        onLabelsChanged={props.onLabelsChanged}
+        onAssigneesChanged={props.onAssigneesChanged}
+      />
+
       <AgentPickerMenu
         agents={agents}
         detectingAgents={detectingAgents}
@@ -319,39 +316,6 @@ export function IssueDetailActionBar(props: DetailActionBarProps): React.JSX.Ele
         }}
       />
 
-      <Button
-        type="button"
-        variant="outline"
-        size="xs"
-        className="h-6 gap-1 px-2"
-        onClick={() => {
-          void runClose()
-        }}
-        disabled={closing}
-      >
-        {closing ? (
-          <LoaderCircle className="size-3 animate-spin" />
-        ) : (
-          <XCircle className="size-3" />
-        )}
-        {translate('auto.components.right.sidebar.issuesPanel.closeIssueShort', 'Close issue')}
-      </Button>
-
-      {props.onCreateWorkspace ? (
-        <Button
-          type="button"
-          variant="outline"
-          size="xs"
-          className="h-6 gap-1 px-2"
-          onClick={props.onCreateWorkspace}
-        >
-          <FolderPlus className="size-3" />
-          {translate(
-            'auto.components.right.sidebar.issuesPanel.createWorkspaceBtn',
-            'Create workspace'
-          )}
-        </Button>
-      ) : null}
       <Button
         type="button"
         variant="outline"

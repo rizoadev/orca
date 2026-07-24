@@ -2142,13 +2142,13 @@ export default function GitLabItemDialog({
                     {/* Why: vertical rail makes comments read as one timeline thread. */}
                     <div
                       aria-hidden
-                      className="absolute bottom-3 left-[11px] top-3 w-px bg-border/60"
+                      className="absolute bottom-3 left-[6px] top-3 w-px bg-border/60"
                     />
                     {groupCommentsByThread(details.comments).map((thread) => (
                       <div key={thread.threadId} className="relative space-y-2.5 pb-4 last:pb-0">
                         <div
                           aria-hidden
-                          className="absolute left-[-13px] top-4 size-2.5 rounded-full border border-border bg-background"
+                          className="absolute left-[-18px] top-4 size-2.5 rounded-full border border-border bg-background"
                         />
                         {thread.comments.map((c, index) => (
                           <CommentCard
