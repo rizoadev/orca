@@ -7201,7 +7201,13 @@ export default function GitHubItemDialog({
                 </>
               ) : null}
               <span className="font-mono text-muted-foreground">#{workItem.number}</span>
-              <div className="ml-auto flex items-center gap-1">
+              {/* Why: issue page has no tabs strip, so mount the issues action bar here. */}
+              {tabBarTrailingSlot ? (
+                <div className="ml-auto flex min-w-0 flex-wrap items-center justify-end gap-1.5">
+                  {tabBarTrailingSlot}
+                </div>
+              ) : null}
+              <div className={cn('flex items-center gap-1', !tabBarTrailingSlot && 'ml-auto')}>
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <Button
