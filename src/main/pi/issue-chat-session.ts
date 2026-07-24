@@ -11,7 +11,7 @@ import type {
   PiIssueChatStartArgs,
   PiIssueChatStatus
 } from '../../shared/pi-issue-chat-types'
-import { createPiSession, ISSUE_SESSIONS_DIR_DEFAULT } from './pi-session-factory'
+import { createPiSession, ISSUE_SESSIONS_DIR_DEFAULT, piLog } from './pi-session-factory'
 
 type Emitter = (event: PiIssueChatEvent) => void
 
@@ -115,7 +115,6 @@ function attachSdkSubscription(record: SessionRecord): void {
           }
           return
         }
-
         if (inner.type === 'tool_start' && inner.name) {
           const toolMessage = msg('tool', inner.name, inner.name)
           record.messages.push(toolMessage)
@@ -125,7 +124,7 @@ function attachSdkSubscription(record: SessionRecord): void {
         return
       }
 
-      // ── non-streaming fallback: message_end with full content ───────────────
+      // Non-streaming fallback: message_end with full content
       // Why: some providers don't emit text_delta, only message_end.
       if (
         event.type === 'message_end' &&
@@ -161,7 +160,13 @@ export async function startPiIssueChatSession(
 ): Promise<PiIssueChatSessionSnapshot> {
   const existing = sessions.get(args.sessionId)
   if (existing) {
-    // Re-attach emit to existing warm session — preserves history + model.
+    piLog(
+      're-attach warm session',
+      args.sessionId,
+      'model=%s/%s',
+      existing.provider,
+      existing.modelId
+    )
     existing.currentEmit = emit
     const snap = snapshot(existing)
     emit({ type: 'snapshot', session: snap })
@@ -207,7 +212,6 @@ export async function startPiIssueChatSession(
     currentAssistantContent: '',
     currentAssistantEmitted: false
   }
-
   attachSdkSubscription(record)
   sessions.set(args.sessionId, record)
   const snap = snapshot(record)
@@ -220,9 +224,6 @@ export function getPiIssueChatSession(sessionId: string): PiIssueChatSessionSnap
   return record ? snapshot(record) : null
 }
 
-/**
- * Soft-detach: clear the emit reference so events stop flowing to the panel.
- * Session stays warm — history and model are preserved for re-attach.
 /** Soft-detach: clear emit so events stop. Session stays warm. */
 export function detachPiIssueChatSession(sessionId: string): void {
   const record = sessions.get(sessionId)
@@ -268,7 +269,6 @@ export async function sendPiIssueChatMessage(
   const userMessage = msg('user', trimmed)
   record.messages.push(userMessage)
   emit({ type: 'message', sessionId, message: userMessage })
-
   record.running = true
   record.status = 'running'
   record.error = undefined
@@ -278,10 +278,10 @@ export async function sendPiIssueChatMessage(
   emit({ type: 'status', sessionId, status: 'running' })
 
   try {
-    console.log('[pi-chat] calling prompt...')
+    piLog('calling prompt', sessionId, trimmed.slice(0, 60))
     await record.agentSession.prompt(trimmed)
-    console.log(
-      '[pi-chat] prompt done, emitted=%s content=%s',
+    piLog(
+      'prompt done emitted=%s content=%s',
       record.currentAssistantEmitted,
       record.currentAssistantContent.slice(0, 80)
     )
@@ -290,7 +290,7 @@ export async function sendPiIssueChatMessage(
     emit({ type: 'status', sessionId, status: 'idle' })
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
-    console.error('[pi-chat] prompt ERROR:', message)
+    piLog('prompt ERROR', message)
     record.status = 'error'
     record.error = message
     record.currentAssistantId = null

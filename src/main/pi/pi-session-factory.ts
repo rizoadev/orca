@@ -2,7 +2,7 @@
  * Factory for creating a pi AgentSession for an issue chat panel.
  * Extracted to keep issue-chat-session.ts under the max-lines limit.
  */
-import { mkdirSync } from 'node:fs'
+import { mkdirSync, appendFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 
@@ -15,6 +15,17 @@ function sessionFileSlug(sessionId: string): string {
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type CreatePiSessionResult = { agentSession: any; modelId: string; provider: string }
+
+const PI_CHAT_LOG = '/tmp/pi-chat-debug.log'
+
+export function piLog(...args: unknown[]): void {
+  const line = `[${new Date().toISOString()}] [pi-chat] ${args.map(String).join(' ')}\n`
+  try {
+    appendFileSync(PI_CHAT_LOG, line)
+  } catch {
+    /* ignore */
+  }
+}
 
 export async function createPiSession(
   args: {
@@ -36,6 +47,12 @@ export async function createPiSession(
   } = await import('@earendil-works/pi-coding-agent')
 
   const agentDir = getAgentDir()
+  piLog(
+    'createPiSession start cwd=%s sessionId=%s modelRef=%s',
+    args.cwd,
+    args.sessionId,
+    args.modelRef ?? 'none'
+  )
   const authStorage = AuthStorage.create()
   const modelRegistry = ModelRegistry.create(authStorage)
 
@@ -94,12 +111,14 @@ export async function createPiSession(
 
   if (modelFallbackMessage) {
     console.warn('[pi-issue-chat] model fallback:', modelFallbackMessage)
+    piLog('model fallback:', modelFallbackMessage)
   }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const resolvedModel = (session as any).model
   const modelId: string = resolvedModel?.id ?? 'unknown'
   const provider: string = resolvedModel?.provider ?? 'pi'
+  piLog('session ready model=%s/%s', provider, modelId)
 
   return { agentSession: session, modelId, provider }
 }
