@@ -23,6 +23,7 @@ import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { SetupGuideSidebarEntry } from './SetupGuideSidebarEntry'
 import { SidebarIssueBoardNavButton } from './SidebarIssueBoardNavButton'
+import { SidebarOrchestrationBoardNavButton } from './SidebarOrchestrationBoardNavButton'
 import { SidebarTaskNavButton } from './SidebarTaskNavButton'
 import { HideSidebarMenu } from './sidebar-nav-controls'
 import { translate } from '@/i18n/i18n'
@@ -165,6 +166,7 @@ const SidebarNav = React.memo(function SidebarNav() {
     >
       <SetupGuideSidebarEntry />
       <SidebarTaskNavButton />
+      <SidebarOrchestrationBoardNavButton />
       <SidebarIssueBoardNavButton />
       {showAutomationsButton ? (
         <ContextMenu>

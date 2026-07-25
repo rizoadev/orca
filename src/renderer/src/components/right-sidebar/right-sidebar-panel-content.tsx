@@ -11,7 +11,6 @@ const HivePanel = lazy(() => import('./HivePanel'))
 const AiVaultPanel = lazy(() => import('./AiVaultPanel'))
 const FolderWorkspaceWorktreesPanel = lazy(() => import('./FolderWorkspaceWorktreesPanel'))
 const FolderWorkspacePrChecksPanel = lazy(() => import('./FolderWorkspacePrChecksPanel'))
-const TelegramBridgePanel = lazy(() => import('./TelegramBridgePanel'))
 const RemoteChatPanel = lazy(() => import('./remote-chat-panel'))
 const ProjectTodoPanel = lazy(() => import('./ProjectTodoPanel'))
 const GitLabSnippetsPanel = lazy(() => import('./GitLabSnippetsPanel'))
@@ -42,9 +41,7 @@ export function RightSidebarPanelContent({
           <IssuesPanel isVisible={rightSidebarOpen && effectiveTab === 'issues'} />
         )}
         {effectiveTab === 'orchestration' ? (
-          <OrchestrationPanel
-            isVisible={rightSidebarOpen && effectiveTab === 'orchestration'}
-          />
+          <OrchestrationPanel key="orchestration-panel" isVisible={rightSidebarOpen} />
         ) : null}
         {/* Why: SSH port forwarding still depends on the raw ports.detect data,
             which the workspace-scoped status bar popover intentionally does not

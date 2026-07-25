@@ -2140,6 +2140,34 @@ export type PreloadApi = {
     teamLabels: (args: { teamId: string; workspaceId?: string }) => Promise<LinearLabel[]>
     teamMembers: (args: { teamId: string; workspaceId?: string }) => Promise<LinearMember[]>
   }
+  asana: {
+    getStatus: () => Promise<import('../shared/asana-types').AsanaConnectionStatus>
+    connect: (
+      args: import('../shared/asana-types').AsanaConnectArgs
+    ) => Promise<import('../shared/asana-types').AsanaConnectionStatus>
+    disconnect: () => Promise<import('../shared/asana-types').AsanaConnectionStatus>
+    selectWorkspace: (
+      workspaceGid: string | null
+    ) => Promise<import('../shared/asana-types').AsanaConnectionStatus>
+    listProjects: (
+      workspaceGid?: string
+    ) => Promise<import('../shared/asana-types').AsanaProject[]>
+    listSections: (projectGid: string) => Promise<import('../shared/asana-types').AsanaSection[]>
+    listTasks: (args?: {
+      projectGid?: string
+      workspaceGid?: string
+      filter?: import('../shared/asana-types').AsanaTaskFilter
+      limit?: number
+    }) => Promise<import('../shared/asana-types').AsanaTask[]>
+    getTask: (taskGid: string) => Promise<import('../shared/asana-types').AsanaTask>
+    createTask: (
+      args: import('../shared/asana-types').AsanaCreateTaskArgs
+    ) => Promise<import('../shared/asana-types').AsanaCreateTaskResult>
+    updateTask: (args: {
+      taskGid: string
+      update: import('../shared/asana-types').AsanaTaskUpdate
+    }) => Promise<import('../shared/asana-types').AsanaMutationResult>
+  }
   jira: {
     connect: (args: {
       siteUrl: string

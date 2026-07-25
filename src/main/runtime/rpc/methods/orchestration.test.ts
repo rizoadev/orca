@@ -22,6 +22,8 @@ describe('orchestration RPC methods', () => {
     dbOpen = true
     runtime = new OrcaRuntimeService()
     runtime.setOrchestrationDb(db)
+    // Why: group fan-out (@squad:*) reads agentSquads from client settings; bare runtime has no store.
+    vi.spyOn(runtime, 'getClientSettings').mockReturnValue({ agentSquads: [] } as never)
     ctx = { runtime }
   }
 
@@ -56,7 +58,7 @@ describe('orchestration RPC methods', () => {
 
   it('registers all expected methods', () => {
     const registry = buildRegistry(ORCHESTRATION_METHODS)
-    expect(registry.size).toBe(16)
+    expect(registry.size).toBe(30)
     expect(registry.has('orchestration.send')).toBe(true)
     expect(registry.has('orchestration.check')).toBe(true)
     expect(registry.has('orchestration.reply')).toBe(true)
@@ -64,6 +66,21 @@ describe('orchestration RPC methods', () => {
     expect(registry.has('orchestration.taskCreate')).toBe(true)
     expect(registry.has('orchestration.taskList')).toBe(true)
     expect(registry.has('orchestration.taskUpdate')).toBe(true)
+    expect(registry.has('orchestration.taskStop')).toBe(true)
+    expect(registry.has('orchestration.taskDelete')).toBe(true)
+    expect(registry.has('orchestration.taskRetry')).toBe(true)
+    expect(registry.has('orchestration.taskCommentList')).toBe(true)
+    expect(registry.has('orchestration.taskCommentAdd')).toBe(true)
+    expect(registry.has('orchestration.taskThread')).toBe(true)
+    expect(registry.has('orchestration.taskScope')).toBe(true)
+    // product + squad methods counted in size above
+    expect(registry.has('orchestration.taskAssignSquad')).toBe(true)
+    expect(registry.has('orchestration.productStart')).toBe(true)
+    expect(registry.has('orchestration.productTick')).toBe(true)
+    expect(registry.has('orchestration.productWatch')).toBe(true)
+    expect(registry.has('orchestration.productUnwatch')).toBe(true)
+    expect(registry.has('orchestration.productSupervisor')).toBe(true)
+    expect(registry.has('orchestration.productStop')).toBe(true)
     expect(registry.has('orchestration.dispatch')).toBe(true)
     expect(registry.has('orchestration.dispatchShow')).toBe(true)
     expect(registry.has('orchestration.ask')).toBe(true)
@@ -1168,6 +1185,83 @@ describe('orchestration RPC methods', () => {
       expect(db.getTask(result.task.id)?.created_by_terminal_handle).toBe('term_creator')
     })
 
+    it('persists priority and soft scope pointers', async () => {
+      setup()
+      const result = (await call('orchestration.taskCreate', {
+        spec: 'scoped work',
+        priority: 'high',
+        repoId: 'repo-abc',
+        projectId: 'proj-1',
+        worktreeId: 'repo-abc::/tmp/wt',
+        hostId: 'local'
+      })) as {
+        task: {
+          id: string
+          priority: string
+          repo_id: string | null
+          worktree_id: string | null
+        }
+      }
+
+      expect(result.task.priority).toBe('high')
+      expect(result.task.repo_id).toBe('repo-abc')
+      expect(result.task.worktree_id).toBe('repo-abc::/tmp/wt')
+      expect(db.getTask(result.task.id)?.host_id).toBe('local')
+    })
+
+    it('auto-binds scope from the caller terminal when flags are omitted', async () => {
+      setup()
+      vi.spyOn(runtime, 'showTerminal').mockResolvedValue({
+        handle: 'term_creator',
+        worktreeId: 'repo-auto::/tmp/auto-wt',
+        worktreePath: '/tmp/auto-wt',
+        branch: 'main',
+        tabId: 'tab',
+        leafId: 'leaf',
+        title: null,
+        connected: true,
+        writable: true,
+        lastOutputAt: null,
+        preview: '',
+        ptyId: 'pty_1'
+      } as never)
+      vi.spyOn(runtime, 'showManagedWorktree').mockResolvedValue({
+        hostId: 'ssh:devbox'
+      } as never)
+
+      const result = (await call('orchestration.taskCreate', {
+        spec: 'infer me',
+        callerTerminalHandle: 'term_creator'
+      })) as {
+        task: {
+          repo_id: string | null
+          worktree_id: string | null
+          host_id: string | null
+        }
+      }
+
+      expect(result.task.repo_id).toBe('repo-auto')
+      expect(result.task.worktree_id).toBe('repo-auto::/tmp/auto-wt')
+      expect(result.task.host_id).toBe('ssh:devbox')
+      expect(runtime.showTerminal).toHaveBeenCalledWith('term_creator')
+    })
+
+    it('does not override explicit scope with terminal inference', async () => {
+      setup()
+      const showTerminal = vi.spyOn(runtime, 'showTerminal')
+      const result = (await call('orchestration.taskCreate', {
+        spec: 'explicit wins',
+        callerTerminalHandle: 'term_creator',
+        repoId: 'repo-explicit',
+        worktreeId: 'repo-explicit::/tmp/x',
+        hostId: 'local'
+      })) as { task: { repo_id: string | null; host_id: string | null } }
+
+      expect(result.task.repo_id).toBe('repo-explicit')
+      expect(result.task.host_id).toBe('local')
+      expect(showTerminal).not.toHaveBeenCalled()
+    })
+
     it('rejects invalid deps JSON', async () => {
       setup()
       await expect(
@@ -1196,6 +1290,19 @@ describe('orchestration RPC methods', () => {
         status: 'ready'
       })) as { count: number }
       expect(result.count).toBe(1)
+    })
+
+    it('filters by repo scope and orders by priority', async () => {
+      setup()
+      db.createTask({ spec: 'low-a', priority: 'low', repoId: 'repo-a' })
+      db.createTask({ spec: 'urgent-a', priority: 'urgent', repoId: 'repo-a' })
+      db.createTask({ spec: 'other', priority: 'high', repoId: 'repo-b' })
+
+      const result = (await call('orchestration.taskList', {
+        repoId: 'repo-a'
+      })) as { tasks: { spec: string }[]; count: number }
+      expect(result.count).toBe(2)
+      expect(result.tasks.map((t) => t.spec)).toEqual(['urgent-a', 'low-a'])
     })
 
     it('rejects invalid status filters', () => {
@@ -1246,6 +1353,172 @@ describe('orchestration RPC methods', () => {
       expect(long.spec_truncated).toBe(true)
       expect(short.spec).toBe('Short task')
       expect(short.spec_truncated).toBe(false)
+    })
+  })
+
+  describe('orchestration.taskScope', () => {
+    it('rebinds worktree/host without changing status', async () => {
+      setup()
+      const task = db.createTask({
+        spec: 'rebind',
+        repoId: 'repo-a',
+        worktreeId: 'wt-old',
+        hostId: 'local'
+      })
+
+      const result = (await call('orchestration.taskScope', {
+        id: task.id,
+        worktreeId: 'wt-new',
+        hostId: 'ssh:devbox',
+        priority: 'urgent'
+      })) as {
+        task: {
+          status: string
+          worktree_id: string | null
+          host_id: string | null
+          priority: string
+          repo_id: string | null
+        }
+      }
+
+      expect(result.task.status).toBe('ready')
+      expect(result.task.repo_id).toBe('repo-a')
+      expect(result.task.worktree_id).toBe('wt-new')
+      expect(result.task.host_id).toBe('ssh:devbox')
+      expect(result.task.priority).toBe('urgent')
+    })
+
+    it('clears a pointer when empty string is passed', async () => {
+      setup()
+      const task = db.createTask({ spec: 'clear', worktreeId: 'wt-1' })
+      const result = (await call('orchestration.taskScope', {
+        id: task.id,
+        worktreeId: ''
+      })) as { task: { worktree_id: string | null } }
+      expect(result.task.worktree_id).toBeNull()
+    })
+
+    it('requires at least one scope field', async () => {
+      setup()
+      const task = db.createTask({ spec: 'noop' })
+      await expect(call('orchestration.taskScope', { id: task.id })).rejects.toThrow(
+        'taskScope requires at least one'
+      )
+    })
+  })
+
+  describe('orchestration.taskAssignSquad', () => {
+    const frontendSquad = {
+      id: 'frontend',
+      name: 'Frontend',
+      leader: { agent: 'claude' as const },
+      members: [{ agent: 'claude' as const }, { agent: 'codex' as const }],
+      routing: 'leader_decide' as const
+    }
+
+    it('dispatches a ready task to a matching live squad terminal', async () => {
+      setup()
+      vi.spyOn(runtime, 'getClientSettings').mockReturnValue({
+        agentSquads: [frontendSquad]
+      } as never)
+      vi.spyOn(runtime, 'listTerminals').mockResolvedValue({
+        terminals: [
+          {
+            handle: 'term_claude',
+            worktreeId: 'repo-a::/tmp/wt',
+            title: 'claude · feature',
+            ptyId: 'pty_1',
+            worktreePath: '/tmp/wt',
+            branch: 'main',
+            tabId: 't',
+            leafId: 'l',
+            connected: true,
+            writable: true,
+            lastOutputAt: null,
+            preview: ''
+          }
+        ]
+      } as never)
+      vi.spyOn(runtime, 'getAgentStatusForHandle').mockReturnValue('idle')
+      vi.spyOn(runtime, 'isTerminalRunningAgent').mockResolvedValue(true)
+      vi.spyOn(runtime, 'sendTerminalAgentPrompt').mockResolvedValue(undefined as never)
+      vi.spyOn(runtime, 'getTerminalPaneKey').mockReturnValue('tab:leaf')
+      vi.spyOn(runtime, 'getTerminalOrchestrationCliCommand').mockReturnValue('orca')
+      vi.spyOn(runtime, 'waitForTerminal').mockResolvedValue({} as never)
+
+      const task = db.createTask({
+        spec: 'fix css',
+        worktreeId: 'repo-a::/tmp/wt',
+        repoId: 'repo-a'
+      })
+
+      const result = (await call('orchestration.taskAssignSquad', {
+        task: task.id,
+        squad: 'frontend',
+        inject: true
+      })) as {
+        to: string
+        spawned: boolean
+        injected: boolean
+        dispatch: { id: string }
+        squad: { id: string }
+      }
+
+      expect(result.to).toBe('term_claude')
+      expect(result.spawned).toBe(false)
+      expect(result.injected).toBe(true)
+      expect(result.squad.id).toBe('frontend')
+      expect(db.getTask(task.id)?.status).toBe('dispatched')
+      expect(runtime.sendTerminalAgentPrompt).toHaveBeenCalled()
+    })
+
+    it('spawns a squad agent when no live terminal matches', async () => {
+      setup()
+      vi.spyOn(runtime, 'getClientSettings').mockReturnValue({
+        agentSquads: [frontendSquad]
+      } as never)
+      vi.spyOn(runtime, 'listTerminals').mockResolvedValue({ terminals: [] } as never)
+      vi.spyOn(runtime, 'launchAgentTerminal').mockResolvedValue({
+        handle: 'term_spawned'
+      } as never)
+      vi.spyOn(runtime, 'waitForTerminal').mockResolvedValue({} as never)
+      vi.spyOn(runtime, 'isTerminalRunningAgent').mockResolvedValue(true)
+      vi.spyOn(runtime, 'sendTerminalAgentPrompt').mockResolvedValue(undefined as never)
+      vi.spyOn(runtime, 'getTerminalPaneKey').mockReturnValue(null)
+      vi.spyOn(runtime, 'getTerminalOrchestrationCliCommand').mockReturnValue('orca')
+
+      const task = db.createTask({
+        spec: 'spawn path',
+        worktreeId: 'repo-a::/tmp/wt'
+      })
+
+      const result = (await call('orchestration.taskAssignSquad', {
+        task: task.id,
+        squad: 'Frontend'
+      })) as { to: string; spawned: boolean }
+
+      expect(result.spawned).toBe(true)
+      expect(result.to).toBe('term_spawned')
+      expect(runtime.launchAgentTerminal).toHaveBeenCalledWith(
+        'id:repo-a::/tmp/wt',
+        expect.objectContaining({ agent: 'claude', prompt: '' })
+      )
+    })
+
+    it('rejects unknown squads and missing worktree scope', async () => {
+      setup()
+      vi.spyOn(runtime, 'getClientSettings').mockReturnValue({ agentSquads: [] } as never)
+      const task = db.createTask({ spec: 'no scope' })
+      await expect(
+        call('orchestration.taskAssignSquad', { task: task.id, squad: 'missing' })
+      ).rejects.toThrow(/Unknown squad/)
+
+      vi.spyOn(runtime, 'getClientSettings').mockReturnValue({
+        agentSquads: [frontendSquad]
+      } as never)
+      await expect(
+        call('orchestration.taskAssignSquad', { task: task.id, squad: 'frontend' })
+      ).rejects.toThrow(/no worktree scope/i)
     })
   })
 

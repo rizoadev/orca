@@ -6,6 +6,7 @@ import {
   GitBranch,
   ListChecks,
   CircleDot,
+  Layers,
   PanelRight,
   Rocket,
   Workflow,
@@ -110,6 +111,16 @@ function RightSidebarInner(): React.JSX.Element {
         id: 'vault',
         icon: AgentSessionHistoryIcon,
         title: translate('auto.components.right.sidebar.index.aiVaultSessionHistory', 'Agents'),
+        shortcut: ''
+      },
+      {
+        // Why: pin early so top-bar overflow doesn't bury the orchestration companion list.
+        id: 'orchestration',
+        icon: Layers,
+        title: translate(
+          'auto.components.right.sidebar.index.orchestration',
+          'Orchestration'
+        ),
         shortcut: ''
       },
       {

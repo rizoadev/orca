@@ -160,6 +160,7 @@ import {
 } from '@/components/linear-project-view-surfaces'
 import JiraIssueWorkspace from '@/components/JiraIssueWorkspace'
 import { TaskPageJiraIssueList } from '@/components/task-page-jira-issue-list'
+import { TaskPageAsanaPanel } from '@/components/task-page-asana-panel'
 import {
   getSingleJiraProjectScope,
   getTaskPageJiraStatusOrderScopeKey,
@@ -9949,6 +9950,10 @@ export default function TaskPage(): React.JSX.Element {
                 />
               </div>
             )
+          ) : taskSource === 'asana' ? (
+            <div className="mt-2 min-h-0 flex-1">
+              <TaskPageAsanaPanel isVisible={taskSource === 'asana'} />
+            </div>
           ) : taskSource === 'linear' && selectedLinearIssue ? (
             <LinearIssueWorkspace
               issue={selectedLinearIssue}

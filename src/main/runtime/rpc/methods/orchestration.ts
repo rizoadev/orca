@@ -1,11 +1,18 @@
 /* eslint-disable max-lines -- Why: RPC method definitions co-locate param schemas with handlers; splitting by method would scatter the shared enums and Zod transforms without reducing complexity. */
 import { z } from 'zod'
 import { defineMethod, type RpcMethod } from '../core'
-import { OptionalFiniteNumber, OptionalString, OptionalBoolean, requiredString } from '../schemas'
+import {
+  OptionalFiniteNumber,
+  OptionalPlainString,
+  OptionalString,
+  OptionalBoolean,
+  requiredString
+} from '../schemas'
 import type { MessageType, MessagePriority, TaskStatus } from '../../orchestration/db'
 import { buildDispatchPreamble } from '../../orchestration/preamble'
 import {
   buildSquadLeaderBriefing,
+  findAgentSquad,
   normalizeAgentSquads,
   parseSquadAddress,
   resolveSquadLeader
@@ -24,7 +31,58 @@ import {
   assertOrchestrationWriteFits
 } from '../../orchestration/query-retention'
 import { abbreviateOrchestrationTasks } from '../../../../shared/orchestration-task-summary'
+import { getRepoIdFromWorktreeId } from '../../../../shared/worktree-id'
+import { createProductPipelineTasks } from '../../orchestration/product-pipeline-engine'
+import {
+  dispatchAllReadyPipelineStages,
+  dispatchPipelineStageTask
+} from '../../orchestration/product-pipeline-dispatch'
+import {
+  getProductSupervisorSnapshot,
+  stopProductSupervisor,
+  unwatchProductPipeline,
+  watchProductPipeline
+} from '../../orchestration/product-pipeline-supervisor'
+import { defaultSquadSeed } from '../../../../shared/product-pipeline'
+import { deliverOperatorComment } from '../../orchestration/task-comment-delivery-service'
 import { ORCHESTRATION_GATE_METHODS } from './orchestration-gates'
+
+/** Best-effort scope from the creating terminal when CLI/UI omit --repo/--worktree/--host. */
+async function resolveTaskScopeFromCallerTerminal(
+  runtime: {
+    showTerminal: (handle: string) => Promise<{ worktreeId: string }>
+    showManagedWorktree: (selector: string) => Promise<{ hostId?: string | null }>
+  },
+  callerTerminalHandle: string | undefined,
+  explicit: { repoId?: string; worktreeId?: string; hostId?: string }
+): Promise<{ repoId?: string; worktreeId?: string; hostId?: string }> {
+  if (!callerTerminalHandle) {
+    return explicit
+  }
+  if (explicit.repoId && explicit.worktreeId && explicit.hostId) {
+    return explicit
+  }
+  try {
+    const terminal = await runtime.showTerminal(callerTerminalHandle)
+    const worktreeId = explicit.worktreeId ?? terminal.worktreeId
+    const repoId =
+      explicit.repoId ??
+      (worktreeId ? getRepoIdFromWorktreeId(worktreeId) || undefined : undefined)
+    let hostId = explicit.hostId
+    if (!hostId && worktreeId) {
+      try {
+        const worktree = await runtime.showManagedWorktree(`id:${worktreeId}`)
+        hostId = worktree.hostId ?? 'local'
+      } catch {
+        hostId = 'local'
+      }
+    }
+    return { repoId, worktreeId, hostId }
+  } catch {
+    // Why: stale handle must not block task creation; scope stays unset for later task-scope rebind.
+    return explicit
+  }
+}
 
 const MESSAGE_TYPES: MessageType[] = [
   'status',
@@ -144,6 +202,8 @@ const InboxParams = z.object({
   terminal: OptionalString
 })
 
+const TaskPrioritySchema = z.enum(['low', 'medium', 'high', 'urgent'])
+
 const TaskCreateParams = z.object({
   spec: requiredString('Missing --spec'),
   taskTitle: OptionalString,
@@ -153,14 +213,25 @@ const TaskCreateParams = z.object({
   callerTerminalHandle: OptionalString,
   // Why: when set, fold into an existing pending/ready task with the same title key instead of spawning a sibling.
   coalesceKey: OptionalString,
-  originatorId: OptionalString
+  originatorId: OptionalString,
+  priority: TaskPrioritySchema.optional(),
+  // Soft scope pointers: stored in userData orchestration.db, not in the worktree folder.
+  repoId: OptionalString,
+  projectId: OptionalString,
+  worktreeId: OptionalString,
+  hostId: OptionalString
 })
 
 const TaskListParams = z.object({
   status: z.enum(['pending', 'ready', 'dispatched', 'completed', 'failed', 'blocked']).optional(),
   ready: OptionalBoolean,
   // Why: server-side truncation keeps --brief cheap over SSH/relay instead of shipping full specs the CLI throws away.
-  brief: OptionalBoolean
+  brief: OptionalBoolean,
+  repoId: OptionalString,
+  projectId: OptionalString,
+  worktreeId: OptionalString,
+  hostId: OptionalString,
+  priority: TaskPrioritySchema.optional()
 })
 
 const TaskUpdateParams = z.object({
@@ -180,6 +251,111 @@ const TaskUpdateParams = z.object({
     ),
   result: OptionalString
 })
+
+const TaskStopParams = z.object({
+  id: requiredString('Missing --id'),
+  reason: OptionalString
+})
+
+const TaskDeleteParams = z.object({
+  id: requiredString('Missing --id')
+})
+
+const TaskRetryParams = z.object({
+  id: requiredString('Missing --id'),
+  reason: OptionalString,
+  // When true (default), re-assign via squad/role dispatch after reopen.
+  assign: OptionalBoolean,
+  squad: OptionalString,
+  inject: OptionalBoolean,
+  spawnIfMissing: OptionalBoolean,
+  waitTimeoutMs: OptionalFiniteNumber
+})
+
+const TaskCommentListParams = z.object({
+  task: requiredString('Missing --task')
+})
+
+const TaskCommentAddParams = z.object({
+  task: requiredString('Missing --task'),
+  body: requiredString('Missing --body'),
+  author: OptionalString,
+  role: OptionalString,
+  kind: z.enum(['comment', 'result', 'system', 'dispatch']).optional(),
+  parentId: OptionalString,
+  // When set, resolve author from terminal handle (agent posting)
+  from: OptionalString,
+  // Why: operator comments should wake the in-charge agent (or @mentions) by default.
+  notify: OptionalBoolean,
+  // When true, reopen completed/failed tasks and create a fresh dispatch before inject.
+  reassign: OptionalBoolean
+})
+
+const TaskThreadParams = z.object({
+  task: requiredString('Missing --task')
+})
+
+// Why: separate from taskUpdate so lifecycle status changes stay distinct from scope rebinding (e.g. worktree deleted).
+const TaskScopeParams = z.object({
+  id: requiredString('Missing --id'),
+  priority: TaskPrioritySchema.optional(),
+  // Empty string clears a pointer; omit leaves it unchanged. OptionalPlainString preserves ''.
+  repoId: OptionalPlainString,
+  projectId: OptionalPlainString,
+  worktreeId: OptionalPlainString,
+  hostId: OptionalPlainString
+})
+
+const TaskAssignSquadParams = z.object({
+  task: requiredString('Missing --task'),
+  squad: requiredString('Missing --squad'),
+  from: OptionalString,
+  // Why: optional override when task has no worktree_id and the caller wants a specific checkout.
+  worktree: OptionalString,
+  inject: OptionalBoolean,
+  // Why: spawn a fresh squad agent terminal when no matching live terminal exists.
+  spawnIfMissing: OptionalBoolean,
+  waitTimeoutMs: OptionalFiniteNumber,
+  devMode: OptionalBoolean,
+  originatorId: OptionalString
+})
+
+const ProductStartParams = z.object({
+  goal: requiredString('Missing --goal'),
+  title: OptionalString,
+  // repo selector (id:/path:) — required to create an isolated product worktree
+  repo: requiredString('Missing --repo'),
+  // existing worktree selector; when set, skip create and use this checkout
+  worktree: OptionalString,
+  baseBranch: OptionalString,
+  // create a GitHub issue for the goal and link it to the worktree
+  createIssue: OptionalBoolean,
+  // seed Settings agentSquads with researcher/backend/tester/reviewer if empty
+  ensureSquads: OptionalBoolean,
+  // immediately dispatch ready stages (research first)
+  autoDispatch: OptionalBoolean,
+  waitTimeoutMs: OptionalFiniteNumber,
+  devMode: OptionalBoolean,
+  priority: TaskPrioritySchema.optional()
+})
+
+const ProductTickParams = z.object({
+  pipeline: requiredString('Missing --pipeline'),
+  waitTimeoutMs: OptionalFiniteNumber,
+  devMode: OptionalBoolean
+})
+
+const ProductWatchParams = z.object({
+  pipeline: requiredString('Missing --pipeline'),
+  pollIntervalMs: OptionalFiniteNumber,
+  devMode: OptionalBoolean
+})
+
+const ProductUnwatchParams = z.object({
+  pipeline: requiredString('Missing --pipeline')
+})
+
+const ProductSupervisorParams = z.object({})
 
 const DispatchParams = z.object({
   task: requiredString('Missing --task'),
@@ -263,6 +439,21 @@ export const ORCHESTRATION_METHODS: RpcMethod[] = [
             runtime.deliverPendingMessagesForHandle(params.to)
             runtime.notifyMessageArrived(params.to, rejection.type)
             return { message: rejection, lifecycle: reconciled }
+          }
+          // Why: product pipeline stages unlock after worker_done; auto-dispatch next role agents without a separate product-tick.
+          if (
+            msg.type === 'worker_done' &&
+            reconciled.action === 'completed' &&
+            reconciled.pipelineId
+          ) {
+            void dispatchAllReadyPipelineStages(db, runtime, reconciled.pipelineId, {
+              coordinatorHandle: params.to,
+              waitTimeoutMs: 90_000,
+              devMode: params.devMode
+            }).catch((err) => {
+              // Best-effort: board/product-tick can still recover.
+              void err
+            })
           }
         }
         runtime.deliverPendingMessagesForHandle(params.to)
@@ -430,7 +621,7 @@ export const ORCHESTRATION_METHODS: RpcMethod[] = [
   defineMethod({
     name: 'orchestration.taskCreate',
     params: TaskCreateParams,
-    handler: (params, { runtime }) => {
+    handler: async (params, { runtime }) => {
       const db = runtime.getOrchestrationDb()
       let deps: string[] | undefined
       if (params.deps) {
@@ -472,6 +663,12 @@ export const ORCHESTRATION_METHODS: RpcMethod[] = [
         }
       }
 
+      const scope = await resolveTaskScopeFromCallerTerminal(runtime, params.callerTerminalHandle, {
+        repoId: params.repoId,
+        worktreeId: params.worktreeId,
+        hostId: params.hostId
+      })
+
       const task = db.createTask({
         spec: params.spec,
         taskTitle: params.taskTitle,
@@ -479,7 +676,12 @@ export const ORCHESTRATION_METHODS: RpcMethod[] = [
         displayName: params.displayName ?? params.coalesceKey,
         deps,
         parentId: params.parent,
-        createdByTerminalHandle: params.callerTerminalHandle
+        createdByTerminalHandle: params.callerTerminalHandle,
+        priority: params.priority,
+        repoId: scope.repoId,
+        projectId: params.projectId,
+        worktreeId: scope.worktreeId,
+        hostId: scope.hostId
       })
       return { task }
     }
@@ -492,7 +694,12 @@ export const ORCHESTRATION_METHODS: RpcMethod[] = [
       const db = runtime.getOrchestrationDb()
       const filter = {
         status: params.status as TaskStatus,
-        ready: params.ready
+        ready: params.ready,
+        repoId: params.repoId,
+        projectId: params.projectId,
+        worktreeId: params.worktreeId,
+        hostId: params.hostId,
+        priority: params.priority
       }
       // Why: listTasksWithDispatch adds assignee_handle + dispatch_id (NULL for non-dispatched), so legacy-shape consumers are unaffected.
       const joined = db.listTasksWithDispatch(filter)
@@ -518,6 +725,359 @@ export const ORCHESTRATION_METHODS: RpcMethod[] = [
     handler: (params, { runtime }) => {
       const db = runtime.getOrchestrationDb()
       const task = db.updateTaskStatus(params.id, params.status, params.result)
+      if (!task) {
+        throw new Error(`Task not found: ${params.id}`)
+      }
+      return { task }
+    }
+  }),
+
+  defineMethod({
+    name: 'orchestration.taskStop',
+    params: TaskStopParams,
+    handler: (params, { runtime }) => {
+      const db = runtime.getOrchestrationDb()
+      const stopped = db.stopTask(params.id, params.reason?.trim() || 'Stopped by operator')
+      if (!stopped) {
+        throw new Error(`Task not found: ${params.id}`)
+      }
+      // Why: product supervisor must drop a stopped pipeline root so it does not re-dispatch.
+      if (stopped.task.pipeline_id === stopped.task.id) {
+        unwatchProductPipeline(stopped.task.id)
+      }
+      return {
+        task: stopped.task,
+        stoppedIds: stopped.stoppedIds,
+        supervisor: getProductSupervisorSnapshot()
+      }
+    }
+  }),
+
+  defineMethod({
+    name: 'orchestration.taskDelete',
+    params: TaskDeleteParams,
+    handler: (params, { runtime }) => {
+      const db = runtime.getOrchestrationDb()
+      const existing = db.getTask(params.id)
+      if (!existing) {
+        throw new Error(`Task not found: ${params.id}`)
+      }
+      const pipelineRootId =
+        existing.pipeline_id === existing.id ? existing.id : existing.pipeline_id
+      const deleted = db.deleteTask(params.id)
+      if (!deleted) {
+        throw new Error(`Task not found: ${params.id}`)
+      }
+      if (pipelineRootId && deleted.deletedIds.includes(pipelineRootId)) {
+        unwatchProductPipeline(pipelineRootId)
+      }
+      return {
+        deletedIds: deleted.deletedIds,
+        supervisor: getProductSupervisorSnapshot()
+      }
+    }
+  }),
+
+  defineMethod({
+    name: 'orchestration.taskRetry',
+    params: TaskRetryParams,
+    handler: async (params, { runtime }) => {
+      const db = runtime.getOrchestrationDb()
+      const existing = db.getTask(params.id)
+      if (!existing) {
+        throw new Error(`Task not found: ${params.id}`)
+      }
+      const reason = params.reason?.trim() || 'Retried by operator after stop/error'
+      const retried = db.retryTask(params.id, reason)
+      if (!retried) {
+        throw new Error(`Task not found: ${params.id}`)
+      }
+
+      // Product pipeline root: re-watch supervisor so ready stages dispatch again.
+      if (retried.task.pipeline_id === retried.task.id) {
+        watchProductPipeline(retried.task.id, db, runtime)
+        try {
+          await dispatchAllReadyPipelineStages(db, runtime, retried.task.id, {
+            waitTimeoutMs: params.waitTimeoutMs ?? 60_000
+          })
+        } catch (err) {
+          // Reopen still succeeded; surface dispatch errors without undoing retry.
+          return {
+            task: db.getTask(params.id) ?? retried.task,
+            retriedIds: retried.retriedIds,
+            assigned: false,
+            warning: err instanceof Error ? err.message : String(err),
+            supervisor: getProductSupervisorSnapshot()
+          }
+        }
+        return {
+          task: db.getTask(params.id) ?? retried.task,
+          retriedIds: retried.retriedIds,
+          assigned: true,
+          supervisor: getProductSupervisorSnapshot()
+        }
+      }
+
+      const shouldAssign = params.assign !== false
+      if (!shouldAssign) {
+        return {
+          task: retried.task,
+          retriedIds: retried.retriedIds,
+          assigned: false,
+          supervisor: getProductSupervisorSnapshot()
+        }
+      }
+
+      // Stage/single task: prefer role pipeline dispatch, else squad assign.
+      if (retried.task.pipeline_role && retried.task.worktree_id) {
+        try {
+          const dispatched = await dispatchPipelineStageTask(db, runtime, retried.task, {
+            waitTimeoutMs: params.waitTimeoutMs ?? 60_000
+          })
+          return {
+            task: dispatched.task,
+            retriedIds: retried.retriedIds,
+            assigned: true,
+            to: dispatched.to,
+            dispatchId: dispatched.dispatchId,
+            spawned: dispatched.spawned,
+            supervisor: getProductSupervisorSnapshot()
+          }
+        } catch (err) {
+          return {
+            task: db.getTask(params.id) ?? retried.task,
+            retriedIds: retried.retriedIds,
+            assigned: false,
+            warning: err instanceof Error ? err.message : String(err),
+            supervisor: getProductSupervisorSnapshot()
+          }
+        }
+      }
+
+      const squads = normalizeAgentSquads(runtime.getClientSettings().agentSquads)
+      const squadId =
+        params.squad?.trim() ||
+        squads[0]?.id ||
+        null
+      if (!squadId) {
+        return {
+          task: retried.task,
+          retriedIds: retried.retriedIds,
+          assigned: false,
+          warning: 'Task reopened as ready, but no squad is configured to re-assign',
+          supervisor: getProductSupervisorSnapshot()
+        }
+      }
+
+      // Spawn squad leader + inject dispatch preamble (same path product stages use).
+      try {
+        const leader = resolveSquadLeader(squads, squadId)
+        if (!leader.ok) {
+          throw new Error(leader.reason)
+        }
+        const worktreeId = retried.task.worktree_id
+        if (!worktreeId) {
+          return {
+            task: retried.task,
+            retriedIds: retried.retriedIds,
+            assigned: false,
+            warning: 'Task reopened as ready, but has no worktree_id for re-assign',
+            supervisor: getProductSupervisorSnapshot()
+          }
+        }
+        const agent = leader.leader.agent
+        const created = await runtime.launchAgentTerminal(`id:${worktreeId}`, {
+          agent,
+          prompt: '',
+          title: `retry:${retried.task.display_name || retried.task.id}`.slice(0, 60)
+        })
+        const handle = created.handle
+        const waitMs = params.waitTimeoutMs ?? 60_000
+        const deadline = Date.now() + waitMs
+        try {
+          await runtime.waitForTerminal(handle, {
+            condition: 'tui-idle',
+            timeoutMs: Math.min(waitMs, 45_000)
+          })
+        } catch {
+          // keep probing
+        }
+        while (Date.now() < deadline) {
+          if (await runtime.isTerminalRunningAgent(handle).catch(() => false)) {
+            break
+          }
+          await new Promise((r) => setTimeout(r, 400))
+        }
+        if (!(await runtime.isTerminalRunningAgent(handle).catch(() => false))) {
+          return {
+            task: db.getTask(params.id) ?? retried.task,
+            retriedIds: retried.retriedIds,
+            assigned: false,
+            warning: `Spawned ${handle} but agent never became ready`,
+            supervisor: getProductSupervisorSnapshot()
+          }
+        }
+        const readyTask = db.getTask(params.id) ?? retried.task
+        if (readyTask.status !== 'ready') {
+          db.reopenTask(readyTask.id)
+        }
+        const ctx = db.createDispatchContext(
+          readyTask.id,
+          handle,
+          runtime.getTerminalPaneKey(handle) ?? undefined
+        )
+        const preamble = buildDispatchPreamble({
+          taskId: readyTask.id,
+          dispatchId: ctx.id,
+          taskSpec: readyTask.spec,
+          coordinatorHandle: 'operator',
+          workerHandle: handle,
+          cliCommand: runtime.getTerminalOrchestrationCliCommand(handle)
+        })
+        if (params.inject !== false) {
+          await runtime.sendTerminalAgentPrompt(handle, preamble)
+        }
+        return {
+          task: db.getTask(params.id) ?? readyTask,
+          retriedIds: retried.retriedIds,
+          assigned: true,
+          to: handle,
+          dispatchId: ctx.id,
+          spawned: true,
+          supervisor: getProductSupervisorSnapshot()
+        }
+      } catch (err) {
+        return {
+          task: db.getTask(params.id) ?? retried.task,
+          retriedIds: retried.retriedIds,
+          assigned: false,
+          warning: err instanceof Error ? err.message : String(err),
+          supervisor: getProductSupervisorSnapshot()
+        }
+      }
+    }
+  }),
+
+  defineMethod({
+    name: 'orchestration.taskCommentList',
+    params: TaskCommentListParams,
+    handler: (params, { runtime }) => {
+      const db = runtime.getOrchestrationDb()
+      if (!db.getTask(params.task)) {
+        throw new Error(`Task not found: ${params.task}`)
+      }
+      const comments = db.listTaskComments(params.task)
+      return { comments, count: comments.length }
+    }
+  }),
+
+  defineMethod({
+    name: 'orchestration.taskCommentAdd',
+    params: TaskCommentAddParams,
+    handler: async (params, { runtime }) => {
+      const db = runtime.getOrchestrationDb()
+      const task = db.getTask(params.task)
+      if (!task) {
+        throw new Error(`Task not found: ${params.task}`)
+      }
+      const author = params.author?.trim() || params.from?.trim() || 'operator'
+      const kind = params.kind ?? 'comment'
+      const comment = db.addTaskComment({
+        taskId: params.task,
+        author,
+        body: params.body,
+        role: params.role,
+        kind,
+        parentId: params.parentId
+      })
+
+      const delivery = await deliverOperatorComment(db, runtime, {
+        taskId: params.task,
+        comment,
+        author,
+        body: params.body,
+        notify: params.notify,
+        reassign: params.reassign,
+        // Why: UI comments with @mentions must wake agents immediately (no debounce).
+        immediate: true
+      })
+
+      return {
+        comment,
+        notified: delivery.notified,
+        reassigned: delivery.reassigned,
+        reopened: delivery.reopened,
+        coalesced: delivery.coalesced,
+        mentions: delivery.mentions,
+        ...(delivery.warning ? { warning: delivery.warning } : {})
+      }
+    }
+  }),
+
+  defineMethod({
+    name: 'orchestration.taskThread',
+    params: TaskThreadParams,
+    handler: (params, { runtime }) => {
+      const db = runtime.getOrchestrationDb()
+      const task = db.getTask(params.task)
+      if (!task) {
+        throw new Error(`Task not found: ${params.task}`)
+      }
+      const comments = db.listTaskComments(params.task)
+      const agents = db.listTaskAgents(params.task)
+      const pipelineId = task.pipeline_id
+      const roster =
+        pipelineId && pipelineId === task.id
+          ? db.listPipelineRoster(pipelineId)
+          : pipelineId
+            ? db.listPipelineRoster(pipelineId)
+            : []
+      const active = agents.find((a) => a.status === 'dispatched') ?? agents[0] ?? null
+      return {
+        task,
+        comments,
+        agents,
+        roster,
+        inCharge: active
+          ? {
+              handle: active.handle,
+              role: active.role ?? task.pipeline_role,
+              status: active.status,
+              dispatchId: active.dispatchId
+            }
+          : {
+              handle: null,
+              role: task.pipeline_role,
+              status: task.status,
+              dispatchId: null
+            }
+      }
+    }
+  }),
+
+  defineMethod({
+    name: 'orchestration.taskScope',
+    params: TaskScopeParams,
+    handler: (params, { runtime }) => {
+      const db = runtime.getOrchestrationDb()
+      const hasScopeField =
+        params.priority !== undefined ||
+        params.repoId !== undefined ||
+        params.projectId !== undefined ||
+        params.worktreeId !== undefined ||
+        params.hostId !== undefined
+      if (!hasScopeField) {
+        throw new Error(
+          'taskScope requires at least one of: priority, repoId, projectId, worktreeId, hostId'
+        )
+      }
+      const task = db.updateTaskScope(params.id, {
+        priority: params.priority,
+        repoId: params.repoId,
+        projectId: params.projectId,
+        worktreeId: params.worktreeId,
+        hostId: params.hostId
+      })
       if (!task) {
         throw new Error(`Task not found: ${params.id}`)
       }
@@ -640,6 +1200,238 @@ export const ORCHESTRATION_METHODS: RpcMethod[] = [
   }),
 
   defineMethod({
+    name: 'orchestration.taskAssignSquad',
+    params: TaskAssignSquadParams,
+    handler: async (params, { runtime }) => {
+      const db = runtime.getOrchestrationDb()
+      const task = db.getTask(params.task)
+      if (!task) {
+        throw new Error(`Task not found: ${params.task}`)
+      }
+      if (task.status !== 'ready') {
+        throw new Error(
+          `Task ${params.task} is ${task.status}; only ready tasks can be assigned to a squad`
+        )
+      }
+
+      const squads = normalizeAgentSquads(runtime.getClientSettings().agentSquads)
+      const leader = resolveSquadLeader(squads, params.squad)
+      if (!leader.ok) {
+        throw new Error(leader.reason)
+      }
+      const squad = leader.squad
+      const squadBriefing = buildSquadLeaderBriefing(squad)
+      const inject = params.inject !== false
+      const spawnIfMissing = params.spawnIfMissing !== false
+      const waitTimeoutMs = params.waitTimeoutMs ?? 90_000
+
+      const worktreeSelector =
+        params.worktree?.trim() ||
+        (task.worktree_id ? `id:${task.worktree_id}` : undefined)
+      if (!worktreeSelector) {
+        throw new Error(
+          'Task has no worktree scope. Set --worktree on assign, or create the task with a worktree bound.'
+        )
+      }
+
+      const from = params.from ?? 'coordinator'
+      // Why: prefer spawning the routing target role — leader for leader_decide, else first member for idle_first.
+      const spawnAgent =
+        squad.routing === 'idle_first' && squad.members[0]
+          ? squad.members[0].agent
+          : squad.leader.agent
+
+      const resolveLiveSquadHandle = async (): Promise<string | undefined> => {
+        const { terminals } = await runtime.listTerminals(worktreeSelector)
+        const resolved = resolveGroupAddress(
+          `@squad:${squad.id}`,
+          from,
+          terminals,
+          (handle: string) => runtime.getAgentStatusForHandle(handle),
+          squads
+        )
+        // Why: title-match can hit bare shells named after the squad; only keep handles that actually run an agent.
+        for (const handle of resolved) {
+          try {
+            if (await runtime.isTerminalRunningAgent(handle)) {
+              return handle
+            }
+          } catch {
+            // Stale handle — try the next candidate.
+          }
+        }
+        return undefined
+      }
+
+      const spawnSquadTerminal = async (): Promise<string> => {
+        // Why: createTerminal({ launchAgent }) does not build the agent startup command
+        // (resolveAgentTerminalCreateOptions early-returns when launchAgent is already set).
+        // launchAgentTerminal builds the real Pi/Claude/Codex command + env.
+        const created = await runtime.launchAgentTerminal(worktreeSelector, {
+          agent: spawnAgent,
+          prompt: '',
+          title: `${squad.name}: ${task.task_title || task.display_name || task.spec}`.slice(0, 60)
+        })
+        return created.handle
+      }
+
+      const waitReady = async (handle: string, timeoutMs: number): Promise<void> => {
+        const deadline = Date.now() + timeoutMs
+        // Why: tui-idle alone is not enough for fresh launchAgent boots (Pi/Claude can still be starting).
+        try {
+          await runtime.waitForTerminal(handle, {
+            condition: 'tui-idle',
+            timeoutMs: Math.max(1_000, Math.min(timeoutMs, 20_000))
+          })
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err)
+          if (message.includes('terminal_handle_stale') || message.includes('terminal_gone')) {
+            throw err
+          }
+        }
+        while (Date.now() < deadline) {
+          try {
+            if (await runtime.isTerminalRunningAgent(handle)) {
+              return
+            }
+          } catch (err) {
+            const message = err instanceof Error ? err.message : String(err)
+            if (message.includes('terminal_handle_stale') || message.includes('terminal_gone')) {
+              throw err
+            }
+          }
+          await new Promise((resolve) => setTimeout(resolve, 500))
+        }
+      }
+
+      let targetHandle = await resolveLiveSquadHandle()
+      let spawned = false
+
+      if (!targetHandle) {
+        if (!spawnIfMissing) {
+          throw new Error(
+            `No live agent terminal found for squad "${squad.name}" in ${worktreeSelector}. ` +
+              `Start a ${spawnAgent} agent there, or pass spawnIfMissing (default true).`
+          )
+        }
+        try {
+          targetHandle = await spawnSquadTerminal()
+          spawned = true
+          await waitReady(targetHandle, waitTimeoutMs)
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err)
+          // Why: one remint/retry after spawn races (handle reissued before tui-idle).
+          if (
+            message.includes('terminal_handle_stale') ||
+            message.includes('terminal_gone') ||
+            message.includes('runtime_unavailable')
+          ) {
+            const recovered = await resolveLiveSquadHandle()
+            if (recovered) {
+              targetHandle = recovered
+              spawned = true
+            } else {
+              targetHandle = await spawnSquadTerminal()
+              spawned = true
+              await waitReady(targetHandle, Math.min(waitTimeoutMs, 30_000))
+            }
+          } else {
+            throw err
+          }
+        }
+      } else if (inject) {
+        try {
+          await waitReady(targetHandle, Math.min(waitTimeoutMs, 30_000))
+        } catch {
+          // Existing live agent — inject probe below is authoritative.
+        }
+      }
+
+      if (!targetHandle) {
+        throw new Error(`Failed to resolve a terminal for squad "${squad.name}".`)
+      }
+
+      if (inject) {
+        let hasAgent = false
+        try {
+          hasAgent = await runtime.isTerminalRunningAgent(targetHandle)
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err)
+          if (message.includes('terminal_handle_stale') || message.includes('terminal_gone')) {
+            const recovered = await resolveLiveSquadHandle()
+            if (recovered) {
+              targetHandle = recovered
+              hasAgent = await runtime.isTerminalRunningAgent(targetHandle)
+            }
+          } else {
+            throw err
+          }
+        }
+        if (!hasAgent) {
+          throw new Error(
+            `Cannot inject into terminal ${targetHandle}: no recognized ${spawnAgent} agent detected. ` +
+              'Open a Pi/Claude/Codex agent in that worktree, or retry assign so Orca can spawn one.'
+          )
+        }
+      }
+
+      const ctx = db.createDispatchContext(
+        params.task,
+        targetHandle,
+        runtime.getTerminalPaneKey(targetHandle) ?? undefined
+      )
+
+      void (params.originatorId
+        ? classifyDelegation({
+            parent: classifyDirectHuman({
+              originatorId: params.originatorId,
+              evidenceKind: 'dispatch',
+              evidenceRefId: ctx.id
+            }),
+            evidenceKind: 'dispatch',
+            evidenceRefId: ctx.id,
+            delegatedFromTaskId: task.id,
+            isLeaderTask: true
+          })
+        : null)
+
+      const preamble = buildDispatchPreamble({
+        taskId: task.id,
+        dispatchId: ctx.id,
+        taskSpec: task.spec,
+        coordinatorHandle: from,
+        workerHandle: targetHandle,
+        devMode: params.devMode,
+        cliCommand: runtime.getTerminalOrchestrationCliCommand(targetHandle),
+        squadBriefing
+      })
+
+      let injected = false
+      if (inject) {
+        try {
+          await runtime.sendTerminalAgentPrompt(targetHandle, preamble)
+          injected = true
+        } catch (err) {
+          db.failDispatch(ctx.id, err instanceof Error ? err.message : String(err))
+          const message = err instanceof Error ? err.message : String(err)
+          throw new Error(
+            `Assigned dispatch ${ctx.id} but failed to inject prompt into ${targetHandle}: ${message}`
+          )
+        }
+      }
+
+      return {
+        task: db.getTask(params.task),
+        dispatch: ctx,
+        injected,
+        spawned,
+        to: targetHandle,
+        squad: { id: squad.id, name: squad.name, routing: squad.routing }
+      }
+    }
+  }),
+
+  defineMethod({
     name: 'orchestration.dispatchShow',
     params: DispatchShowParams,
     handler: (params, { runtime }) => {
@@ -738,6 +1530,207 @@ export const ORCHESTRATION_METHODS: RpcMethod[] = [
   }),
 
   ...ORCHESTRATION_GATE_METHODS,
+
+  defineMethod({
+    name: 'orchestration.productStart',
+    params: ProductStartParams,
+    handler: async (params, { runtime }) => {
+      const db = runtime.getOrchestrationDb()
+      const settings = runtime.getClientSettings() as {
+        agentSquads?: unknown
+        defaultTuiAgent?: string | null
+      }
+
+      // Seed role squads (researcher/backend/tester/reviewer) when missing.
+      if (params.ensureSquads !== false) {
+        const existing = normalizeAgentSquads(settings.agentSquads)
+        const seed = defaultSquadSeed(settings.defaultTuiAgent)
+        const byId = new Map(existing.map((s) => [s.id, s]))
+        let changed = false
+        for (const squad of seed) {
+          if (!byId.has(squad.id)) {
+            byId.set(squad.id, squad as never)
+            changed = true
+          }
+        }
+        if (changed && typeof runtime.updateClientSettings === 'function') {
+          runtime.updateClientSettings({ agentSquads: [...byId.values()] })
+        }
+      }
+
+      const repo = await runtime.showRepo(params.repo)
+      let worktreeId = params.worktree?.trim() || null
+      let worktreeCreated = false
+      let issueNumber: number | null = null
+
+      if (params.createIssue) {
+        try {
+          const issue = await runtime.createRepoIssue(
+            params.repo,
+            params.title?.trim() || params.goal.trim().slice(0, 120),
+            [
+              params.goal.trim(),
+              '',
+              '---',
+              'Opened by Orca product pipeline (research → implement → test → review).'
+            ].join('\n')
+          )
+          issueNumber =
+            typeof (issue as { number?: unknown })?.number === 'number'
+              ? ((issue as { number: number }).number as number)
+              : null
+        } catch (err) {
+          // Non-fatal: pipeline still runs without a GitHub issue.
+          void err
+        }
+      }
+
+      if (!worktreeId) {
+        const branchSlug = (params.title || params.goal)
+          .toLowerCase()
+          .replace(/[^a-z0-9]+/g, '-')
+          .replace(/^-+|-+$/g, '')
+          .slice(0, 40)
+        const created = await runtime.createManagedWorktree({
+          repoSelector: params.repo,
+          name: branchSlug || `product-${Date.now().toString(36)}`,
+          baseBranch: params.baseBranch,
+          displayName: params.title?.trim() || params.goal.trim().slice(0, 80),
+          comment: `Product pipeline: ${params.goal.trim().slice(0, 200)}`,
+          linkedIssue: issueNumber,
+          activate: true
+        })
+        worktreeId = created.worktree?.id ?? null
+        worktreeCreated = true
+        if (!worktreeId) {
+          throw new Error('worktree.create returned without an id')
+        }
+      } else if (!worktreeId.includes('::')) {
+        // Allow path/name selectors: resolve via show
+        const shown = await runtime.showManagedWorktree(worktreeId)
+        worktreeId = shown.id
+      }
+
+      const pipeline = createProductPipelineTasks(db, {
+        productGoal: params.goal,
+        title: params.title,
+        repoId: repo.id,
+        worktreeId,
+        hostId: 'local',
+        priority: params.priority ?? 'high'
+      })
+
+      let dispatches: Array<{
+        taskId: string
+        to: string
+        role: string
+        spawned: boolean
+      }> = []
+      if (params.autoDispatch !== false) {
+        dispatches = await dispatchAllReadyPipelineStages(db, runtime, pipeline.root.id, {
+          waitTimeoutMs: params.waitTimeoutMs ?? 90_000,
+          devMode: params.devMode,
+          coordinatorHandle: 'orchestrator'
+        })
+      }
+
+      // Why: set-and-forget — supervisor keeps dispatching unlocked stages + recovering hung agents until done/failed.
+      watchProductPipeline(pipeline.root.id, db, runtime, {
+        devMode: params.devMode === true,
+        pollIntervalMs: 8_000
+      })
+
+      return {
+        pipelineId: pipeline.root.id,
+        root: pipeline.root,
+        stages: pipeline.stages,
+        worktreeId,
+        worktreeCreated,
+        issueNumber,
+        dispatches,
+        supervisor: getProductSupervisorSnapshot(),
+        loop: 'research → implement → test → review (auto-rework on FAIL; supervisor watches)'
+      }
+    }
+  }),
+
+  defineMethod({
+    name: 'orchestration.productTick',
+    params: ProductTickParams,
+    handler: async (params, { runtime }) => {
+      const db = runtime.getOrchestrationDb()
+      const pipelineId = params.pipeline.trim()
+      const root = db.getTask(pipelineId)
+      if (!root || root.pipeline_id !== root.id) {
+        throw new Error(`Unknown product pipeline: ${pipelineId}`)
+      }
+      const dispatches = await dispatchAllReadyPipelineStages(db, runtime, pipelineId, {
+        waitTimeoutMs: params.waitTimeoutMs ?? 90_000,
+        devMode: params.devMode,
+        coordinatorHandle: 'orchestrator'
+      })
+      // Keep watching after manual tick so the loop continues without another start.
+      watchProductPipeline(pipelineId, db, runtime, {
+        devMode: params.devMode === true
+      })
+      const stages = db.listTasksByPipeline(pipelineId)
+      return {
+        pipelineId,
+        root: db.getTask(pipelineId),
+        stages,
+        dispatches,
+        ready: stages.filter((t) => t.status === 'ready').length,
+        dispatched: stages.filter((t) => t.status === 'dispatched').length,
+        completed: stages.filter((t) => t.status === 'completed').length,
+        failed: stages.filter((t) => t.status === 'failed').length,
+        supervisor: getProductSupervisorSnapshot()
+      }
+    }
+  }),
+
+  defineMethod({
+    name: 'orchestration.productWatch',
+    params: ProductWatchParams,
+    handler: (params, { runtime }) => {
+      const db = runtime.getOrchestrationDb()
+      const pipelineId = params.pipeline.trim()
+      const root = db.getTask(pipelineId)
+      if (!root || root.pipeline_id !== root.id) {
+        throw new Error(`Unknown product pipeline: ${pipelineId}`)
+      }
+      watchProductPipeline(pipelineId, db, runtime, {
+        pollIntervalMs: params.pollIntervalMs,
+        devMode: params.devMode === true
+      })
+      return { pipelineId, supervisor: getProductSupervisorSnapshot() }
+    }
+  }),
+
+  defineMethod({
+    name: 'orchestration.productUnwatch',
+    params: ProductUnwatchParams,
+    handler: (params) => {
+      unwatchProductPipeline(params.pipeline)
+      return { pipelineId: params.pipeline.trim(), supervisor: getProductSupervisorSnapshot() }
+    }
+  }),
+
+  defineMethod({
+    name: 'orchestration.productSupervisor',
+    params: ProductSupervisorParams,
+    handler: () => ({
+      supervisor: getProductSupervisorSnapshot()
+    })
+  }),
+
+  defineMethod({
+    name: 'orchestration.productStop',
+    params: ProductSupervisorParams,
+    handler: () => {
+      stopProductSupervisor()
+      return { supervisor: getProductSupervisorSnapshot() }
+    }
+  }),
 
   defineMethod({
     name: 'orchestration.reset',

@@ -6,6 +6,7 @@ import {
   resolveVisibleTaskProvider
 } from '../../../../shared/task-providers'
 import { cn } from '@/lib/utils'
+import { AsanaIcon } from '@/components/icons/AsanaIcon'
 import { JiraIcon } from '@/components/icons/JiraIcon'
 import { LinearIcon } from '@/components/icons/LinearIcon'
 import { Label } from '../ui/label'
@@ -75,6 +76,19 @@ const TASK_PROVIDER_OPTIONS: readonly {
       )
     },
     Icon: ({ className }) => <JiraIcon className={className} />
+  },
+  {
+    id: 'asana',
+    get label() {
+      return translate('auto.components.settings.TasksPane.asana', 'Asana')
+    },
+    get description() {
+      return translate(
+        'auto.components.settings.TasksPane.asanaDesc',
+        'Show Asana in the Tasks source picker and sidebar shortcuts.'
+      )
+    },
+    Icon: ({ className }) => <AsanaIcon className={className} />
   }
 ]
 

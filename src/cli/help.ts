@@ -92,6 +92,19 @@ Orchestration:
   orchestration task-create Create an orchestration task
   orchestration task-list   List orchestration tasks
   orchestration task-update Update a task status
+  orchestration task-stop   Stop a task or product pipeline
+  orchestration task-delete Delete a task or product pipeline
+  orchestration task-retry  Retry a stopped/failed/hung task
+  orchestration task-comment Add a comment to a task thread
+  orchestration task-thread Show comments + agents in charge
+  orchestration task-scope  Update task priority or scope pointers
+  orchestration task-assign-squad Assign a ready task to a squad and run it
+  orchestration product-start Full product pipeline (worktree+roles+loop)
+  orchestration product-tick  Continue product pipeline stage dispatches
+  orchestration product-watch Watch pipeline until done (auto-tick)
+  orchestration product-unwatch Stop watching one pipeline
+  orchestration product-supervisor Show supervisor status
+  orchestration product-stop  Stop product supervisor loop
   orchestration dispatch    Dispatch a task to a terminal
   orchestration dispatch-show Show dispatch context for a task
   orchestration run         Start the coordinator loop

@@ -118,6 +118,11 @@ export function IssuesPanelDetailModals({
         issueNumber={selectedGitHubItem.number}
         issueTitle={selectedGitHubItem.title}
         issueUrl={selectedGitHubItem.url}
+        issueBody={
+          'body' in selectedGitHubItem
+            ? String((selectedGitHubItem as { body?: string | null }).body ?? '')
+            : undefined
+        }
         labels={githubLabels}
         assignees={githubAssignees}
         state={githubState}
@@ -144,6 +149,11 @@ export function IssuesPanelDetailModals({
         issueNumber={selectedGitLabItem.number}
         issueTitle={selectedGitLabItem.title}
         issueUrl={selectedGitLabItem.url}
+        issueBody={
+          'description' in selectedGitLabItem
+            ? String((selectedGitLabItem as { description?: string | null }).description ?? '')
+            : undefined
+        }
         labels={gitlabLabels}
         assignees={gitlabAssignees}
         state={gitlabState}

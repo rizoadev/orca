@@ -1737,6 +1737,41 @@ const api = {
       ipcRenderer.invoke('linear:teamMembers', args)
   },
 
+  asana: {
+    getStatus: (): Promise<import('../shared/asana-types').AsanaConnectionStatus> =>
+      ipcRenderer.invoke('asana:getStatus'),
+    connect: (args: import('../shared/asana-types').AsanaConnectArgs): Promise<
+      import('../shared/asana-types').AsanaConnectionStatus
+    > => ipcRenderer.invoke('asana:connect', args),
+    disconnect: (): Promise<import('../shared/asana-types').AsanaConnectionStatus> =>
+      ipcRenderer.invoke('asana:disconnect'),
+    selectWorkspace: (workspaceGid: string | null): Promise<
+      import('../shared/asana-types').AsanaConnectionStatus
+    > => ipcRenderer.invoke('asana:selectWorkspace', workspaceGid),
+    listProjects: (workspaceGid?: string): Promise<import('../shared/asana-types').AsanaProject[]> =>
+      ipcRenderer.invoke('asana:listProjects', workspaceGid),
+    listSections: (projectGid: string): Promise<import('../shared/asana-types').AsanaSection[]> =>
+      ipcRenderer.invoke('asana:listSections', projectGid),
+    listTasks: (args?: {
+      projectGid?: string
+      workspaceGid?: string
+      filter?: import('../shared/asana-types').AsanaTaskFilter
+      limit?: number
+    }): Promise<import('../shared/asana-types').AsanaTask[]> =>
+      ipcRenderer.invoke('asana:listTasks', args),
+    getTask: (taskGid: string): Promise<import('../shared/asana-types').AsanaTask> =>
+      ipcRenderer.invoke('asana:getTask', taskGid),
+    createTask: (
+      args: import('../shared/asana-types').AsanaCreateTaskArgs
+    ): Promise<import('../shared/asana-types').AsanaCreateTaskResult> =>
+      ipcRenderer.invoke('asana:createTask', args),
+    updateTask: (args: {
+      taskGid: string
+      update: import('../shared/asana-types').AsanaTaskUpdate
+    }): Promise<import('../shared/asana-types').AsanaMutationResult> =>
+      ipcRenderer.invoke('asana:updateTask', args)
+  },
+
   jira: {
     connect: (args: {
       siteUrl: string

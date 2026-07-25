@@ -16,6 +16,13 @@ describe('normalizeRightSidebarRoute', () => {
     })
   })
 
+  it('preserves the orchestration route', () => {
+    expect(normalizeRightSidebarRoute('orchestration')).toEqual({
+      rightSidebarTab: 'orchestration',
+      rightSidebarExplorerView: 'files'
+    })
+  })
+
   it('preserves the remote chat route', () => {
     expect(normalizeRightSidebarRoute('remote-chat')).toEqual({
       rightSidebarTab: 'remote-chat',

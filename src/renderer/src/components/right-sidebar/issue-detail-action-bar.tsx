@@ -1,10 +1,11 @@
 import React, { useMemo, useState } from 'react'
-import { Bot, ChevronDown, ExternalLink, LoaderCircle, Sparkles } from 'lucide-react'
+import { Bot, ChevronDown, ExternalLink, Layers, LoaderCircle, Sparkles } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { useDetectedAgents } from '@/hooks/useDetectedAgents'
 import { AgentIcon, getAgentCatalog } from '@/lib/agent-catalog'
+import { createOrchestrationTaskFromIssue } from '@/lib/issue-to-orchestration-task'
 import { useAppStore } from '@/store'
 import { useActiveWorktree } from '@/store/selectors'
 import { translate } from '@/i18n/i18n'
@@ -164,6 +165,9 @@ export function IssueDetailActionBar(props: DetailActionBarProps): React.JSX.Ele
 
   const [planning, setPlanning] = useState(false)
   const [working, setWorking] = useState(false)
+  const [converting, setConverting] = useState(false)
+  const setRightSidebarTab = useAppStore((s) => s.setRightSidebarTab)
+  const openOrchestrationBoardPage = useAppStore((s) => s.openOrchestrationBoardPage)
   const issueState =
     props.state ??
     (props.provider === 'github'
@@ -243,6 +247,50 @@ export function IssueDetailActionBar(props: DetailActionBarProps): React.JSX.Ele
     }
   }
 
+  const convertToOrchestration = async (): Promise<void> => {
+    setConverting(true)
+    try {
+      const result = await createOrchestrationTaskFromIssue({
+        provider: props.provider,
+        issueNumber: props.issueNumber,
+        title: props.issueTitle,
+        url: props.issueUrl,
+        body: props.issueBody ?? '',
+        repoId: props.repo.id,
+        worktreeId: activeWorktree?.id ?? null,
+        hostId: props.repo.connectionId ? `ssh:${props.repo.connectionId}` : 'local'
+      })
+      setRightSidebarTab('orchestration')
+      toast.success(
+        result.coalesced
+          ? translate(
+              'auto.components.right.sidebar.issuesPanel.orchestrationExists',
+              'Orchestration task already exists for #{n}',
+              { n: props.issueNumber }
+            )
+          : translate(
+              'auto.components.right.sidebar.issuesPanel.orchestrationCreated',
+              'Created orchestration task for #{n}',
+              { n: props.issueNumber }
+            ),
+        {
+          description: result.task.id,
+          action: {
+            label: translate(
+              'auto.components.right.sidebar.issuesPanel.openBoard',
+              'Board'
+            ),
+            onClick: () => openOrchestrationBoardPage()
+          }
+        }
+      )
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : String(err))
+    } finally {
+      setConverting(false)
+    }
+  }
+
   return (
     <div className="flex flex-wrap items-center gap-1.5">
       <IssueDetailMetadataControls
@@ -266,7 +314,7 @@ export function IssueDetailActionBar(props: DetailActionBarProps): React.JSX.Ele
       <AgentPickerMenu
         agents={agents}
         detectingAgents={detectingAgents}
-        disabled={planning || working}
+        disabled={planning || working || converting}
         title={translate(
           'auto.components.right.sidebar.issuesPanel.askAiPlanShort',
           'Ask AI to plan'
@@ -288,7 +336,7 @@ export function IssueDetailActionBar(props: DetailActionBarProps): React.JSX.Ele
       <AgentPickerMenu
         agents={agents}
         detectingAgents={detectingAgents}
-        disabled={planning || working}
+        disabled={planning || working || converting}
         title={translate(
           'auto.components.right.sidebar.issuesPanel.askAiWorkShort',
           'Work with AI'
@@ -315,6 +363,27 @@ export function IssueDetailActionBar(props: DetailActionBarProps): React.JSX.Ele
           void runWork(agent, mode ?? 'background')
         }}
       />
+
+      <Button
+        type="button"
+        variant="secondary"
+        size="xs"
+        className="h-6 gap-1 px-2"
+        disabled={converting || planning || working}
+        onClick={() => {
+          void convertToOrchestration()
+        }}
+      >
+        {converting ? (
+          <LoaderCircle className="size-3 animate-spin" />
+        ) : (
+          <Layers className="size-3" />
+        )}
+        {translate(
+          'auto.components.right.sidebar.issuesPanel.toOrchestrationShort',
+          'To orchestration'
+        )}
+      </Button>
 
       <Button
         type="button"

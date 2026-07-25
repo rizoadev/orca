@@ -5,11 +5,14 @@ import type {
   MessageType,
   MessagePriority,
   TaskStatus,
+  TaskPriority,
   DispatchStatus,
   GateStatus,
   CoordinatorStatus,
   MessageRow,
   TaskRow,
+  TaskCommentRow,
+  TaskCommentKind,
   DispatchContextRow,
   DecisionGateRow,
   CoordinatorRun
@@ -54,11 +57,124 @@ const TASK_ROW_BYTES_SQL = retainedTextBytesSql([
   'tasks.display_name',
   'tasks.spec',
   'tasks.status',
+  'tasks.priority',
+  'tasks.repo_id',
+  'tasks.project_id',
+  'tasks.worktree_id',
+  'tasks.host_id',
+  'tasks.pipeline_id',
+  'tasks.pipeline_stage',
+  'tasks.pipeline_role',
+  'tasks.pipeline_attempt',
   'tasks.deps',
   'tasks.result',
   'tasks.created_at',
   'tasks.completed_at'
 ])
+
+// Why: queue claim and board list prefer urgent work first; created_at is the FIFO tiebreaker.
+const TASK_PRIORITY_ORDER_SQL = `CASE tasks.priority
+  WHEN 'urgent' THEN 0
+  WHEN 'high' THEN 1
+  WHEN 'medium' THEN 2
+  WHEN 'low' THEN 3
+  ELSE 2
+END`
+
+const TASK_PRIORITIES: readonly TaskPriority[] = ['low', 'medium', 'high', 'urgent']
+
+export type TaskListFilter = {
+  status?: TaskStatus
+  ready?: boolean
+  repoId?: string
+  projectId?: string
+  worktreeId?: string
+  hostId?: string
+  priority?: TaskPriority
+}
+
+function normalizeTaskPriority(priority: TaskPriority | string | undefined): TaskPriority {
+  if (priority && (TASK_PRIORITIES as readonly string[]).includes(priority)) {
+    return priority as TaskPriority
+  }
+  return 'medium'
+}
+
+/** Trim + empty→null so list filters and writes share one identity rule. */
+function normalizeScopeId(value: string | null | undefined): string | null {
+  if (value == null) {
+    return null
+  }
+  const trimmed = value.trim()
+  return trimmed.length > 0 ? trimmed : null
+}
+
+/** Older rows / partial selects may omit v7 columns; never surface undefined to callers. */
+function hydrateTaskRow<T extends TaskRow>(row: T): T {
+  return {
+    ...row,
+    priority: normalizeTaskPriority(row.priority),
+    repo_id: row.repo_id ?? null,
+    project_id: row.project_id ?? null,
+    worktree_id: row.worktree_id ?? null,
+    host_id: row.host_id ?? null,
+    pipeline_id: row.pipeline_id ?? null,
+    pipeline_stage: row.pipeline_stage ?? null,
+    pipeline_role: row.pipeline_role ?? null,
+    pipeline_attempt:
+      typeof row.pipeline_attempt === 'number' && Number.isFinite(row.pipeline_attempt)
+        ? row.pipeline_attempt
+        : null
+  }
+}
+
+function buildTaskListWhereClauses(filter?: TaskListFilter): {
+  whereClauses: string[]
+  params: Database.BindValue[]
+} {
+  const whereClauses: string[] = []
+  const params: Database.BindValue[] = []
+  if (filter?.ready) {
+    whereClauses.push("tasks.status = 'ready'")
+  } else if (filter?.status) {
+    whereClauses.push('tasks.status = ?')
+    params.push(filter.status)
+  }
+  if (filter?.repoId) {
+    whereClauses.push('tasks.repo_id = ?')
+    params.push(filter.repoId)
+  }
+  if (filter?.projectId) {
+    whereClauses.push('tasks.project_id = ?')
+    params.push(filter.projectId)
+  }
+  if (filter?.worktreeId) {
+    whereClauses.push('tasks.worktree_id = ?')
+    params.push(filter.worktreeId)
+  }
+  if (filter?.hostId) {
+    whereClauses.push('tasks.host_id = ?')
+    params.push(filter.hostId)
+  }
+  if (filter?.priority) {
+    whereClauses.push('tasks.priority = ?')
+    params.push(normalizeTaskPriority(filter.priority))
+  }
+  return { whereClauses, params }
+}
+
+function buildTaskListWhere(
+  filter: TaskListFilter | undefined,
+  options: { tableAlias: boolean }
+): { whereSql: string; params: Database.BindValue[] } {
+  const { whereClauses, params } = buildTaskListWhereClauses(filter)
+  // listTasks queries `FROM tasks` without alias; strip the `tasks.` prefix for bare column refs.
+  const clauses = options.tableAlias
+    ? whereClauses
+    : whereClauses.map((clause) => clause.replace(/^tasks\./, ''))
+  const whereSql = clauses.length > 0 ? `${clauses.join(' AND ')} AND ` : ''
+  return { whereSql, params }
+}
 const DISPATCH_ROW_BYTES_SQL = retainedTextBytesSql([
   'dispatch_contexts.id',
   'dispatch_contexts.task_id',
@@ -105,11 +221,14 @@ export type {
   MessageType,
   MessagePriority,
   TaskStatus,
+  TaskPriority,
+  TaskCommentKind,
   DispatchStatus,
   GateStatus,
   CoordinatorStatus,
   MessageRow,
   TaskRow,
+  TaskCommentRow,
   DispatchContextRow,
   DecisionGateRow,
   CoordinatorRun
@@ -172,8 +291,8 @@ function exposeMessageListTimestamps(messages: MessageRow[]): MessageRow[] {
   return messages.map(exposeMessageTimestamps)
 }
 
-// Schema versions: v2 'heartbeat'+last_heartbeat_at, v3 delivered_at, v4 task-creator terminal, v5 task_title/display_name, v6 pane-identity columns.
-const SCHEMA_VERSION = 6
+// Schema versions: v2 heartbeat, v3 delivered_at, v4 creator terminal, v5 titles, v6 pane identity, v7 scope, v8 product pipeline, v9 task comments/thread.
+const SCHEMA_VERSION = 9
 
 export class OrchestrationDb {
   private db: Database.Database
@@ -253,6 +372,16 @@ export class OrchestrationDb {
             'pending', 'ready', 'dispatched',
             'completed', 'failed', 'blocked'
           )),
+        priority      TEXT NOT NULL DEFAULT 'medium'
+          CHECK(priority IN ('low', 'medium', 'high', 'urgent')),
+        repo_id       TEXT,
+        project_id    TEXT,
+        worktree_id   TEXT,
+        host_id       TEXT,
+        pipeline_id   TEXT,
+        pipeline_stage TEXT,
+        pipeline_role TEXT,
+        pipeline_attempt INTEGER,
         deps          TEXT NOT NULL DEFAULT '[]',
         result        TEXT,
         created_at    TEXT NOT NULL DEFAULT (datetime('now')),
@@ -305,8 +434,24 @@ export class OrchestrationDb {
         created_at          TEXT NOT NULL DEFAULT (datetime('now')),
         completed_at        TEXT
       );
+
+      CREATE TABLE IF NOT EXISTS task_comments (
+        id          TEXT PRIMARY KEY,
+        task_id     TEXT NOT NULL,
+        author      TEXT NOT NULL,
+        role        TEXT,
+        kind        TEXT NOT NULL DEFAULT 'comment'
+          CHECK(kind IN ('comment', 'result', 'system', 'dispatch')),
+        body        TEXT NOT NULL,
+        parent_id   TEXT,
+        created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+      CREATE INDEX IF NOT EXISTS idx_task_comments_task ON task_comments(task_id, created_at);
     `)
     this.createUndeliveredInboxIndexIfPossible()
+    // Why: v7/v8 indexes reference columns that older DBs lack until migrate() runs; probe before CREATE INDEX.
+    this.createTaskScopeIndexesIfPossible()
+    this.createTaskPipelineIndexIfPossible()
   }
 
   // Why: CREATE TABLE IF NOT EXISTS won't alter existing DBs; migrate in a txn that bumps user_version only on success (atomic all-or-nothing).
@@ -394,7 +539,63 @@ export class OrchestrationDb {
           this.db.exec(`ALTER TABLE messages ADD COLUMN sender_pane_key TEXT`)
         }
       }
+      // v6 → v7: priority + soft scope pointers (repo/project/worktree/host). Stored in userData, not per-worktree.
+      if (current < 7) {
+        if (!this.hasColumn('tasks', 'priority')) {
+          this.db.exec(
+            `ALTER TABLE tasks ADD COLUMN priority TEXT NOT NULL DEFAULT 'medium'`
+          )
+        }
+        if (!this.hasColumn('tasks', 'repo_id')) {
+          this.db.exec(`ALTER TABLE tasks ADD COLUMN repo_id TEXT`)
+        }
+        if (!this.hasColumn('tasks', 'project_id')) {
+          this.db.exec(`ALTER TABLE tasks ADD COLUMN project_id TEXT`)
+        }
+        if (!this.hasColumn('tasks', 'worktree_id')) {
+          this.db.exec(`ALTER TABLE tasks ADD COLUMN worktree_id TEXT`)
+        }
+        if (!this.hasColumn('tasks', 'host_id')) {
+          this.db.exec(`ALTER TABLE tasks ADD COLUMN host_id TEXT`)
+        }
+        this.createTaskScopeIndexesIfPossible()
+      }
+      // v7 → v8: product pipeline linkage for multi-role research→implement→test→review loops.
+      if (current < 8) {
+        if (!this.hasColumn('tasks', 'pipeline_id')) {
+          this.db.exec(`ALTER TABLE tasks ADD COLUMN pipeline_id TEXT`)
+        }
+        if (!this.hasColumn('tasks', 'pipeline_stage')) {
+          this.db.exec(`ALTER TABLE tasks ADD COLUMN pipeline_stage TEXT`)
+        }
+        if (!this.hasColumn('tasks', 'pipeline_role')) {
+          this.db.exec(`ALTER TABLE tasks ADD COLUMN pipeline_role TEXT`)
+        }
+        if (!this.hasColumn('tasks', 'pipeline_attempt')) {
+          this.db.exec(`ALTER TABLE tasks ADD COLUMN pipeline_attempt INTEGER`)
+        }
+        this.createTaskPipelineIndexIfPossible()
+      }
+      // v8 → v9: Multica-style task comment threads + system/result posts.
+      if (current < 9) {
+        this.db.exec(`
+          CREATE TABLE IF NOT EXISTS task_comments (
+            id          TEXT PRIMARY KEY,
+            task_id     TEXT NOT NULL,
+            author      TEXT NOT NULL,
+            role        TEXT,
+            kind        TEXT NOT NULL DEFAULT 'comment'
+              CHECK(kind IN ('comment', 'result', 'system', 'dispatch')),
+            body        TEXT NOT NULL,
+            parent_id   TEXT,
+            created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+          );
+          CREATE INDEX IF NOT EXISTS idx_task_comments_task ON task_comments(task_id, created_at);
+        `)
+      }
       this.createUndeliveredInboxIndexIfPossible()
+      this.createTaskScopeIndexesIfPossible()
+      this.createTaskPipelineIndexIfPossible()
 
       this.db.pragma(`user_version = ${SCHEMA_VERSION}`)
       this.db.exec('COMMIT')
@@ -407,6 +608,24 @@ export class OrchestrationDb {
   private hasColumn(table: string, column: string): boolean {
     const rows = this.db.pragma(`table_info(${table})`) as { name: string }[]
     return rows.some((r) => r.name === column)
+  }
+
+  private createTaskScopeIndexesIfPossible(): void {
+    if (!this.hasColumn('tasks', 'repo_id') || !this.hasColumn('tasks', 'priority')) {
+      return
+    }
+    this.db.exec(`
+      CREATE INDEX IF NOT EXISTS idx_tasks_repo ON tasks(repo_id);
+      CREATE INDEX IF NOT EXISTS idx_tasks_worktree ON tasks(worktree_id);
+      CREATE INDEX IF NOT EXISTS idx_tasks_priority_created ON tasks(priority, created_at);
+    `)
+  }
+
+  private createTaskPipelineIndexIfPossible(): void {
+    if (!this.hasColumn('tasks', 'pipeline_id')) {
+      return
+    }
+    this.db.exec(`CREATE INDEX IF NOT EXISTS idx_tasks_pipeline ON tasks(pipeline_id)`)
   }
 
   private createUndeliveredInboxIndexIfPossible(): void {
@@ -666,9 +885,30 @@ export class OrchestrationDb {
     deps?: string[]
     parentId?: string
     createdByTerminalHandle?: string
+    priority?: TaskPriority
+    repoId?: string
+    projectId?: string
+    worktreeId?: string
+    hostId?: string
+    pipelineId?: string
+    pipelineStage?: string
+    pipelineRole?: string
+    pipelineAttempt?: number
   }): TaskRow {
     const id = generateId('task')
     const deps = task.deps ?? []
+    const priority = normalizeTaskPriority(task.priority)
+    const repoId = normalizeScopeId(task.repoId)
+    const projectId = normalizeScopeId(task.projectId)
+    const worktreeId = normalizeScopeId(task.worktreeId)
+    const hostId = normalizeScopeId(task.hostId)
+    const pipelineId = normalizeScopeId(task.pipelineId)
+    const pipelineStage = normalizeScopeId(task.pipelineStage)
+    const pipelineRole = normalizeScopeId(task.pipelineRole)
+    const pipelineAttempt =
+      typeof task.pipelineAttempt === 'number' && Number.isFinite(task.pipelineAttempt)
+        ? Math.max(1, Math.floor(task.pipelineAttempt))
+        : null
     assertOrchestrationStringListFits('Task dependencies', deps)
     assertOrchestrationWriteFits('Task', [
       task.spec,
@@ -676,6 +916,14 @@ export class OrchestrationDb {
       task.displayName,
       task.parentId,
       task.createdByTerminalHandle,
+      priority,
+      repoId,
+      projectId,
+      worktreeId,
+      hostId,
+      pipelineId,
+      pipelineStage,
+      pipelineRole,
       ...deps
     ])
     const depsJson = JSON.stringify(deps)
@@ -692,11 +940,23 @@ export class OrchestrationDb {
       display.displayName,
       depsJson,
       task.parentId,
-      task.createdByTerminalHandle
+      task.createdByTerminalHandle,
+      priority,
+      repoId,
+      projectId,
+      worktreeId,
+      hostId,
+      pipelineId,
+      pipelineStage,
+      pipelineRole
     ])
     this.db
       .prepare(
-        'INSERT INTO tasks (id, parent_id, created_by_terminal_handle, task_title, display_name, spec, status, deps) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
+        `INSERT INTO tasks (
+          id, parent_id, created_by_terminal_handle, task_title, display_name,
+          spec, status, priority, repo_id, project_id, worktree_id, host_id,
+          pipeline_id, pipeline_stage, pipeline_role, pipeline_attempt, deps
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       )
       .run(
         id,
@@ -706,52 +966,127 @@ export class OrchestrationDb {
         display.displayName || null,
         task.spec,
         status,
+        priority,
+        repoId,
+        projectId,
+        worktreeId,
+        hostId,
+        pipelineId,
+        pipelineStage,
+        pipelineRole,
+        pipelineAttempt,
         depsJson
       )
     return this.getTask(id)!
   }
 
+  listTasksByPipeline(pipelineId: string): TaskRow[] {
+    const id = pipelineId.trim()
+    if (!id) {
+      return []
+    }
+    return this.readRows<TaskRow>(
+      `SELECT * FROM tasks
+       WHERE pipeline_id = ? AND (${TASK_ROW_BYTES_SQL}) <= ${ORCHESTRATION_QUERY_MAX_ROW_UTF8_BYTES}
+       ORDER BY created_at, rowid`,
+      [id]
+    ).map(hydrateTaskRow)
+  }
+
+  /** Bind product-pipeline metadata after insert (e.g. root pipeline_id = self). */
+  setTaskPipelineMeta(
+    id: string,
+    meta: {
+      pipelineId?: string | null
+      pipelineStage?: string | null
+      pipelineRole?: string | null
+      pipelineAttempt?: number | null
+      status?: TaskStatus
+      result?: string
+    }
+  ): TaskRow | undefined {
+    const task = this.getTask(id)
+    if (!task) {
+      return undefined
+    }
+    const pipelineId =
+      meta.pipelineId !== undefined ? normalizeScopeId(meta.pipelineId || undefined) : task.pipeline_id
+    const pipelineStage =
+      meta.pipelineStage !== undefined
+        ? normalizeScopeId(meta.pipelineStage || undefined)
+        : task.pipeline_stage
+    const pipelineRole =
+      meta.pipelineRole !== undefined
+        ? normalizeScopeId(meta.pipelineRole || undefined)
+        : task.pipeline_role
+    const pipelineAttempt =
+      meta.pipelineAttempt !== undefined
+        ? meta.pipelineAttempt === null
+          ? null
+          : Math.max(1, Math.floor(meta.pipelineAttempt))
+        : task.pipeline_attempt
+    const status = meta.status ?? task.status
+    const result = meta.result !== undefined ? meta.result : task.result
+    const completedAt =
+      status === 'completed' || status === 'failed' ? new Date().toISOString() : task.completed_at
+    assertOrchestrationWriteFits('Task pipeline meta', [
+      pipelineId,
+      pipelineStage,
+      pipelineRole,
+      result
+    ])
+    this.db
+      .prepare(
+        `UPDATE tasks
+         SET pipeline_id = ?, pipeline_stage = ?, pipeline_role = ?, pipeline_attempt = ?,
+             status = ?, result = COALESCE(?, result), completed_at = COALESCE(?, completed_at)
+         WHERE id = ?`
+      )
+      .run(
+        pipelineId,
+        pipelineStage,
+        pipelineRole,
+        pipelineAttempt,
+        status,
+        result ?? null,
+        completedAt,
+        id
+      )
+    return this.getTask(id)
+  }
+
   getTask(id: string): TaskRow | undefined {
-    return this.db
+    const row = this.db
       .prepare(
         `SELECT * FROM tasks
          WHERE id = ? AND (${TASK_ROW_BYTES_SQL}) <= ${ORCHESTRATION_QUERY_MAX_ROW_UTF8_BYTES}`
       )
       .get(id) as TaskRow | undefined
+    return row ? hydrateTaskRow(row) : undefined
   }
 
-  listTasks(filter?: { status?: TaskStatus; ready?: boolean }): TaskRow[] {
-    const status = filter?.ready ? 'ready' : filter?.status
-    const statusFilter = status ? 'status = ? AND ' : ''
+  listTasks(filter?: TaskListFilter): TaskRow[] {
+    const { whereSql, params } = buildTaskListWhere(filter, { tableAlias: false })
     return this.readRows<TaskRow>(
       `SELECT * FROM tasks
-       WHERE ${statusFilter}(${TASK_ROW_BYTES_SQL}) <= ${ORCHESTRATION_QUERY_MAX_ROW_UTF8_BYTES}
-       ORDER BY created_at, rowid`,
-      status ? [status] : []
-    )
+       WHERE ${whereSql}(${TASK_ROW_BYTES_SQL}) <= ${ORCHESTRATION_QUERY_MAX_ROW_UTF8_BYTES}
+       ORDER BY ${TASK_PRIORITY_ORDER_SQL}, tasks.created_at, tasks.rowid`,
+      params
+    ).map(hydrateTaskRow)
   }
 
-  countTasks(filter?: { status?: TaskStatus; ready?: boolean }): number {
-    const status = filter?.ready ? 'ready' : filter?.status
-    return this.countRows(
-      `SELECT COUNT(*) AS count FROM tasks${status ? ' WHERE status = ?' : ''}`,
-      status ? [status] : []
-    )
+  countTasks(filter?: TaskListFilter): number {
+    const { whereSql, params } = buildTaskListWhere(filter, { tableAlias: false })
+    const where = whereSql ? ` WHERE ${whereSql.replace(/\s+AND\s*$/, '')}` : ''
+    return this.countRows(`SELECT COUNT(*) AS count FROM tasks${where}`, params)
   }
 
   // Why: LEFT JOIN keeps non-dispatched tasks (NULL assignee); the MAX(rowid) subquery matches getDispatchContext's most-recent-active-dispatch semantics.
-  listTasksWithDispatch(filter?: { status?: TaskStatus; ready?: boolean }): (TaskRow & {
+  listTasksWithDispatch(filter?: TaskListFilter): (TaskRow & {
     assignee_handle: string | null
     dispatch_id: string | null
   })[] {
-    const whereClauses: string[] = []
-    const params: Database.BindValue[] = []
-    if (filter?.ready) {
-      whereClauses.push("tasks.status = 'ready'")
-    } else if (filter?.status) {
-      whereClauses.push('tasks.status = ?')
-      params.push(filter.status)
-    }
+    const { whereClauses, params } = buildTaskListWhereClauses(filter)
     whereClauses.push(
       `(${TASK_ROW_BYTES_SQL}
         + length(CAST(COALESCE(d.assignee_handle, '') AS BLOB))
@@ -775,17 +1110,76 @@ export class OrchestrationDb {
         ) latest ON latest.task_id = dc.task_id AND latest.max_rowid = dc.rowid
       ) d ON d.task_id = tasks.id
       ${where}
-      ORDER BY tasks.created_at, tasks.rowid
+      ORDER BY ${TASK_PRIORITY_ORDER_SQL}, tasks.created_at, tasks.rowid
     `
     return this.readRows<
       TaskRow & {
         assignee_handle: string | null
         dispatch_id: string | null
       }
-    >(sql, params) as (TaskRow & {
-      assignee_handle: string | null
-      dispatch_id: string | null
-    })[]
+    >(sql, params).map((row) => ({
+      ...hydrateTaskRow(row),
+      assignee_handle: row.assignee_handle,
+      dispatch_id: row.dispatch_id
+    }))
+  }
+
+  /**
+   * Rebind mutable execution scope (worktree/host) or set stable subject scope
+   * (repo/project) without touching status/lifecycle. Null fields are left alone;
+   * pass empty string to clear a pointer.
+   */
+  updateTaskScope(
+    id: string,
+    scope: {
+      priority?: TaskPriority
+      repoId?: string | null
+      projectId?: string | null
+      worktreeId?: string | null
+      hostId?: string | null
+    }
+  ): TaskRow | undefined {
+    const task = this.getTask(id)
+    if (!task) {
+      return undefined
+    }
+    const next = {
+      priority: scope.priority !== undefined ? normalizeTaskPriority(scope.priority) : task.priority,
+      repo_id:
+        scope.repoId !== undefined ? normalizeScopeId(scope.repoId || undefined) : task.repo_id,
+      project_id:
+        scope.projectId !== undefined
+          ? normalizeScopeId(scope.projectId || undefined)
+          : task.project_id,
+      worktree_id:
+        scope.worktreeId !== undefined
+          ? normalizeScopeId(scope.worktreeId || undefined)
+          : task.worktree_id,
+      host_id:
+        scope.hostId !== undefined ? normalizeScopeId(scope.hostId || undefined) : task.host_id
+    }
+    assertOrchestrationWriteFits('Task scope', [
+      next.priority,
+      next.repo_id,
+      next.project_id,
+      next.worktree_id,
+      next.host_id
+    ])
+    this.db
+      .prepare(
+        `UPDATE tasks
+         SET priority = ?, repo_id = ?, project_id = ?, worktree_id = ?, host_id = ?
+         WHERE id = ?`
+      )
+      .run(
+        next.priority,
+        next.repo_id,
+        next.project_id,
+        next.worktree_id,
+        next.host_id,
+        id
+      )
+    return this.getTask(id)
   }
 
   updateTaskStatus(id: string, status: TaskStatus, result?: string): TaskRow | undefined {
@@ -804,6 +1198,321 @@ export class OrchestrationDb {
     }
 
     return this.getTask(id)
+  }
+
+  /** Operator follow-up: reopen a finished task so it can be re-dispatched. */
+  reopenTask(id: string): TaskRow | undefined {
+    const task = this.getTask(id)
+    if (!task) {
+      return undefined
+    }
+    if (task.status === 'ready' || task.status === 'dispatched' || task.status === 'pending') {
+      return task
+    }
+    this.failActiveDispatchForTask(id, 'Reopened for operator follow-up')
+    this.db
+      .prepare(
+        `UPDATE tasks
+         SET status = 'ready',
+             completed_at = NULL,
+             result = NULL
+         WHERE id = ?`
+      )
+      .run(id)
+    return this.getTask(id)
+  }
+
+  /**
+   * Operator retry after stop / LLM crash / hung agent / failed stage.
+   * Forces task (and failed pipeline children when retrying a root) back to ready.
+   */
+  retryTask(
+    id: string,
+    reason = 'Retried by operator'
+  ): { task: TaskRow; retriedIds: string[] } | undefined {
+    const task = this.getTask(id)
+    if (!task) {
+      return undefined
+    }
+    const targets =
+      task.pipeline_id && task.pipeline_id === task.id
+        ? this.listTasksByPipeline(task.id).filter(
+            (t) =>
+              t.id === task.id ||
+              t.status === 'failed' ||
+              t.status === 'dispatched' ||
+              t.status === 'ready' ||
+              t.status === 'pending'
+          )
+        : [task]
+    const retriedIds: string[] = []
+    for (const target of targets) {
+      // Keep successfully completed stage children intact when retrying a pipeline root.
+      if (target.id !== task.id && target.status === 'completed') {
+        continue
+      }
+      this.failActiveDispatchForTask(target.id, reason)
+      this.db
+        .prepare(
+          `UPDATE tasks
+           SET status = 'ready',
+               completed_at = NULL,
+               result = NULL,
+               pipeline_stage = CASE
+                 WHEN id = pipeline_id THEN 'running'
+                 WHEN pipeline_stage = 'failed' OR pipeline_stage = 'done' THEN pipeline_stage
+                 ELSE pipeline_stage
+               END
+           WHERE id = ?`
+        )
+        .run(target.id)
+      // Root bookkeeping: leave stage children' stages; mark root running again.
+      if (target.id === target.pipeline_id) {
+        this.db
+          .prepare(
+            `UPDATE tasks
+             SET status = 'ready',
+                 pipeline_stage = 'running',
+                 completed_at = NULL,
+                 result = NULL
+             WHERE id = ?`
+          )
+          .run(target.id)
+      }
+      try {
+        this.addTaskComment({
+          taskId: target.id,
+          author: 'system',
+          kind: 'system',
+          role: target.pipeline_role,
+          body: `Retry: ${reason}`
+        })
+      } catch {
+        // comments optional in older DBs
+      }
+      retriedIds.push(target.id)
+    }
+    const updated = this.getTask(id)
+    return updated ? { task: updated, retriedIds } : undefined
+  }
+
+  /**
+   * Stop a running/queued task: kill active dispatch authority and mark failed.
+   * For product-pipeline roots, fails every non-terminal child stage too.
+   */
+  stopTask(
+    id: string,
+    reason = 'Stopped by operator'
+  ): { task: TaskRow; stoppedIds: string[] } | undefined {
+    const task = this.getTask(id)
+    if (!task) {
+      return undefined
+    }
+    const payload = JSON.stringify({ kind: 'stopped', reason })
+    const targets =
+      task.pipeline_id && task.pipeline_id === task.id
+        ? this.listTasksByPipeline(task.id)
+        : [task]
+    const stoppedIds: string[] = []
+    for (const target of targets) {
+      if (
+        target.status === 'completed' ||
+        target.status === 'failed' ||
+        (target.pipeline_stage === 'done' && target.id === target.pipeline_id)
+      ) {
+        // Root bookkeeping row may already be completed while stages run — still fail it when stopping the pipeline.
+        if (!(target.id === task.id && task.pipeline_id === task.id)) {
+          continue
+        }
+      }
+      this.failActiveDispatchForTask(target.id, reason)
+      this.db
+        .prepare(
+          `UPDATE tasks
+           SET status = 'failed',
+               result = ?,
+               completed_at = datetime('now'),
+               pipeline_stage = CASE
+                 WHEN id = pipeline_id THEN 'failed'
+                 ELSE pipeline_stage
+               END
+           WHERE id = ?`
+        )
+        .run(payload, target.id)
+      try {
+        this.addTaskComment({
+          taskId: target.id,
+          author: 'system',
+          kind: 'system',
+          role: target.pipeline_role,
+          body: `Stopped: ${reason}`
+        })
+      } catch {
+        // Comments table may be mid-migration in tests; stop still succeeds.
+      }
+      stoppedIds.push(target.id)
+    }
+    if (task.pipeline_id === task.id) {
+      this.db
+        .prepare(
+          `UPDATE tasks
+           SET status = 'failed', pipeline_stage = 'failed', result = ?, completed_at = datetime('now')
+           WHERE id = ?`
+        )
+        .run(payload, task.id)
+      if (!stoppedIds.includes(task.id)) {
+        stoppedIds.push(task.id)
+      }
+    }
+    const updated = this.getTask(id)
+    return updated ? { task: updated, stoppedIds } : undefined
+  }
+
+  /**
+   * Hard-delete a task (and product-pipeline children when deleting a root).
+   * Also removes related dispatch contexts and decision gates.
+   */
+  deleteTask(id: string): { deletedIds: string[] } | undefined {
+    const task = this.getTask(id)
+    if (!task) {
+      return undefined
+    }
+    const targets =
+      task.pipeline_id && task.pipeline_id === task.id
+        ? this.listTasksByPipeline(task.id)
+        : [task]
+    const deletedIds = targets.map((t) => t.id)
+    const placeholders = deletedIds.map(() => '?').join(', ')
+    this.db
+      .prepare(`DELETE FROM task_comments WHERE task_id IN (${placeholders})`)
+      .run(...deletedIds)
+    this.db
+      .prepare(`DELETE FROM decision_gates WHERE task_id IN (${placeholders})`)
+      .run(...deletedIds)
+    this.db
+      .prepare(`DELETE FROM dispatch_contexts WHERE task_id IN (${placeholders})`)
+      .run(...deletedIds)
+    this.db.prepare(`DELETE FROM tasks WHERE id IN (${placeholders})`).run(...deletedIds)
+    // Why: a deleted active dispatch may empty the table; drop the short-circuit cache.
+    this.hasAnyDispatchContextsCache = undefined
+    return { deletedIds }
+  }
+
+  // ── Task comments / thread (Multica-style) ──
+
+  addTaskComment(input: {
+    taskId: string
+    author: string
+    body: string
+    role?: string | null
+    kind?: TaskCommentKind
+    parentId?: string | null
+  }): TaskCommentRow {
+    if (!this.getTask(input.taskId)) {
+      throw new Error(`Task not found: ${input.taskId}`)
+    }
+    const kind: TaskCommentKind = input.kind ?? 'comment'
+    const author = input.author.trim() || 'system'
+    const body = input.body.trim()
+    if (!body) {
+      throw new Error('Comment body is required')
+    }
+    const parentId = input.parentId?.trim() || null
+    if (parentId) {
+      const parent = this.getTaskComment(parentId)
+      if (!parent || parent.task_id !== input.taskId) {
+        throw new Error(`Parent comment not found on task: ${parentId}`)
+      }
+    }
+    assertOrchestrationWriteFits('Task comment', [
+      input.taskId,
+      author,
+      body,
+      input.role,
+      kind,
+      parentId
+    ])
+    const id = generateId('cmt')
+    this.db
+      .prepare(
+        `INSERT INTO task_comments (id, task_id, author, role, kind, body, parent_id)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`
+      )
+      .run(id, input.taskId, author, input.role?.trim() || null, kind, body, parentId)
+    return this.getTaskComment(id)!
+  }
+
+  getTaskComment(id: string): TaskCommentRow | undefined {
+    return this.db.prepare('SELECT * FROM task_comments WHERE id = ?').get(id) as
+      | TaskCommentRow
+      | undefined
+  }
+
+  listTaskComments(taskId: string): TaskCommentRow[] {
+    return this.readRows<TaskCommentRow>(
+      `SELECT * FROM task_comments
+       WHERE task_id = ?
+         AND length(CAST(body AS BLOB)) <= ${ORCHESTRATION_QUERY_MAX_ROW_UTF8_BYTES}
+       ORDER BY created_at ASC, rowid ASC`,
+      [taskId]
+    )
+  }
+
+  /** Agents currently or recently in charge of a task (from dispatches + roles). */
+  listTaskAgents(taskId: string): Array<{
+    handle: string | null
+    role: string | null
+    status: string
+    dispatchId: string | null
+    lastAt: string | null
+  }> {
+    const task = this.getTask(taskId)
+    if (!task) {
+      return []
+    }
+    const dispatches = this.readRows<DispatchContextRow>(
+      `SELECT * FROM dispatch_contexts
+       WHERE task_id = ?
+         AND (${DISPATCH_ROW_BYTES_SQL}) <= ${ORCHESTRATION_QUERY_MAX_ROW_UTF8_BYTES}
+       ORDER BY rowid DESC`,
+      [taskId]
+    )
+    return dispatches.map((d) => ({
+      handle: d.assignee_handle,
+      role: task.pipeline_role,
+      status: d.status,
+      dispatchId: d.id,
+      lastAt: d.last_heartbeat_at ?? d.completed_at ?? d.dispatched_at ?? d.created_at
+    }))
+  }
+
+  /** Pipeline roster: every stage + current assignee. */
+  listPipelineRoster(pipelineId: string): Array<{
+    taskId: string
+    stage: string | null
+    role: string | null
+    status: TaskStatus
+    title: string | null
+    assignee: string | null
+    dispatchStatus: string | null
+    attempt: number | null
+  }> {
+    const tasks = this.listTasksByPipeline(pipelineId)
+    return tasks
+      .filter((t) => t.id !== pipelineId)
+      .map((t) => {
+        const active = this.getDispatchContext(t.id)
+        return {
+          taskId: t.id,
+          stage: t.pipeline_stage,
+          role: t.pipeline_role,
+          status: t.status,
+          title: t.display_name ?? t.task_title,
+          assignee: active?.assignee_handle ?? null,
+          dispatchStatus: active?.status ?? null,
+          attempt: t.pipeline_attempt
+        }
+      })
   }
 
   /** Fold additional instruction text into a not-yet-dispatched task (coalesce path). */
@@ -952,6 +1661,18 @@ export class OrchestrationDb {
     this.hasAnyDispatchContextsCache = true
 
     this.db.prepare("UPDATE tasks SET status = 'dispatched' WHERE id = ?").run(taskId)
+
+    try {
+      this.addTaskComment({
+        taskId,
+        author: assigneeHandle,
+        kind: 'dispatch',
+        role: task.pipeline_role,
+        body: `Dispatched to ${assigneeHandle}${task.pipeline_role ? ` as ${task.pipeline_role}` : ''}`
+      })
+    } catch {
+      // Non-fatal for older DBs / tests without comments.
+    }
 
     return this.getDispatchContextById(id)!
   }
@@ -1344,6 +2065,7 @@ export class OrchestrationDb {
   resetAll(): void {
     this.db.exec('DELETE FROM coordinator_runs')
     this.db.exec('DELETE FROM decision_gates')
+    this.db.exec('DELETE FROM task_comments')
     this.db.exec('DELETE FROM dispatch_contexts')
     this.db.exec('DELETE FROM tasks')
     this.db.exec('DELETE FROM messages')
@@ -1353,6 +2075,7 @@ export class OrchestrationDb {
   resetTasks(): void {
     this.db.exec('DELETE FROM coordinator_runs')
     this.db.exec('DELETE FROM decision_gates')
+    this.db.exec('DELETE FROM task_comments')
     this.db.exec('DELETE FROM dispatch_contexts')
     this.db.exec('DELETE FROM tasks')
     this.hasAnyDispatchContextsCache = undefined

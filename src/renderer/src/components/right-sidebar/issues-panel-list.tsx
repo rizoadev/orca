@@ -1,5 +1,5 @@
 import React from 'react'
-import { Bot, CircleDot, ExternalLink, LoaderCircle, Sparkles, XCircle } from 'lucide-react'
+import { Bot, CircleDot, ExternalLink, Layers, LoaderCircle, Sparkles, XCircle } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import {
@@ -48,9 +48,11 @@ export function IssuesPanelList({
   aiPlanningIssueId,
   aiWorkingIssueId,
   closingIssueId,
+  convertingIssueId,
   onOpenIssue,
   onAskAiPlan,
   onAskAiWork,
+  onConvertToOrchestration,
   onCloseIssue,
   repoId
 }: {
@@ -61,9 +63,11 @@ export function IssuesPanelList({
   aiPlanningIssueId: string | null
   aiWorkingIssueId: string | null
   closingIssueId: string | null
+  convertingIssueId?: string | null
   onOpenIssue: (row: IssueRow) => void
   onAskAiPlan: (row: IssueRow, agent: TuiAgent) => void
   onAskAiWork: (row: IssueRow, agent: TuiAgent, mode: IssueAiWorkMode) => void
+  onConvertToOrchestration?: (row: IssueRow) => void
   onCloseIssue: (row: IssueRow) => void
   repoId: string | null
 }): React.JSX.Element {
@@ -98,6 +102,7 @@ export function IssuesPanelList({
         const planning = aiPlanningIssueId === row.id
         const working = aiWorkingIssueId === row.id
         const closing = closingIssueId === row.id
+        const converting = convertingIssueId === row.id
         return (
           <div
             key={row.id}
@@ -143,6 +148,38 @@ export function IssuesPanelList({
             </div>
             <TooltipProvider delayDuration={300}>
               <div className="mt-0.5 flex shrink-0 items-center gap-0.5">
+                {onConvertToOrchestration ? (
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon-xs"
+                        disabled={converting || planning || working}
+                        onClick={(event) => {
+                          event.stopPropagation()
+                          onConvertToOrchestration(row)
+                        }}
+                        aria-label={translate(
+                          'auto.components.right.sidebar.issuesPanel.toOrchestration',
+                          'Convert to orchestration task'
+                        )}
+                      >
+                        {converting ? (
+                          <LoaderCircle className="size-3.5 animate-spin" />
+                        ) : (
+                          <Layers className="size-3.5" />
+                        )}
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent side="left">
+                      {translate(
+                        'auto.components.right.sidebar.issuesPanel.toOrchestration',
+                        'Convert to orchestration task'
+                      )}
+                    </TooltipContent>
+                  </Tooltip>
+                ) : null}
                 {/* Why: stopPropagation on open avoids row click; modal=false so menus work if this ever sits under a dialog. */}
                 <DropdownMenu modal={false}>
                   <Tooltip>

@@ -211,6 +211,85 @@ describe('OrchestrationDb', () => {
       expect(d.getTask(task.id)?.created_by_terminal_handle).toBe('term_creator')
     })
 
+    it('defaults priority to medium and null scope pointers', () => {
+      const d = createDb()
+      const task = d.createTask({ spec: 'default scope' })
+      expect(task.priority).toBe('medium')
+      expect(task.repo_id).toBeNull()
+      expect(task.project_id).toBeNull()
+      expect(task.worktree_id).toBeNull()
+      expect(task.host_id).toBeNull()
+    })
+
+    it('persists priority and soft scope pointers in userData rows', () => {
+      const d = createDb()
+      const task = d.createTask({
+        spec: 'scoped work',
+        priority: 'high',
+        repoId: 'repo-abc',
+        projectId: 'proj-1',
+        worktreeId: 'repo-abc::/tmp/wt',
+        hostId: 'local'
+      })
+      expect(task.priority).toBe('high')
+      expect(task.repo_id).toBe('repo-abc')
+      expect(task.project_id).toBe('proj-1')
+      expect(task.worktree_id).toBe('repo-abc::/tmp/wt')
+      expect(task.host_id).toBe('local')
+      expect(d.getTask(task.id)?.repo_id).toBe('repo-abc')
+    })
+
+    it('lists ready tasks by priority then created_at', () => {
+      const d = createDb()
+      d.createTask({ spec: 'low first', priority: 'low' })
+      d.createTask({ spec: 'urgent mid', priority: 'urgent' })
+      d.createTask({ spec: 'high last', priority: 'high' })
+      const listed = d.listTasks({ ready: true })
+      expect(listed.map((t) => t.spec)).toEqual(['urgent mid', 'high last', 'low first'])
+    })
+
+    it('filters tasks by repo and worktree scope', () => {
+      const d = createDb()
+      d.createTask({ spec: 'a', repoId: 'repo-a', worktreeId: 'wt-1' })
+      d.createTask({ spec: 'b', repoId: 'repo-b', worktreeId: 'wt-2' })
+      d.createTask({ spec: 'c', repoId: 'repo-a', worktreeId: 'wt-3' })
+      expect(d.listTasks({ repoId: 'repo-a' }).map((t) => t.spec)).toEqual(['a', 'c'])
+      expect(d.listTasks({ worktreeId: 'wt-2' }).map((t) => t.spec)).toEqual(['b'])
+      expect(d.countTasks({ repoId: 'repo-a' })).toBe(2)
+    })
+
+    it('rebinds mutable execution scope without changing status', () => {
+      const d = createDb()
+      const task = d.createTask({
+        spec: 'rebind me',
+        repoId: 'repo-a',
+        worktreeId: 'wt-old',
+        hostId: 'local'
+      })
+      const updated = d.updateTaskScope(task.id, {
+        worktreeId: 'wt-new',
+        hostId: 'ssh:devbox',
+        priority: 'urgent'
+      })
+      expect(updated?.status).toBe('ready')
+      expect(updated?.repo_id).toBe('repo-a')
+      expect(updated?.worktree_id).toBe('wt-new')
+      expect(updated?.host_id).toBe('ssh:devbox')
+      expect(updated?.priority).toBe('urgent')
+    })
+
+    it('clears scope pointers when empty string is passed', () => {
+      const d = createDb()
+      const task = d.createTask({
+        spec: 'clear me',
+        repoId: 'repo-a',
+        worktreeId: 'wt-1'
+      })
+      const updated = d.updateTaskScope(task.id, { worktreeId: '', repoId: '' })
+      expect(updated?.repo_id).toBeNull()
+      expect(updated?.worktree_id).toBeNull()
+    })
+
     it('creates a task with deps as pending', () => {
       const d = createDb()
       const parent = d.createTask({ spec: 'parent' })
@@ -250,6 +329,69 @@ describe('OrchestrationDb', () => {
       const updated = d.updateTaskStatus(task.id, 'completed', '{"result": true}')
       expect(updated?.completed_at).toBeTruthy()
       expect(updated?.result).toBe('{"result": true}')
+    })
+
+    it('stops a dispatched task and fails its active dispatch', () => {
+      const d = createDb()
+      const task = d.createTask({ spec: 'running work' })
+      const ctx = d.createDispatchContext(task.id, 'term_a')
+      const stopped = d.stopTask(task.id, 'operator cancel')
+      expect(stopped?.task.status).toBe('failed')
+      expect(stopped?.stoppedIds).toContain(task.id)
+      expect(d.getDispatchContextById(ctx.id)?.status).toBe('failed')
+      expect(d.getTask(task.id)?.result).toContain('operator cancel')
+    })
+
+    it('deletes a task and its dispatch context', () => {
+      const d = createDb()
+      const task = d.createTask({ spec: 'delete me' })
+      d.createDispatchContext(task.id, 'term_a')
+      const deleted = d.deleteTask(task.id)
+      expect(deleted?.deletedIds).toEqual([task.id])
+      expect(d.getTask(task.id)).toBeUndefined()
+      expect(d.getDispatchContext(task.id)).toBeUndefined()
+    })
+
+    it('stores a threaded comment and posts dispatch/result comments', () => {
+      const d = createDb()
+      const task = d.createTask({ spec: 'commented work', pipelineRole: 'implementer' })
+      d.createDispatchContext(task.id, 'term_worker')
+      const top = d.addTaskComment({
+        taskId: task.id,
+        author: 'operator',
+        body: 'Please also cover edge cases'
+      })
+      d.addTaskComment({
+        taskId: task.id,
+        author: 'term_worker',
+        role: 'implementer',
+        body: 'Will do',
+        parentId: top.id
+      })
+      const comments = d.listTaskComments(task.id)
+      expect(comments.some((c) => c.kind === 'dispatch')).toBe(true)
+      expect(comments.filter((c) => c.kind === 'comment')).toHaveLength(2)
+      expect(d.listTaskAgents(task.id)[0]?.handle).toBe('term_worker')
+    })
+
+    it('reopens a completed task for operator follow-up', () => {
+      const d = createDb()
+      const task = d.createTask({ spec: 'done work' })
+      d.updateTaskStatus(task.id, 'completed', 'shipped')
+      const reopened = d.reopenTask(task.id)
+      expect(reopened?.status).toBe('ready')
+      expect(reopened?.completed_at).toBeNull()
+    })
+
+    it('retries a failed task back to ready with a system comment', () => {
+      const d = createDb()
+      const task = d.createTask({ spec: 'broken work' })
+      d.createDispatchContext(task.id, 'term_dead')
+      d.stopTask(task.id, 'LLM crashed')
+      const retried = d.retryTask(task.id, 'Resume after crash')
+      expect(retried?.task.status).toBe('ready')
+      expect(retried?.retriedIds).toContain(task.id)
+      expect(d.listTaskComments(task.id).some((c) => c.body.includes('Retry:'))).toBe(true)
     })
 
     it('completing a task frees its active dispatch context', () => {
@@ -961,6 +1103,36 @@ describe('OrchestrationDb', () => {
         senderPaneKey: 'tab_1:leaf_1'
       })
       expect(d.getMessageById(msg.id)?.sender_pane_key).toBe('tab_1:leaf_1')
+    })
+
+    it('adds priority and scope pointer columns (v7) on migrate', () => {
+      const path = createV1Snapshot()
+      const d = new OrchestrationDb(path)
+      db = d
+
+      // Pre-migration tasks get medium priority via DEFAULT + hydrate.
+      const legacyish = d.createTask({ spec: 'after migrate' })
+      expect(legacyish.priority).toBe('medium')
+
+      const scoped = d.createTask({
+        spec: 'v7 scope',
+        priority: 'urgent',
+        repoId: 'repo-x',
+        worktreeId: 'repo-x::/tmp/x'
+      })
+      expect(scoped.priority).toBe('urgent')
+      expect(scoped.repo_id).toBe('repo-x')
+
+      const sqlite = (d as unknown as { db: Database.Database }).db
+      const indexes = sqlite
+        .prepare(
+          `SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = 'tasks' AND name NOT LIKE 'sqlite_%'`
+        )
+        .all() as { name: string }[]
+      const names = new Set(indexes.map((r) => r.name))
+      expect(names.has('idx_tasks_repo')).toBe(true)
+      expect(names.has('idx_tasks_worktree')).toBe(true)
+      expect(names.has('idx_tasks_priority_created')).toBe(true)
     })
 
     it('is idempotent: opening an already-migrated DB is a no-op', () => {

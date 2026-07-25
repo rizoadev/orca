@@ -532,7 +532,11 @@ import {
   addMRComment as addGitLabMRComment,
   addDiscussionNote as addGitLabDiscussionNote,
   listTodos as listGitLabTodos,
+  createProjectSnippet as createGitLabProjectSnippet,
+  deleteProjectSnippet as deleteGitLabProjectSnippet,
+  getProjectSnippet as getGitLabProjectSnippet,
   listProjectSnippets as listGitLabProjectSnippets,
+  updateProjectSnippet as updateGitLabProjectSnippet,
   listIssues as listGitLabIssues,
   listLabels as listGitLabLabels,
   listMergeRequests as listGitLabMergeRequests,
@@ -3094,6 +3098,7 @@ export class OrcaRuntimeService {
       | 'disabledTuiAgents'
       | 'agentDefaultArgs'
       | 'agentDefaultEnv'
+      | 'agentSquads'
       | 'defaultTaskSource'
       | 'defaultTaskViewPreset'
       | 'visibleTaskProviders'
@@ -3114,6 +3119,7 @@ export class OrcaRuntimeService {
     | 'agentDefaultArgs'
     | 'agentDefaultEnv'
     | 'agentStatusHooksEnabled'
+    | 'agentSquads'
     | 'defaultTaskSource'
     | 'defaultTaskViewPreset'
     | 'visibleTaskProviders'
@@ -16347,6 +16353,76 @@ export class OrcaRuntimeService {
     return listGitLabProjectSnippets(
       repo.path,
       normalizeGitLabPositiveInteger(limit, 50, 100),
+      repo.issueSourcePreference,
+      repo.connectionId ?? null,
+      ...this.getLocalGitExecutionOptionArgs(repo)
+    )
+  }
+
+  async getGitLabRepoProjectSnippet(
+    repoSelector: string,
+    snippetId: number
+  ): Promise<Awaited<ReturnType<typeof getGitLabProjectSnippet>>> {
+    const repo = await this.resolveRepoSelector(repoSelector)
+    return getGitLabProjectSnippet(
+      repo.path,
+      normalizeGitLabPositiveInteger(snippetId, 1, Number.MAX_SAFE_INTEGER),
+      repo.issueSourcePreference,
+      repo.connectionId ?? null,
+      ...this.getLocalGitExecutionOptionArgs(repo)
+    )
+  }
+
+  async createGitLabRepoProjectSnippet(
+    repoSelector: string,
+    input: {
+      title: string
+      fileName: string
+      content: string
+      description?: string
+      visibility?: 'private' | 'internal' | 'public'
+    }
+  ): Promise<Awaited<ReturnType<typeof createGitLabProjectSnippet>>> {
+    const repo = await this.resolveRepoSelector(repoSelector)
+    return createGitLabProjectSnippet(
+      repo.path,
+      input,
+      repo.issueSourcePreference,
+      repo.connectionId ?? null,
+      ...this.getLocalGitExecutionOptionArgs(repo)
+    )
+  }
+
+  async updateGitLabRepoProjectSnippet(
+    repoSelector: string,
+    snippetId: number,
+    updates: {
+      title?: string
+      fileName?: string
+      content?: string
+      description?: string
+      visibility?: 'private' | 'internal' | 'public'
+    }
+  ): Promise<Awaited<ReturnType<typeof updateGitLabProjectSnippet>>> {
+    const repo = await this.resolveRepoSelector(repoSelector)
+    return updateGitLabProjectSnippet(
+      repo.path,
+      normalizeGitLabPositiveInteger(snippetId, 1, Number.MAX_SAFE_INTEGER),
+      updates,
+      repo.issueSourcePreference,
+      repo.connectionId ?? null,
+      ...this.getLocalGitExecutionOptionArgs(repo)
+    )
+  }
+
+  async deleteGitLabRepoProjectSnippet(
+    repoSelector: string,
+    snippetId: number
+  ): Promise<Awaited<ReturnType<typeof deleteGitLabProjectSnippet>>> {
+    const repo = await this.resolveRepoSelector(repoSelector)
+    return deleteGitLabProjectSnippet(
+      repo.path,
+      normalizeGitLabPositiveInteger(snippetId, 1, Number.MAX_SAFE_INTEGER),
       repo.issueSourcePreference,
       repo.connectionId ?? null,
       ...this.getLocalGitExecutionOptionArgs(repo)

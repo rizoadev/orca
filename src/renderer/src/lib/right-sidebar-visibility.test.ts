@@ -49,6 +49,10 @@ describe('right sidebar visibility helpers', () => {
     expect(canShowRightSidebarForView('terminal')).toBe(true)
   })
 
+  it('keeps the right sidebar available on the orchestration board companion view', () => {
+    expect(canShowRightSidebarForView('orchestration-board')).toBe(true)
+  })
+
   it('does not treat hidden full-page sidebars as visible PR panels', () => {
     expect(rightSidebarShowsPullRequestData(makeState({ activeView: 'tasks' }))).toBe(false)
   })

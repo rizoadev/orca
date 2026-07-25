@@ -1,0 +1,70 @@
+import { afterEach, describe, expect, it } from 'vitest'
+import { OrchestrationDb } from './db'
+import {
+  advanceProductPipelineAfterTaskComplete,
+  createProductPipelineTasks
+} from './product-pipeline-engine'
+
+describe('product-pipeline-engine', () => {
+  let db: OrchestrationDb | undefined
+
+  afterEach(() => {
+    db?.close()
+  })
+
+  it('creates research→implement→test→review DAG under a root', () => {
+    db = new OrchestrationDb(':memory:')
+    const { root, stages } = createProductPipelineTasks(db, {
+      productGoal: 'Add OTP email mockup dashboard page',
+      title: 'OTP email',
+      repoId: 'repo-1',
+      worktreeId: 'repo-1::/tmp/wt'
+    })
+
+    expect(root.pipeline_id).toBe(root.id)
+    expect(root.status).toBe('completed')
+    expect(root.pipeline_stage).toBe('running')
+    expect(stages).toHaveLength(4)
+    expect(stages.map((s) => s.pipeline_stage)).toEqual([
+      'research',
+      'implement',
+      'test',
+      'review'
+    ])
+    expect(stages[0]?.status).toBe('ready')
+    expect(stages[1]?.status).toBe('pending')
+    expect(JSON.parse(stages[1]!.deps)).toEqual([stages[0]!.id])
+  })
+
+  it('rewrites implement+test on tester FAIL', () => {
+    db = new OrchestrationDb(':memory:')
+    const { root, stages } = createProductPipelineTasks(db, {
+      productGoal: 'OTP email',
+      worktreeId: 'repo-1::/tmp/wt',
+      repoId: 'repo-1'
+    })
+    const research = stages[0]!
+    const implement = stages[1]!
+    const test = stages[2]!
+
+    db.updateTaskStatus(research.id, 'completed', JSON.stringify({ body: 'Plan: use AuthCard' }))
+    db.updateTaskStatus(implement.id, 'completed', JSON.stringify({ body: 'Implemented OTP' }))
+    db.updateTaskStatus(
+      test.id,
+      'completed',
+      JSON.stringify({ body: 'Missing resend.\nVERDICT: FAIL' })
+    )
+
+    advanceProductPipelineAfterTaskComplete(db, test.id)
+
+    const all = db.listTasksByPipeline(root.id)
+    const reworkImplement = all.find(
+      (t) => t.pipeline_stage === 'implement' && t.pipeline_attempt === 2
+    )
+    const reworkTest = all.find((t) => t.pipeline_stage === 'test' && t.pipeline_attempt === 2)
+    expect(reworkImplement?.status).toBe('ready')
+    expect(reworkImplement?.spec).toContain('Missing resend')
+    expect(reworkTest?.status).toBe('pending')
+    expect(JSON.parse(reworkTest!.deps)).toEqual([reworkImplement!.id])
+  })
+})

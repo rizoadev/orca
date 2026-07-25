@@ -1,6 +1,12 @@
-export type TaskProvider = 'github' | 'gitlab' | 'linear' | 'jira'
+export type TaskProvider = 'github' | 'gitlab' | 'linear' | 'jira' | 'asana'
 
-export const TASK_PROVIDERS: readonly TaskProvider[] = ['github', 'gitlab', 'linear', 'jira']
+export const TASK_PROVIDERS: readonly TaskProvider[] = [
+  'github',
+  'gitlab',
+  'linear',
+  'jira',
+  'asana'
+]
 
 const TASK_PROVIDER_SET = new Set<TaskProvider>(TASK_PROVIDERS)
 
@@ -55,6 +61,7 @@ export function normalizeVisibleTaskProviders(value: unknown): TaskProvider[] {
 export type TaskProviderAvailability = {
   gitlabInstalled: boolean
   linearConnected: boolean
+  asanaConnected?: boolean
 }
 
 export function filterAvailableTaskProviders(
@@ -99,6 +106,11 @@ function isTaskProviderAvailable(
   }
   if (provider === 'gitlab') {
     return availability.gitlabInstalled
+  }
+  // Why: Asana can be connected from the Tasks surface itself, so keep it
+  // visible even when disconnected to preserve the first-time setup entry point.
+  if (provider === 'asana') {
+    return true
   }
   // Why: Jira can be connected from the Tasks surface itself, so hiding it
   // when disconnected would remove the entry point for first-time setup.

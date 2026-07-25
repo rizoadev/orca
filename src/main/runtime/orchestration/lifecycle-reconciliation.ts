@@ -1,5 +1,6 @@
 import type { OrchestrationDb } from './db'
 import type { MessageRow } from './types'
+import { advanceProductPipelineAfterTaskComplete } from './product-pipeline-engine'
 import { parsePaneKey } from '../../../shared/stable-pane-id'
 import { parseOrchestrationJson } from './query-retention'
 
@@ -35,7 +36,7 @@ export type LifecycleReconciliationResult =
   // stay unread and still need delivery.
   | { action: 'suppressed' }
   | LifecycleRejectionResult
-  | { action: 'completed'; taskId: string; dispatchId: string }
+  | { action: 'completed'; taskId: string; dispatchId: string; pipelineId?: string }
   | { action: 'heartbeat_recorded'; dispatchId: string }
 
 export type LifecycleRejectionResult = {
@@ -230,16 +231,56 @@ function reconcileWorkerDoneMessage(
       ? payload.filesModified
       : []
 
+  const reportPath =
+    typeof payload.reportPath === 'string' && payload.reportPath.trim().length > 0
+      ? payload.reportPath.trim()
+      : null
+  // Why: product-pipeline tester/reviewer gates parse VERDICT from body; drop body and the loop cannot rework.
   const result = JSON.stringify({
     completedBy: msg.from_handle,
+    subject: msg.subject,
+    body: msg.body,
     filesModified,
+    ...(reportPath ? { reportPath } : {}),
     completedAt: new Date().toISOString()
   })
   db.updateTaskStatus(taskId, 'completed', result)
   suppressEarlierHeartbeats(db, msg, dispatchId)
 
+  // Why: Multica-style thread — every completion posts a result comment agents/UI can read.
+  try {
+    const summary = [msg.subject, msg.body].filter((part) => part && part.trim()).join('\n\n')
+    db.addTaskComment({
+      taskId,
+      author: msg.from_handle,
+      role: task.pipeline_role,
+      kind: 'result',
+      body: summary || `Completed dispatch ${dispatchId}`
+    })
+  } catch (err) {
+    onLog(
+      `Warning: failed to post result comment for ${taskId}: ${err instanceof Error ? err.message : String(err)}`
+    )
+  }
+
+  // Why: multi-role product pipeline advances (rework / next stage) after a stage completes.
+  try {
+    advanceProductPipelineAfterTaskComplete(db, taskId, onLog)
+  } catch (err) {
+    onLog(
+      `Warning: product pipeline advance failed for ${taskId}: ${err instanceof Error ? err.message : String(err)}`
+    )
+  }
+
   onLog(`Task ${taskId} completed`)
-  return { action: 'completed', taskId, dispatchId }
+  // Why: expose pipeline id so the send-path can auto-dispatch newly unlocked stages without a separate product-tick call.
+  const pipelineId = db.getTask(taskId)?.pipeline_id ?? null
+  return {
+    action: 'completed',
+    taskId,
+    dispatchId,
+    ...(pipelineId ? { pipelineId } : {})
+  }
 }
 
 function buildLifecycleAuthorityRejectionReason(

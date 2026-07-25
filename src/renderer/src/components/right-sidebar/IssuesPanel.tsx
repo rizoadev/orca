@@ -22,6 +22,7 @@ import {
   startGitLabIssueFromPanel
 } from './issues-panel-workspace-actions'
 import { detectRepoIssueProvider } from './repo-issue-provider'
+import { createOrchestrationTaskFromIssue } from '@/lib/issue-to-orchestration-task'
 import {
   getRepoIssueSourceContext,
   GITHUB_OPEN_ISSUES_QUERY,
@@ -50,6 +51,9 @@ export default function IssuesPanel({ isVisible }: { isVisible: boolean }): Reac
   const [aiPlanningIssueId, setAiPlanningIssueId] = useState<string | null>(null)
   const [aiWorkingIssueId, setAiWorkingIssueId] = useState<string | null>(null)
   const [closingIssueId, setClosingIssueId] = useState<string | null>(null)
+  const [convertingIssueId, setConvertingIssueId] = useState<string | null>(null)
+  const openOrchestrationBoardPage = useAppStore((s) => s.openOrchestrationBoardPage)
+  const setRightSidebarTab = useAppStore((s) => s.setRightSidebarTab)
 
   useEffect(() => {
     let cancelled = false
@@ -198,6 +202,64 @@ export default function IssuesPanel({ isVisible }: { isVisible: boolean }): Reac
       }
     },
     [activeRepo, activeWorktree]
+  )
+
+  const handleConvertToOrchestration = useCallback(
+    async (row: IssueRow) => {
+      if (!activeRepo) {
+        return
+      }
+      setConvertingIssueId(row.id)
+      try {
+        const body =
+          row.githubItem && 'body' in row.githubItem
+            ? String((row.githubItem as { body?: string | null }).body ?? '')
+            : row.gitlabItem && 'description' in row.gitlabItem
+              ? String((row.gitlabItem as { description?: string | null }).description ?? '')
+              : ''
+        const result = await createOrchestrationTaskFromIssue({
+          provider: row.provider,
+          issueNumber: row.number,
+          title: row.title,
+          url: row.url,
+          body,
+          repoId: activeRepo.id,
+          worktreeId: activeWorktree?.id ?? null,
+          hostId: activeRepo.connectionId ? `ssh:${activeRepo.connectionId}` : 'local'
+        })
+        // Why: stay on workspace chrome and open the companion sidebar tab only.
+        // Auto-jumping to the full board made the right-bar tab feel "broken".
+        setRightSidebarTab('orchestration')
+        toast.success(
+          result.coalesced
+            ? translate(
+                'auto.components.right.sidebar.issuesPanel.orchestrationExists',
+                'Orchestration task already exists for #{n}',
+                { n: row.number }
+              )
+            : translate(
+                'auto.components.right.sidebar.issuesPanel.orchestrationCreated',
+                'Created orchestration task for #{n}',
+                { n: row.number }
+              ),
+          {
+            description: result.task.id,
+            action: {
+              label: translate(
+                'auto.components.right.sidebar.issuesPanel.openBoard',
+                'Board'
+              ),
+              onClick: () => openOrchestrationBoardPage()
+            }
+          }
+        )
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : String(err))
+      } finally {
+        setConvertingIssueId((current) => (current === row.id ? null : current))
+      }
+    },
+    [activeRepo, activeWorktree?.id, openOrchestrationBoardPage, setRightSidebarTab]
   )
 
   const handleCloseIssue = useCallback(
@@ -382,12 +444,16 @@ export default function IssuesPanel({ isVisible }: { isVisible: boolean }): Reac
           aiPlanningIssueId={aiPlanningIssueId}
           aiWorkingIssueId={aiWorkingIssueId}
           closingIssueId={closingIssueId}
+          convertingIssueId={convertingIssueId}
           onOpenIssue={openIssue}
           onAskAiPlan={(row, agent) => {
             void handleAskAiPlan(row, agent)
           }}
           onAskAiWork={(row, agent, mode) => {
             void handleAskAiWork(row, agent, mode)
+          }}
+          onConvertToOrchestration={(row) => {
+            void handleConvertToOrchestration(row)
           }}
           repoId={activeRepo?.id ?? null}
           onCloseIssue={(row) => {

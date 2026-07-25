@@ -12,6 +12,9 @@ export type MessagePriority = 'normal' | 'high' | 'urgent'
 
 export type TaskStatus = 'pending' | 'ready' | 'dispatched' | 'completed' | 'failed' | 'blocked'
 
+/** Operator priority for queue ordering; independent of message priority. */
+export type TaskPriority = 'low' | 'medium' | 'high' | 'urgent'
+
 export type DispatchStatus = 'pending' | 'dispatched' | 'completed' | 'failed' | 'circuit_broken'
 
 export type GateStatus = 'pending' | 'resolved' | 'timeout'
@@ -43,6 +46,24 @@ export type TaskRow = {
   display_name: string | null
   spec: string
   status: TaskStatus
+  /** Queue priority (v7). Older rows default to medium via migration/read path. */
+  priority: TaskPriority
+  /** Soft link to Orca repo identity — stable subject of work, not a storage root. */
+  repo_id: string | null
+  /** Soft link to Orca project when multi-repo projects are in play. */
+  project_id: string | null
+  /** Mutable execution surface; may be rebound when a worktree is deleted/replaced. */
+  worktree_id: string | null
+  /** local | ssh provider id | wsl distro key — where the work runs. */
+  host_id: string | null
+  /** Product-pipeline root id (v8). Children share the root; root has pipeline_id = self. */
+  pipeline_id: string | null
+  /** research | implement | test | review | done | failed */
+  pipeline_stage: string | null
+  /** researcher | implementer | tester | reviewer */
+  pipeline_role: string | null
+  /** Rework attempt number for implement/test loops (starts at 1). */
+  pipeline_attempt: number | null
   deps: string
   result: string | null
   created_at: string
@@ -82,4 +103,18 @@ export type CoordinatorRun = {
   poll_interval_ms: number
   created_at: string
   completed_at: string | null
+}
+
+/** Task discussion / system events (Multica-style comments). */
+export type TaskCommentKind = 'comment' | 'result' | 'system' | 'dispatch'
+
+export type TaskCommentRow = {
+  id: string
+  task_id: string
+  author: string
+  role: string | null
+  kind: TaskCommentKind
+  body: string
+  parent_id: string | null
+  created_at: string
 }

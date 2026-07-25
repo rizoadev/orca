@@ -540,7 +540,12 @@ describe('orchestration task-create caller handle', () => {
       displayName: undefined,
       deps: undefined,
       parent: undefined,
-      callerTerminalHandle: 'term_creator'
+      callerTerminalHandle: 'term_creator',
+      priority: undefined,
+      repoId: undefined,
+      projectId: undefined,
+      worktreeId: undefined,
+      hostId: undefined
     })
   })
 
@@ -561,7 +566,12 @@ describe('orchestration task-create caller handle', () => {
       displayName: undefined,
       deps: undefined,
       parent: undefined,
-      callerTerminalHandle: undefined
+      callerTerminalHandle: undefined,
+      priority: undefined,
+      repoId: undefined,
+      projectId: undefined,
+      worktreeId: undefined,
+      hostId: undefined
     })
   })
 
@@ -581,7 +591,12 @@ describe('orchestration task-create caller handle', () => {
       displayName: undefined,
       deps: undefined,
       parent: undefined,
-      callerTerminalHandle: undefined
+      callerTerminalHandle: undefined,
+      priority: undefined,
+      repoId: undefined,
+      projectId: undefined,
+      worktreeId: undefined,
+      hostId: undefined
     })
   })
 
@@ -607,7 +622,12 @@ describe('orchestration task-create caller handle', () => {
       displayName: undefined,
       deps: undefined,
       parent: undefined,
-      callerTerminalHandle: undefined
+      callerTerminalHandle: undefined,
+      priority: undefined,
+      repoId: undefined,
+      projectId: undefined,
+      worktreeId: undefined,
+      hostId: undefined
     })
   })
 
@@ -665,8 +685,98 @@ describe('orchestration task-create caller handle', () => {
       displayName: undefined,
       deps: undefined,
       parent: undefined,
-      callerTerminalHandle: 'term_live'
+      callerTerminalHandle: 'term_live',
+      priority: undefined,
+      repoId: undefined,
+      projectId: undefined,
+      worktreeId: undefined,
+      hostId: undefined
     })
+  })
+
+  it('forwards priority and scope flags on task-create', async () => {
+    process.env.ORCA_TERMINAL_HANDLE = 'term_creator'
+    callMock
+      .mockResolvedValueOnce({ result: { terminal: { handle: 'term_creator' } } })
+      .mockResolvedValueOnce({ result: { task: { id: 'task_1', status: 'ready' } } })
+
+    await invokeTaskCreate(
+      new Map<string, string | boolean>([
+        ['spec', 'scoped work'],
+        ['priority', 'high'],
+        ['repo', 'repo-abc'],
+        ['project', 'proj-1'],
+        ['worktree', 'repo-abc::/tmp/wt'],
+        ['host', 'local']
+      ])
+    )
+
+    expect(callMock).toHaveBeenNthCalledWith(2, 'orchestration.taskCreate', {
+      spec: 'scoped work',
+      taskTitle: undefined,
+      displayName: undefined,
+      deps: undefined,
+      parent: undefined,
+      callerTerminalHandle: 'term_creator',
+      priority: 'high',
+      repoId: 'repo-abc',
+      projectId: 'proj-1',
+      worktreeId: 'repo-abc::/tmp/wt',
+      hostId: 'local'
+    })
+  })
+
+  it('rejects invalid priority on task-create', async () => {
+    await expect(
+      invokeTaskCreate(
+        new Map<string, string | boolean>([
+          ['spec', 'bad prio'],
+          ['priority', 'critical']
+        ])
+      )
+    ).rejects.toMatchObject({
+      code: 'invalid_argument'
+    })
+    expect(callMock).not.toHaveBeenCalled()
+  })
+})
+
+describe('orchestration task-scope', () => {
+  beforeEach(() => {
+    callMock.mockReset()
+  })
+
+  it('forwards scope updates', async () => {
+    callMock.mockResolvedValueOnce({ result: { task: { id: 'task_1', status: 'ready' } } })
+    await ORCHESTRATION_HANDLERS['orchestration task-scope']({
+      flags: new Map<string, string | boolean>([
+        ['id', 'task_1'],
+        ['worktree', 'wt-new'],
+        ['priority', 'urgent']
+      ]),
+      client: { call: callMock },
+      cwd: '/tmp/repo',
+      json: true
+    } as never)
+    expect(callMock).toHaveBeenCalledWith('orchestration.taskScope', {
+      id: 'task_1',
+      priority: 'urgent',
+      repoId: undefined,
+      projectId: undefined,
+      worktreeId: 'wt-new',
+      hostId: undefined
+    })
+  })
+
+  it('requires at least one scope field', async () => {
+    await expect(
+      ORCHESTRATION_HANDLERS['orchestration task-scope']({
+        flags: new Map<string, string | boolean>([['id', 'task_1']]),
+        client: { call: callMock },
+        cwd: '/tmp/repo',
+        json: true
+      } as never)
+    ).rejects.toMatchObject({ code: 'invalid_argument' })
   })
 })
 

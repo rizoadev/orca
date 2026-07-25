@@ -13,6 +13,8 @@ const RIGHT_SIDEBAR_SUPPRESSED_VIEWS = new Set<ActiveView>([
   'mobile',
   'issues-board',
   'agent-dashboard'
+  // Why: orchestration board is a full main view, but the right-sidebar Orchestration
+  // tab is the project-scoped companion list — keep it available while the board is open.
 ])
 
 export function canShowRightSidebarForView(activeView: ActiveView): boolean {

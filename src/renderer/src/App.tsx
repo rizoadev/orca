@@ -313,6 +313,9 @@ const Settings = lazy(() => import('./components/settings/Settings'))
 const SkillsPage = lazy(() => import('./components/skills/SkillsPage'))
 const IssueBoardPage = lazy(() => import('./components/issue-board/IssueBoardPage'))
 const AgentDashboardPage = lazy(() => import('./components/dashboard/AgentDashboardPage'))
+const OrchestrationBoardPage = lazy(
+  () => import('./components/orchestration-board/OrchestrationBoardPage')
+)
 const WorkspaceSpacePage = lazy(() => import('./components/workspace-space/WorkspaceSpacePage'))
 const MobilePage = lazy(() => import('./components/mobile/MobilePage'))
 const QuickOpen = lazy(() => import('./components/QuickOpen'))
@@ -2211,6 +2214,9 @@ function App(): React.JSX.Element {
                               {activeView === 'mobile' ? <MobilePage /> : null}
                               {activeView === 'issues-board' ? <IssueBoardPage /> : null}
                               {activeView === 'agent-dashboard' ? <AgentDashboardPage /> : null}
+                              {activeView === 'orchestration-board' ? (
+                                <OrchestrationBoardPage />
+                              ) : null}
                               {activeView === 'terminal' &&
                               creationLayoutActive &&
                               activePendingCreationId ? (
@@ -2596,7 +2602,7 @@ function App(): React.JSX.Element {
           </LinkRoutingPreferenceDialogProvider>
         </ConfirmationDialogProvider>
       </TooltipProvider>
-      <Toaster closeButton toastOptions={{ className: 'font-sans text-sm' }} />
+      <Toaster toastOptions={{ className: 'font-sans text-sm' }} />
       <SkillFreshnessNudge />
       <PinnedTabCloseDialog />
       {/* Why: Electron's drag-region hit-test is DOM-order-based (ignores z-index); render last so WindowControls stay clickable. */}

@@ -1431,6 +1431,8 @@ export const createEditorSlice: StateCreator<AppState, [], [], EditorSlice> = (s
   setRightSidebarWidth: (width) => set({ rightSidebarWidth: width }),
   setRightSidebarTab: (tab) =>
     set((s) => ({
+      // Why: tab selection (activity bar / deep-links) should always surface the panel.
+      rightSidebarOpen: true,
       rightSidebarTab: tab,
       rightSidebarRouteRequestId: s.rightSidebarRouteRequestId + 1,
       ...(tab === 'explorer' ? { rightSidebarExplorerView: 'files' as const } : {})

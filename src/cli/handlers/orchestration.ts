@@ -58,6 +58,24 @@ const TASK_STATUS_VALUES = [
   'blocked'
 ] as const
 
+const TASK_PRIORITY_VALUES = ['low', 'medium', 'high', 'urgent'] as const
+
+function getOptionalTaskPriorityFlag(
+  flags: Map<string, string | boolean>
+): (typeof TASK_PRIORITY_VALUES)[number] | undefined {
+  const raw = getOptionalStringFlag(flags, 'priority')
+  if (raw === undefined) {
+    return undefined
+  }
+  if (!TASK_PRIORITY_VALUES.includes(raw as (typeof TASK_PRIORITY_VALUES)[number])) {
+    throw new RuntimeClientError(
+      'invalid_argument',
+      `invalid priority '${raw}', expected one of: ${TASK_PRIORITY_VALUES.join(', ')}`
+    )
+  }
+  return raw as (typeof TASK_PRIORITY_VALUES)[number]
+}
+
 type MessageSummary = {
   id: string
   from_handle: string
@@ -536,7 +554,12 @@ export const ORCHESTRATION_HANDLERS: Record<string, CommandHandler> = {
         displayName: getOptionalStringFlag(flags, 'display-name'),
         deps: getOptionalStringFlag(flags, 'deps'),
         parent: getOptionalStringFlag(flags, 'parent'),
-        callerTerminalHandle
+        callerTerminalHandle,
+        priority: getOptionalTaskPriorityFlag(flags),
+        repoId: getOptionalStringFlag(flags, 'repo'),
+        projectId: getOptionalStringFlag(flags, 'project'),
+        worktreeId: getOptionalStringFlag(flags, 'worktree'),
+        hostId: getOptionalStringFlag(flags, 'host')
       }
     )
     printResult(result, json, (r) => `Created ${r.task.id} [${r.task.status}]`)
@@ -551,6 +574,11 @@ export const ORCHESTRATION_HANDLERS: Record<string, CommandHandler> = {
         task_title?: string | null
         display_name?: string | null
         status: string
+        priority?: string
+        repo_id?: string | null
+        project_id?: string | null
+        worktree_id?: string | null
+        host_id?: string | null
         assignee_handle?: string | null
         dispatch_id?: string | null
         spec_truncated?: boolean
@@ -561,7 +589,12 @@ export const ORCHESTRATION_HANDLERS: Record<string, CommandHandler> = {
     }>('orchestration.taskList', {
       status: getOptionalStringFlag(flags, 'status'),
       ready: flags.has('ready') ? true : undefined,
-      brief: brief ? true : undefined
+      brief: brief ? true : undefined,
+      priority: getOptionalTaskPriorityFlag(flags),
+      repoId: getOptionalStringFlag(flags, 'repo'),
+      projectId: getOptionalStringFlag(flags, 'project'),
+      worktreeId: getOptionalStringFlag(flags, 'worktree'),
+      hostId: getOptionalStringFlag(flags, 'host')
     })
     // Why: only older runtimes (no spec_truncated) skip server-side abbreviation and need this client-side fallback.
     const needsClientAbbreviation =
@@ -607,6 +640,291 @@ export const ORCHESTRATION_HANDLERS: Record<string, CommandHandler> = {
       }
     )
     printResult(result, json, (r) => `Updated ${r.task.id} -> ${r.task.status}`)
+  },
+
+  'orchestration task-stop': async ({ flags, client, json }) => {
+    const result = await client.call<{ task: { id: string; status: string }; stoppedIds: string[] }>(
+      'orchestration.taskStop',
+      {
+        id: getRequiredStringFlag(flags, 'id'),
+        reason: getOptionalStringFlag(flags, 'reason')
+      }
+    )
+    printResult(
+      result,
+      json,
+      (r) => `Stopped ${r.task.id} -> ${r.task.status} (${r.stoppedIds.length} task(s))`
+    )
+  },
+
+  'orchestration task-delete': async ({ flags, client, json }) => {
+    const result = await client.call<{ deletedIds: string[] }>('orchestration.taskDelete', {
+      id: getRequiredStringFlag(flags, 'id')
+    })
+    printResult(result, json, (r) => `Deleted ${r.deletedIds.length} task(s): ${r.deletedIds.join(', ')}`)
+  },
+
+  'orchestration task-retry': async ({ flags, client, json }) => {
+    const result = await client.call<{
+      task: { id: string; status: string }
+      retriedIds: string[]
+      assigned: boolean
+      to?: string
+      warning?: string
+    }>('orchestration.taskRetry', {
+      id: getRequiredStringFlag(flags, 'id'),
+      reason: getOptionalStringFlag(flags, 'reason'),
+      squad: getOptionalStringFlag(flags, 'squad'),
+      ...(flags.assign === false ? { assign: false } : {}),
+      ...(flags.inject === false ? { inject: false } : {})
+    })
+    printResult(result, json, (r) => {
+      const base = `Retried ${r.retriedIds.length} task(s) → ${r.task.status}`
+      if (r.assigned && r.to) {
+        return `${base}; assigned ${r.to}`
+      }
+      if (r.warning) {
+        return `${base}; warning: ${r.warning}`
+      }
+      return base
+    })
+  },
+
+  'orchestration task-comment': async ({ flags, client, json }) => {
+    const result = await client.call<{
+      comment: { id: string; author: string }
+      notified?: Array<{ handle: string; injected: boolean; error?: string }>
+      reassigned?: boolean
+    }>('orchestration.taskCommentAdd', {
+      task: getRequiredStringFlag(flags, 'task'),
+      body: getRequiredStringFlag(flags, 'body'),
+      author: getOptionalStringFlag(flags, 'author'),
+      role: getOptionalStringFlag(flags, 'role'),
+      parentId: getOptionalStringFlag(flags, 'parent'),
+      from: getOptionalStringFlag(flags, 'from'),
+      // Why: default notify on in RPC; pass --notify false not supported as string — omit reassign unless set.
+      ...(flags.reassign === true ? { reassign: true } : {})
+    })
+    printResult(result, json, (r) => {
+      const notified = (r.notified ?? []).filter((n) => n.injected).map((n) => n.handle)
+      const base = `Comment ${r.comment.id} by ${r.comment.author}`
+      if (notified.length === 0) {
+        return base
+      }
+      return `${base} → notified ${notified.join(', ')}${r.reassigned ? ' (reassigned)' : ''}`
+    })
+  },
+
+  'orchestration task-thread': async ({ flags, client, json }) => {
+    const result = await client.call<{
+      task: { id: string; status: string; pipeline_role?: string | null }
+      comments: Array<{ id: string; author: string; kind: string; body: string; role?: string | null }>
+      inCharge: { handle: string | null; role: string | null; status: string }
+      roster: Array<{
+        role: string | null
+        status: string
+        assignee: string | null
+        stage: string | null
+      }>
+    }>('orchestration.taskThread', {
+      task: getRequiredStringFlag(flags, 'task')
+    })
+    printResult(result, json, (r) => {
+      const lines = [
+        `Task ${r.task.id} [${r.task.status}]`,
+        `In charge: ${r.inCharge.handle ?? '—'} (${r.inCharge.role ?? r.task.pipeline_role ?? 'unassigned'}) [${r.inCharge.status}]`,
+        r.roster.length ? 'Pipeline roster:' : null,
+        ...r.roster.map(
+          (row) =>
+            `  ${(row.stage ?? '?').padEnd(10)} ${(row.role ?? '?').padEnd(12)} ${row.status.padEnd(10)} ${row.assignee ?? '—'}`
+        ),
+        `Thread (${r.comments.length}):`,
+        ...r.comments.map(
+          (c) =>
+            `  [${c.kind}] ${c.author}${c.role ? `/${c.role}` : ''}: ${c.body.replace(/\s+/g, ' ').slice(0, 120)}`
+        )
+      ]
+      return lines.filter(Boolean).join('\n')
+    })
+  },
+
+  'orchestration task-scope': async ({ flags, client, json }) => {
+    const priority = getOptionalTaskPriorityFlag(flags)
+    const repoId = getOptionalStringFlag(flags, 'repo')
+    const projectId = getOptionalStringFlag(flags, 'project')
+    const worktreeId = getOptionalStringFlag(flags, 'worktree')
+    const hostId = getOptionalStringFlag(flags, 'host')
+    if (
+      priority === undefined &&
+      repoId === undefined &&
+      projectId === undefined &&
+      worktreeId === undefined &&
+      hostId === undefined
+    ) {
+      throw new RuntimeClientError(
+        'invalid_argument',
+        'task-scope requires at least one of: --priority, --repo, --project, --worktree, --host'
+      )
+    }
+    const result = await client.call<{ task: { id: string; status: string } }>(
+      'orchestration.taskScope',
+      {
+        id: getRequiredStringFlag(flags, 'id'),
+        priority,
+        repoId,
+        projectId,
+        worktreeId,
+        hostId
+      }
+    )
+    printResult(result, json, (r) => `Scoped ${r.task.id}`)
+  },
+
+  'orchestration product-start': async ({ flags, client, json }) => {
+    const result = await client.call<{
+      pipelineId: string
+      worktreeId: string | null
+      worktreeCreated: boolean
+      issueNumber: number | null
+      dispatches: Array<{ taskId: string; to: string; role: string; spawned: boolean }>
+      loop: string
+    }>('orchestration.productStart', {
+      goal: getRequiredStringFlag(flags, 'goal'),
+      repo: getRequiredStringFlag(flags, 'repo'),
+      title: getOptionalStringFlag(flags, 'title'),
+      worktree: getOptionalStringFlag(flags, 'worktree'),
+      baseBranch: getOptionalStringFlag(flags, 'base-branch'),
+      createIssue: flags.has('create-issue') ? true : undefined,
+      ensureSquads: flags.has('no-ensure-squads') ? false : true,
+      autoDispatch: flags.has('no-auto-dispatch') ? false : true,
+      waitTimeoutMs: getOptionalPositiveIntegerValueFlag(flags, 'wait-timeout-ms'),
+      priority: getOptionalTaskPriorityFlag(flags),
+      devMode: isDevCliInvocation()
+    })
+    printResult(result, json, (r) => {
+      const lines = [
+        `Product pipeline ${r.pipelineId}`,
+        `worktree=${r.worktreeId ?? '?'} (${r.worktreeCreated ? 'created' : 'existing'})`,
+        r.issueNumber != null ? `issue=#${r.issueNumber}` : null,
+        r.loop,
+        `dispatched=${r.dispatches.length}`
+      ]
+      for (const d of r.dispatches) {
+        lines.push(`  ${d.role} → ${d.to || '(failed)'} task=${d.taskId}${d.spawned ? ' [spawned]' : ''}`)
+      }
+      return lines.filter(Boolean).join('\n')
+    })
+  },
+
+  'orchestration product-tick': async ({ flags, client, json }) => {
+    const result = await client.call<{
+      pipelineId: string
+      ready: number
+      dispatched: number
+      completed: number
+      failed: number
+      dispatches: Array<{ taskId: string; to: string; role: string; spawned: boolean }>
+      supervisor?: { running: boolean; activePipelines: string[]; ticks: number }
+    }>('orchestration.productTick', {
+      pipeline: getRequiredStringFlag(flags, 'pipeline'),
+      waitTimeoutMs: getOptionalPositiveIntegerValueFlag(flags, 'wait-timeout-ms'),
+      devMode: isDevCliInvocation()
+    })
+    printResult(result, json, (r) => {
+      const lines = [
+        `Pipeline ${r.pipelineId}`,
+        `ready=${r.ready} dispatched=${r.dispatched} completed=${r.completed} failed=${r.failed}`,
+        `tick dispatches=${r.dispatches.length}`,
+        r.supervisor
+          ? `supervisor running=${r.supervisor.running} watching=${r.supervisor.activePipelines.length} ticks=${r.supervisor.ticks}`
+          : null
+      ]
+      for (const d of r.dispatches) {
+        lines.push(`  ${d.role} → ${d.to || '(failed)'} task=${d.taskId}`)
+      }
+      return lines.filter(Boolean).join('\n')
+    })
+  },
+
+  'orchestration product-watch': async ({ flags, client, json }) => {
+    const result = await client.call<{ pipelineId: string; supervisor: { running: boolean } }>(
+      'orchestration.productWatch',
+      {
+        pipeline: getRequiredStringFlag(flags, 'pipeline'),
+        pollIntervalMs: getOptionalPositiveIntegerValueFlag(flags, 'poll-interval-ms'),
+        devMode: isDevCliInvocation()
+      }
+    )
+    printResult(result, json, (r) => `Watching ${r.pipelineId} (supervisor=${r.supervisor.running})`)
+  },
+
+  'orchestration product-unwatch': async ({ flags, client, json }) => {
+    const result = await client.call<{ pipelineId: string }>('orchestration.productUnwatch', {
+      pipeline: getRequiredStringFlag(flags, 'pipeline')
+    })
+    printResult(result, json, (r) => `Unwatched ${r.pipelineId}`)
+  },
+
+  'orchestration product-supervisor': async ({ flags, client, json }) => {
+    const result = await client.call<{
+      supervisor: {
+        running: boolean
+        activePipelines: string[]
+        lastTickAt: string | null
+        lastError: string | null
+        ticks: number
+        pollIntervalMs: number
+      }
+    }>('orchestration.productSupervisor', {})
+    printResult(result, json, (r) => {
+      const s = r.supervisor
+      return [
+        `supervisor running=${s.running}`,
+        `poll=${s.pollIntervalMs}ms ticks=${s.ticks}`,
+        `lastTick=${s.lastTickAt ?? 'never'}`,
+        `lastError=${s.lastError ?? 'none'}`,
+        `pipelines=${s.activePipelines.join(', ') || '(none)'}`
+      ].join('\n')
+    })
+  },
+
+  'orchestration product-stop': async ({ flags, client, json }) => {
+    const result = await client.call<{ supervisor: { running: boolean } }>(
+      'orchestration.productStop',
+      {}
+    )
+    printResult(result, json, (r) => `Supervisor stopped (running=${r.supervisor.running})`)
+  },
+
+  'orchestration task-assign-squad': async ({ flags, client, cwd, json }) => {
+    const from = await resolveCoordinatorTerminalHandle(flags, cwd, client).catch(() => undefined)
+    const result = await client.call<{
+      task: { id: string; status: string } | null
+      dispatch: { id: string; status: string } | null
+      to: string
+      injected: boolean
+      spawned: boolean
+      squad: { id: string; name: string; routing: string }
+    }>('orchestration.taskAssignSquad', {
+      task: getRequiredStringFlag(flags, 'task'),
+      squad: getRequiredStringFlag(flags, 'squad'),
+      from,
+      worktree: getOptionalStringFlag(flags, 'worktree'),
+      inject: flags.has('no-inject') ? false : true,
+      spawnIfMissing: flags.has('no-spawn') ? false : true,
+      waitTimeoutMs: getOptionalPositiveIntegerValueFlag(flags, 'wait-timeout-ms'),
+      devMode: isDevCliInvocation()
+    })
+    printResult(result, json, (r) => {
+      const parts = [
+        `Assigned ${r.task?.id ?? '?'} → ${r.to}`,
+        `squad=${r.squad.name}`,
+        r.spawned ? 'spawned' : 'existing',
+        r.injected ? 'injected' : 'tracked-only',
+        `dispatch=${r.dispatch?.id ?? '?'}`
+      ]
+      return parts.join(' ')
+    })
   },
 
   'orchestration dispatch': async ({ flags, client, cwd, json }) => {

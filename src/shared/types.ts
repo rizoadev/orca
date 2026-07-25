@@ -346,13 +346,14 @@ export type FolderWorkspace = {
 }
 
 export type FolderWorkspaceLinkedTask = {
-  provider: 'github' | 'gitlab' | 'linear' | 'jira'
+  provider: 'github' | 'gitlab' | 'linear' | 'jira' | 'asana'
   type: 'issue' | 'pr' | 'mr'
   number: number
   title: string
   url: string
   linearIdentifier?: string
   jiraIdentifier?: string
+  asanaGid?: string
   repoId?: string
 }
 
@@ -795,6 +796,7 @@ export type TabContentType =
   | 'conflict-review'
   | 'check-details'
   | 'issue-details'
+  | 'orchestration-task'
   | 'browser'
   | 'simulator'
 
@@ -1928,6 +1930,9 @@ export type {
   GitLabRetryJobResult,
   GitLabReaction,
   GitLabSnippet,
+  GitLabSnippetCreateInput,
+  GitLabSnippetDetail,
+  GitLabSnippetUpdateInput,
   GitLabSnippetVisibility,
   GitLabTodo,
   GitLabTodoTargetType,
@@ -3187,6 +3192,7 @@ export type RightSidebarTab =
   | 'source-control'
   | 'checks'
   | 'issues'
+  | 'orchestration'
   | 'ports'
   | 'hive'
   | 'remote-chat'
@@ -3216,6 +3222,7 @@ export type TopLevelView =
   | 'mobile'
   | 'issues-board'
   | 'agent-dashboard'
+  | 'orchestration-board'
 
 export type PersistedUIState = {
   lastActiveRepoId: string | null

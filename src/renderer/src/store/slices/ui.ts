@@ -613,6 +613,7 @@ export type UISlice = {
     | 'mobile'
     | 'issues-board'
     | 'agent-dashboard'
+    | 'orchestration-board'
   previousViewBeforeSettings:
     | 'terminal'
     | 'tasks'
@@ -623,6 +624,7 @@ export type UISlice = {
     | 'mobile'
     | 'issues-board'
     | 'agent-dashboard'
+    | 'orchestration-board'
   previousViewBeforeActivity:
     | 'terminal'
     | 'settings'
@@ -633,6 +635,7 @@ export type UISlice = {
     | 'mobile'
     | 'issues-board'
     | 'agent-dashboard'
+    | 'orchestration-board'
   previousViewBeforeAutomations:
     | 'terminal'
     | 'settings'
@@ -643,6 +646,7 @@ export type UISlice = {
     | 'mobile'
     | 'issues-board'
     | 'agent-dashboard'
+    | 'orchestration-board'
   previousViewBeforeSpace:
     | 'terminal'
     | 'settings'
@@ -653,6 +657,7 @@ export type UISlice = {
     | 'mobile'
     | 'issues-board'
     | 'agent-dashboard'
+    | 'orchestration-board'
   previousViewBeforeSkills:
     | 'terminal'
     | 'settings'
@@ -663,6 +668,7 @@ export type UISlice = {
     | 'mobile'
     | 'issues-board'
     | 'agent-dashboard'
+    | 'orchestration-board'
   previousViewBeforeMobile:
     | 'terminal'
     | 'settings'
@@ -673,6 +679,7 @@ export type UISlice = {
     | 'skills'
     | 'issues-board'
     | 'agent-dashboard'
+    | 'orchestration-board'
   previousViewBeforeIssuesBoard:
     | 'terminal'
     | 'settings'
@@ -684,6 +691,7 @@ export type UISlice = {
     | 'mobile'
     | 'issues-board'
     | 'agent-dashboard'
+    | 'orchestration-board'
   previousViewBeforeAgentDashboard:
     | 'terminal'
     | 'settings'
@@ -695,10 +703,25 @@ export type UISlice = {
     | 'mobile'
     | 'issues-board'
     | 'agent-dashboard'
+    | 'orchestration-board'
+  previousViewBeforeOrchestrationBoard:
+    | 'terminal'
+    | 'settings'
+    | 'tasks'
+    | 'activity'
+    | 'automations'
+    | 'space'
+    | 'skills'
+    | 'mobile'
+    | 'issues-board'
+    | 'agent-dashboard'
+    | 'orchestration-board'
   openIssuesBoardPage: () => void
   closeIssuesBoardPage: () => void
   openAgentDashboardPage: () => void
   closeAgentDashboardPage: () => void
+  openOrchestrationBoardPage: () => void
+  closeOrchestrationBoardPage: () => void
   setActiveView: (view: UISlice['activeView']) => void
   taskPageData: {
     preselectedRepoId?: string
@@ -1257,6 +1280,7 @@ export const createUISlice: StateCreator<AppState, [], [], UISlice> = (set, get)
   previousViewBeforeMobile: 'terminal',
   previousViewBeforeIssuesBoard: 'terminal',
   previousViewBeforeAgentDashboard: 'terminal',
+  previousViewBeforeOrchestrationBoard: 'terminal',
   setActiveView: (view) => set({ activeView: view }),
   taskPageData: {},
   taskResumeState: undefined,
@@ -1535,6 +1559,18 @@ export const createUISlice: StateCreator<AppState, [], [], UISlice> = (set, get)
   closeAgentDashboardPage: () =>
     set((state) => ({
       activeView: state.previousViewBeforeAgentDashboard
+    })),
+  openOrchestrationBoardPage: () =>
+    set((state) => ({
+      activeView: 'orchestration-board',
+      previousViewBeforeOrchestrationBoard:
+        state.activeView === 'orchestration-board'
+          ? state.previousViewBeforeOrchestrationBoard
+          : (state.activeView as UISlice['previousViewBeforeOrchestrationBoard'])
+    })),
+  closeOrchestrationBoardPage: () =>
+    set((state) => ({
+      activeView: state.previousViewBeforeOrchestrationBoard
     })),
   setNewWorkspaceDraft: (draft) => set({ newWorkspaceDraft: draft }),
   clearNewWorkspaceDraft: () => set({ newWorkspaceDraft: null }),

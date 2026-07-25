@@ -3573,7 +3573,12 @@ describe('orca cli worktree awareness', () => {
       displayName: 'Spawn child workspace',
       deps: undefined,
       parent: undefined,
-      callerTerminalHandle: 'term_creator'
+      callerTerminalHandle: 'term_creator',
+      priority: undefined,
+      repoId: undefined,
+      projectId: undefined,
+      worktreeId: undefined,
+      hostId: undefined
     })
   })
 
