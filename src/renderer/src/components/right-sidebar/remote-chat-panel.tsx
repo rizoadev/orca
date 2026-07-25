@@ -66,8 +66,8 @@ export default function RemoteChatPanel({
           {activeTab === 'pi' && activeWorktree && (
             <PiChatPanel
               isVisible={isVisible && activeTab === 'pi'}
-              worktreeId={activeWorktree.worktreeId}
-              cwd={activeWorktree.localPath ?? ''}
+              worktreeId={activeWorktree.id}
+              cwd={activeWorktree.id.split('::').slice(1).join('::') ?? ''}
             />
           )}
           {activeTab === 'pi' && !activeWorktree && (
