@@ -675,8 +675,8 @@ export const ORCHESTRATION_HANDLERS: Record<string, CommandHandler> = {
       id: getRequiredStringFlag(flags, 'id'),
       reason: getOptionalStringFlag(flags, 'reason'),
       squad: getOptionalStringFlag(flags, 'squad'),
-      ...(flags.assign === false ? { assign: false } : {}),
-      ...(flags.inject === false ? { inject: false } : {})
+      ...(flags.get('assign') === false ? { assign: false } : {}),
+      ...(flags.get('inject') === false ? { inject: false } : {})
     })
     printResult(result, json, (r) => {
       const base = `Retried ${r.retriedIds.length} task(s) → ${r.task.status}`
@@ -703,7 +703,7 @@ export const ORCHESTRATION_HANDLERS: Record<string, CommandHandler> = {
       parentId: getOptionalStringFlag(flags, 'parent'),
       from: getOptionalStringFlag(flags, 'from'),
       // Why: default notify on in RPC; pass --notify false not supported as string — omit reassign unless set.
-      ...(flags.reassign === true ? { reassign: true } : {})
+      ...(flags.get('reassign') === true ? { reassign: true } : {})
     })
     printResult(result, json, (r) => {
       const notified = (r.notified ?? []).filter((n) => n.injected).map((n) => n.handle)
