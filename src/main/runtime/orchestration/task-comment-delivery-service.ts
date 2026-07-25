@@ -35,7 +35,7 @@ export type CommentDeliveryRuntime = {
   listTerminals: (
     worktreeSelector?: string
   ) => Promise<{
-    terminals: Array<{ handle: string; title?: string | null; agent?: string | null }>
+    terminals: { handle: string; title?: string | null; agent?: string | null }[]
   }>
   isTerminalRunningAgent: (handle: string) => Promise<boolean>
   getTerminalPaneKey: (handle: string) => string | null
@@ -66,14 +66,14 @@ export type DeliverOperatorCommentInput = {
 
 export type DeliverOperatorCommentResult = {
   mode: CommentDeliveryMode
-  notified: Array<{
+  notified: {
     handle: string
     injected: boolean
     dispatchId?: string
     error?: string
     primary?: boolean
     spawned?: boolean
-  }>
+  }[]
   reassigned: boolean
   reopened: boolean
   coalesced: boolean
@@ -299,7 +299,7 @@ async function deliverResolved(input: {
   }
 
   // Resolve spawn placeholders first (sequential — avoid multi-spawn storms).
-  const resolvedTargets: Array<CommentDeliveryTarget & { spawned?: boolean; resolveError?: string }> =
+  const resolvedTargets: (CommentDeliveryTarget & { spawned?: boolean; resolveError?: string })[] =
     []
   for (const target of input.targets) {
     const ensured = await ensureHandle(input.runtime, working, target)

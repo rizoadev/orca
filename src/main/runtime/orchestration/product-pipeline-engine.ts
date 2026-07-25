@@ -15,6 +15,14 @@ import {
   PRODUCT_PIPELINE_MAX_REWORK,
   type ProductPipelineRole
 } from '../../../shared/product-pipeline'
+import {
+  buildManagerAutopilotSpec,
+  extractOpenTodosFromAgentOutput,
+  parseAutopilotDirective,
+  parseRootAutopilotFlag,
+  shouldAutopilotContinue,
+  withRootAutopilotFlag
+} from '../../../shared/orchestration-autopilot'
 
 type LogFn = (msg: string) => void
 
@@ -168,19 +176,25 @@ export function advanceProductPipelineAfterTaskComplete(
   const body = parseResultBody(completed.result)
   const stage = completed.pipeline_stage
 
+  const autopilot = parseRootAutopilotFlag(root.result)
+
   if (stage === 'manage' || stage === 'research' || stage === 'implement') {
     onLog(`Pipeline ${root.id}: ${stage} complete (attempt ${attempt})`)
     // Manager FAIL (needs human) escalates product to failed with the question body.
     if (stage === 'manage') {
       const verdict = parsePipelineVerdict(body)
+      const directive = parseAutopilotDirective(body)
       if (verdict === 'fail') {
         db.setTaskPipelineMeta(root.id, {
           pipelineStage: 'failed',
           status: 'failed',
-          result: JSON.stringify({
-            kind: 'product_blocked_on_operator',
-            summary: body
-          })
+          result: withRootAutopilotFlag(
+            JSON.stringify({
+              kind: 'product_blocked_on_operator',
+              summary: body
+            }),
+            autopilot
+          )
         })
         try {
           db.addTaskComment({
@@ -194,7 +208,44 @@ export function advanceProductPipelineAfterTaskComplete(
           // optional
         }
         onLog(`Pipeline ${root.id}: BLOCKED on operator (manager FAIL)`)
+        return
       }
+      if (autopilot && directive === 'done') {
+        db.setTaskPipelineMeta(root.id, {
+          pipelineStage: 'done',
+          status: 'completed',
+          result: withRootAutopilotFlag(
+            JSON.stringify({ kind: 'product_complete', summary: body, autopilotDone: true }),
+            true
+          )
+        })
+        try {
+          db.addTaskComment({
+            taskId: root.id,
+            author: 'system',
+            kind: 'system',
+            role: 'manager',
+            body: 'Autopilot: manager marked DONE (no further automated wave).'
+          })
+        } catch {
+          // optional
+        }
+        onLog(`Pipeline ${root.id}: AUTOPILOT DONE via manager`)
+        return
+      }
+    }
+
+    // Fully autopilot: residual TODOs / idle handoffs loop back to manager for the next wave.
+    if (autopilot && stage !== 'manage') {
+      maybeSpawnAutopilotManagerLoop({
+        db,
+        root,
+        productGoal,
+        completed,
+        body,
+        pipelineTasks,
+        onLog
+      })
     }
     return
   }
@@ -209,12 +260,39 @@ export function advanceProductPipelineAfterTaskComplete(
   // Fail-open on unknown so a terse summary without VERDICT: PASS does not deadlock the product.
   if (verdict === 'pass' || verdict === 'unknown') {
     if (stage === 'review') {
+      if (autopilot) {
+        const continued = maybeSpawnAutopilotManagerLoop({
+          db,
+          root,
+          productGoal,
+          completed,
+          body,
+          pipelineTasks,
+          onLog
+        })
+        if (continued) {
+          return
+        }
+      }
       db.setTaskPipelineMeta(root.id, {
         pipelineStage: 'done',
         status: 'completed',
-        result: JSON.stringify({ kind: 'product_complete', summary: body })
+        result: withRootAutopilotFlag(
+          JSON.stringify({ kind: 'product_complete', summary: body }),
+          autopilot
+        )
       })
       onLog(`Pipeline ${root.id}: PRODUCT COMPLETE`)
+    } else if (autopilot) {
+      maybeSpawnAutopilotManagerLoop({
+        db,
+        root,
+        productGoal,
+        completed,
+        body,
+        pipelineTasks,
+        onLog
+      })
     }
     return
   }
@@ -312,6 +390,146 @@ export function advanceProductPipelineAfterTaskComplete(
   onLog(
     `Pipeline ${root.id}: rework implement=${reworkImplement.id} test=${reworkTest.id} attempt=${nextAttempt}`
   )
+}
+
+/**
+ * When autopilot is on and a worker leaves residual TODOs / idle handoff,
+ * spawn a manager iteration so the loop continues without operator prompting.
+ * Returns true if a manager task was created.
+ */
+function maybeSpawnAutopilotManagerLoop(input: {
+  db: OrchestrationDb
+  root: TaskRow
+  productGoal: string
+  completed: TaskRow
+  body: string
+  pipelineTasks: TaskRow[]
+  onLog: LogFn
+}): boolean {
+  const extracted = extractOpenTodosFromAgentOutput(input.body)
+  if (
+    !shouldAutopilotContinue({
+      autopilotEnabled: true,
+      extracted,
+      stage: input.completed.pipeline_stage
+    })
+  ) {
+    return false
+  }
+
+  // Avoid stacking multiple ready/dispatched manager waves for the same root.
+  const activeManager = input.pipelineTasks.find(
+    (t) =>
+      t.pipeline_role === 'manager' &&
+      t.id !== input.completed.id &&
+      (t.status === 'ready' || t.status === 'dispatched' || t.status === 'pending')
+  )
+  if (activeManager) {
+    input.onLog(
+      `Pipeline ${input.root.id}: autopilot skip — manager ${activeManager.id} already active`
+    )
+    return false
+  }
+
+  const priorManagerAttempts = input.pipelineTasks.filter((t) => t.pipeline_role === 'manager')
+  const nextAttempt =
+    Math.max(0, ...priorManagerAttempts.map((t) => t.pipeline_attempt ?? 1), 0) + 1
+
+  const manager = input.db.createTask({
+    spec: buildManagerAutopilotSpec({
+      productGoal: input.productGoal,
+      attempt: nextAttempt,
+      todos: extracted.todos,
+      sourceStage: input.completed.pipeline_stage || 'unknown',
+      sourceSummary: extracted.excerpt || input.body
+    }),
+    taskTitle: `Autopilot manager #${nextAttempt}`.slice(0, 120),
+    displayName: `Autopilot manager #${nextAttempt}`.slice(0, 120),
+    parentId: input.root.id,
+    priority: 'high',
+    repoId: input.root.repo_id ?? undefined,
+    worktreeId: input.root.worktree_id ?? undefined,
+    hostId: input.root.host_id ?? 'local',
+    pipelineId: input.root.id,
+    pipelineStage: 'manage',
+    pipelineRole: 'manager',
+    pipelineAttempt: nextAttempt
+  })
+
+  // Keep root running so supervisor continues dispatching.
+  input.db.setTaskPipelineMeta(input.root.id, {
+    pipelineStage: 'running',
+    status: 'completed',
+    result: withRootAutopilotFlag(input.root.result, true, input.productGoal)
+  })
+
+  try {
+    input.db.addTaskComment({
+      taskId: input.root.id,
+      author: 'system',
+      kind: 'system',
+      role: 'manager',
+      body:
+        extracted.todos.length > 0
+          ? `Autopilot: folded ${extracted.todos.length} residual TODO(s) into manager ${manager.id}`
+          : `Autopilot: idle handoff from ${input.completed.pipeline_stage} → manager ${manager.id}`
+    })
+    input.db.addTaskComment({
+      taskId: manager.id,
+      author: 'system',
+      kind: 'system',
+      role: 'manager',
+      body: extracted.excerpt.slice(0, 1500)
+    })
+  } catch {
+    // optional
+  }
+
+  input.onLog(
+    `Pipeline ${input.root.id}: AUTOPILOT manager wave ${manager.id} (todos=${extracted.todos.length})`
+  )
+  return true
+}
+
+/** Operator toggle: fully autopilot residual-TODO loops through the manager. */
+export function setProductPipelineAutopilot(
+  db: OrchestrationDb,
+  pipelineId: string,
+  enabled: boolean
+): TaskRow | undefined {
+  const root = db.getTask(pipelineId)
+  if (!root || root.pipeline_id !== root.id) {
+    return undefined
+  }
+  const goal = extractGoalFromRoot(root)
+  const nextResult = withRootAutopilotFlag(root.result, enabled, goal)
+  db.setTaskPipelineMeta(root.id, {
+    result: nextResult,
+    // Keep non-terminal products running when enabling autopilot mid-flight.
+    ...(enabled && root.pipeline_stage === 'done'
+      ? {}
+      : enabled
+        ? { pipelineStage: root.pipeline_stage === 'failed' ? 'running' : root.pipeline_stage }
+        : {})
+  })
+  try {
+    db.addTaskComment({
+      taskId: root.id,
+      author: 'system',
+      kind: 'system',
+      role: 'manager',
+      body: enabled
+        ? 'Autopilot ON — residual agent TODOs will loop back to the manager automatically.'
+        : 'Autopilot OFF — residual TODOs will not auto-spawn manager waves.'
+    })
+  } catch {
+    // optional
+  }
+  return db.getTask(root.id)
+}
+
+export function isProductPipelineAutopilotEnabled(root: TaskRow | undefined): boolean {
+  return parseRootAutopilotFlag(root?.result)
 }
 
 export function listReadyPipelineTasks(db: OrchestrationDb, pipelineId: string): TaskRow[] {

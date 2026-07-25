@@ -24,7 +24,7 @@ export type ProductDispatchRuntime = {
   getClientSettings: () => { agentSquads?: unknown; defaultTuiAgent?: string | null }
   listTerminals: (
     worktreeSelector?: string
-  ) => Promise<{ terminals: Array<{ handle: string; title: string | null }> }>
+  ) => Promise<{ terminals: { handle: string; title: string | null }[] }>
   launchAgentTerminal: (
     worktreeSelector: string,
     opts: { agent: TuiAgent; prompt: string; title?: string }
@@ -62,7 +62,7 @@ function resolveAgentForRole(
     preferred,
     ...memberAgents,
     ...DEFAULT_AGENT_FAILOVER_CHAIN
-  ].filter((name, index, arr) => name && arr.findIndex((x) => x === name) === index)
+  ].filter((name, index, arr) => name && arr.indexOf(name) === index)
   const agentName = pickFailoverAgent(preferred, attempt, chain)
   const agent = (isTuiAgent(agentName) ? agentName : 'pi') as TuiAgent
   return {
@@ -244,12 +244,12 @@ export async function dispatchAllReadyPipelineStages(
   pipelineId: string,
   options?: { coordinatorHandle?: string; waitTimeoutMs?: number; devMode?: boolean }
 ): Promise<
-  Array<{
+  {
     taskId: string
     to: string
     role: string
     spawned: boolean
-  }>
+  }[]
 > {
   const ready = db
     .listTasksByPipeline(pipelineId)
@@ -262,7 +262,7 @@ export async function dispatchAllReadyPipelineStages(
     return (ai === -1 ? 99 : ai) - (bi === -1 ? 99 : bi)
   })
 
-  const results: Array<{ taskId: string; to: string; role: string; spawned: boolean }> = []
+  const results: { taskId: string; to: string; role: string; spawned: boolean }[] = []
   for (const task of ready) {
     try {
       const dispatched = await dispatchPipelineStageTask(db, runtime, task, options)

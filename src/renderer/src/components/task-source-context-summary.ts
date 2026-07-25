@@ -45,6 +45,7 @@ export function getTaskSourceContextSummary(args: {
   selectedRepoCount?: number
   linearWorkspaceName?: string | null
   jiraSiteName?: string | null
+  asanaWorkspaceName?: string | null
 }): TaskSourceContextSummary {
   switch (args.provider) {
     case 'github':
@@ -60,6 +61,13 @@ export function getTaskSourceContextSummary(args: {
     case 'jira':
       return getAccountBackedTaskSourceSummary(args.providerLabel, {
         accountLabel: args.jiraSiteName,
+        accountHostId: args.accountHostId,
+        hostLabelById: args.hostLabelById,
+        hostAvailability: args.hostAvailability
+      })
+    case 'asana':
+      return getAccountBackedTaskSourceSummary(args.providerLabel, {
+        accountLabel: args.asanaWorkspaceName,
         accountHostId: args.accountHostId,
         hostLabelById: args.hostLabelById,
         hostAvailability: args.hostAvailability
@@ -198,6 +206,8 @@ function getProviderIdentityLabel(
       return identity.workspaceName ?? identity.workspaceId ?? null
     case 'jira':
       return identity.siteUrl ?? identity.siteId ?? null
+    case 'asana':
+      return identity.workspaceName ?? identity.workspaceGid ?? null
   }
 }
 

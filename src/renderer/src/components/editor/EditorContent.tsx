@@ -32,6 +32,11 @@ import { ExternalFileChangeBanner } from './ExternalFileChangeBanner'
 
 const GitHubItemDialog = lazy(() => import('@/components/GitHubItemDialog'))
 const GitLabItemDialog = lazy(() => import('@/components/GitLabItemDialog'))
+const OrchestrationTaskDetailHost = lazy(() =>
+  import('@/components/orchestration-board/OrchestrationTaskDetailHost').then((module) => ({
+    default: module.OrchestrationTaskDetailHost
+  }))
+)
 
 const MonacoEditor = lazy(() => import('./MonacoEditor'))
 const DiffViewer = lazy(() => import('./DiffViewer'))
@@ -633,6 +638,38 @@ export function EditorContent({
           void reloadOpenCheckRunDetailsTab(activeFile.id)
         }}
       />
+    )
+  }
+
+  if (activeFile.mode === 'orchestration-task') {
+    const details = activeFile.orchestrationTaskDetails
+    if (!details?.task) {
+      return (
+        <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
+          {translate(
+            'auto.components.editor.EditorContent.orchestrationTaskUnavailable',
+            'Orchestration task details are unavailable.'
+          )}
+        </div>
+      )
+    }
+    return (
+      <div className="flex h-full min-h-0 flex-col overflow-hidden">
+        <Suspense
+          fallback={
+            <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
+              Loading task…
+            </div>
+          }
+        >
+          <OrchestrationTaskDetailHost
+            key={details.task.id}
+            task={details.task}
+            layout="embedded"
+            onClose={() => closeFile(activeFile.id)}
+          />
+        </Suspense>
+      </div>
     )
   }
 

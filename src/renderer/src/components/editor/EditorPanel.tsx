@@ -305,7 +305,11 @@ function EditorPanelInner({
   }
   const handleOpenContainingFolder = (): void => {
     // Why: virtual editor tabs use synthetic ids instead of on-disk paths.
-    if (activeFile.mode === 'check-details' || activeFile.mode === 'issue-details') {
+    if (
+      activeFile.mode === 'check-details' ||
+      activeFile.mode === 'issue-details' ||
+      activeFile.mode === 'orchestration-task'
+    ) {
       return
     }
     if (

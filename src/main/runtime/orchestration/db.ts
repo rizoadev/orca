@@ -1459,13 +1459,13 @@ export class OrchestrationDb {
   }
 
   /** Agents currently or recently in charge of a task (from dispatches + roles). */
-  listTaskAgents(taskId: string): Array<{
+  listTaskAgents(taskId: string): {
     handle: string | null
     role: string | null
     status: string
     dispatchId: string | null
     lastAt: string | null
-  }> {
+  }[] {
     const task = this.getTask(taskId)
     if (!task) {
       return []
@@ -1487,7 +1487,7 @@ export class OrchestrationDb {
   }
 
   /** Pipeline roster: every stage + current assignee. */
-  listPipelineRoster(pipelineId: string): Array<{
+  listPipelineRoster(pipelineId: string): {
     taskId: string
     stage: string | null
     role: string | null
@@ -1496,7 +1496,7 @@ export class OrchestrationDb {
     assignee: string | null
     dispatchStatus: string | null
     attempt: number | null
-  }> {
+  }[] {
     const tasks = this.listTasksByPipeline(pipelineId)
     return tasks
       .filter((t) => t.id !== pipelineId)

@@ -646,6 +646,7 @@ function App(): React.JSX.Element {
   const rightSidebarOpen = useAppStore((s) => s.rightSidebarOpen)
   const rightSidebarTab = useAppStore((s) => s.rightSidebarTab)
   const rightSidebarExplorerView = useAppStore((s) => s.rightSidebarExplorerView)
+  const rightSidebarRouteRequestId = useAppStore((s) => s.rightSidebarRouteRequestId)
   const isFullScreen = useAppStore((s) => s.isFullScreen)
   const settings = useAppStore((s) => s.settings)
   const systemPrefersDark = useSystemPrefersDark()
@@ -2250,10 +2251,11 @@ function App(): React.JSX.Element {
                   <RecoverableRenderErrorBoundary
                     boundaryId="right-sidebar"
                     surface="right-sidebar"
+                    // Why: include routeRequestId so re-clicking the same activity tab after a panel crash remounts the boundary.
                     resetKey={
                       rightSidebarTab === 'explorer'
-                        ? `${rightSidebarTab}:${rightSidebarExplorerView}`
-                        : rightSidebarTab
+                        ? `${rightSidebarTab}:${rightSidebarExplorerView}:${rightSidebarRouteRequestId}`
+                        : `${rightSidebarTab}:${rightSidebarRouteRequestId}`
                     }
                     title={translate('auto.App.ed6b168d00', 'The right sidebar hit an error.')}
                     description={translate(

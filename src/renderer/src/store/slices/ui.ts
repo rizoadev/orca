@@ -720,8 +720,11 @@ export type UISlice = {
   closeIssuesBoardPage: () => void
   openAgentDashboardPage: () => void
   closeAgentDashboardPage: () => void
-  openOrchestrationBoardPage: () => void
+  openOrchestrationBoardPage: (opts?: { taskId?: string | null }) => void
   closeOrchestrationBoardPage: () => void
+  /** One-shot focus when opening the board from the right-sidebar list. */
+  orchestrationBoardFocusTaskId: string | null
+  consumeOrchestrationBoardFocusTaskId: () => string | null
   setActiveView: (view: UISlice['activeView']) => void
   taskPageData: {
     preselectedRepoId?: string
@@ -1560,17 +1563,30 @@ export const createUISlice: StateCreator<AppState, [], [], UISlice> = (set, get)
     set((state) => ({
       activeView: state.previousViewBeforeAgentDashboard
     })),
-  openOrchestrationBoardPage: () =>
+  orchestrationBoardFocusTaskId: null,
+  openOrchestrationBoardPage: (opts) =>
     set((state) => ({
       activeView: 'orchestration-board',
+      // Why: keep right-sidebar companion list usable while the board owns main content.
+      rightSidebarOpen: true,
+      rightSidebarTab: 'orchestration' as const,
+      orchestrationBoardFocusTaskId: opts?.taskId?.trim() || null,
       previousViewBeforeOrchestrationBoard:
         state.activeView === 'orchestration-board'
           ? state.previousViewBeforeOrchestrationBoard
           : (state.activeView as UISlice['previousViewBeforeOrchestrationBoard'])
     })),
+  consumeOrchestrationBoardFocusTaskId: () => {
+    const id = get().orchestrationBoardFocusTaskId
+    if (id) {
+      set({ orchestrationBoardFocusTaskId: null })
+    }
+    return id
+  },
   closeOrchestrationBoardPage: () =>
     set((state) => ({
-      activeView: state.previousViewBeforeOrchestrationBoard
+      activeView: state.previousViewBeforeOrchestrationBoard,
+      orchestrationBoardFocusTaskId: null
     })),
   setNewWorkspaceDraft: (draft) => set({ newWorkspaceDraft: draft }),
   clearNewWorkspaceDraft: () => set({ newWorkspaceDraft: null }),

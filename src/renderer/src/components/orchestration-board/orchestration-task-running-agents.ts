@@ -18,8 +18,11 @@ export type OrchestrationTaskRunningAgent = {
 export function collectOrchestrationTaskRunningAgents(input: {
   taskId: string
   pipelineId?: string | null
+  worktreeId?: string | null
+  /** When true, also match live agents on the same worktree without orchestration context. */
+  allowWorktreeFallback?: boolean
   /** Known dispatch/assignee handles for this task (board row + thread). */
-  assigneeHandles?: Array<string | null | undefined> | null
+  assigneeHandles?: (string | null | undefined)[] | null
   roster?: OrchestrationBoardRosterRow[] | null
   inCharge?: OrchestrationBoardInCharge | null
   agentStatusByPaneKey: Record<string, AgentStatusEntry>
@@ -55,6 +58,7 @@ export function collectOrchestrationTaskRunningAgents(input: {
 
   const out: OrchestrationTaskRunningAgent[] = []
   const seen = new Set<string>()
+  const worktreeId = input.worktreeId?.trim() || null
 
   const consider = (paneKey: string, entry: AgentStatusEntry): void => {
     if (entry.state === 'done') {
@@ -70,10 +74,14 @@ export function collectOrchestrationTaskRunningAgents(input: {
       null
     const matchTask = Boolean(orch?.taskId && taskIds.has(orch.taskId))
     // Why: in-charge/assignee handle is enough even when hook orchestration context is stale/missing.
-    const matchHandle = Boolean(
-      entry.terminalHandle && handles.has(entry.terminalHandle)
-    )
-    if (!matchTask && !matchHandle) {
+    const matchHandle = Boolean(entry.terminalHandle && handles.has(entry.terminalHandle))
+    // Why: after Retry/spawn hooks can lag before stamping taskId — keep worktree+working agents visible for the active dispatch.
+    const matchWorktree =
+      Boolean(input.allowWorktreeFallback) &&
+      Boolean(worktreeId) &&
+      entry.worktreeId === worktreeId &&
+      !orch?.taskId
+    if (!matchTask && !matchHandle && !matchWorktree) {
       return
     }
     const key = entry.terminalHandle || paneKey
@@ -100,6 +108,36 @@ export function collectOrchestrationTaskRunningAgents(input: {
   const rank = (state: string): number =>
     state === 'working' ? 0 : state === 'blocked' ? 1 : state === 'waiting' ? 2 : 3
   out.sort((a, b) => rank(a.state) - rank(b.state) || a.agentType.localeCompare(b.agentType))
+  return out
+}
+
+/** Batch map for sidebar rows: taskId → live agents. */
+export function collectRunningAgentsByTaskId(input: {
+  tasks: {
+    id: string
+    pipeline_id?: string | null
+    worktree_id?: string | null
+    assignee_handle?: string | null
+    status?: string
+  }[]
+  agentStatusByPaneKey: Record<string, AgentStatusEntry>
+  runtimeAgentOrchestrationByPaneKey?: Record<
+    string,
+    NonNullable<AgentStatusEntry['orchestration']>
+  >
+}): Record<string, OrchestrationTaskRunningAgent[]> {
+  const out: Record<string, OrchestrationTaskRunningAgent[]> = {}
+  for (const task of input.tasks) {
+    out[task.id] = collectOrchestrationTaskRunningAgents({
+      taskId: task.id,
+      pipelineId: task.pipeline_id,
+      worktreeId: task.worktree_id,
+      allowWorktreeFallback: task.status === 'dispatched',
+      assigneeHandles: [task.assignee_handle],
+      agentStatusByPaneKey: input.agentStatusByPaneKey,
+      runtimeAgentOrchestrationByPaneKey: input.runtimeAgentOrchestrationByPaneKey
+    })
+  }
   return out
 }
 

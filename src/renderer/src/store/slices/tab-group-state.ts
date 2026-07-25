@@ -159,7 +159,8 @@ export function isTransientEditorContentType(contentType: TabContentType): boole
     contentType === 'diff' ||
     contentType === 'conflict-review' ||
     contentType === 'check-details' ||
-    contentType === 'issue-details'
+    contentType === 'issue-details' ||
+    contentType === 'orchestration-task'
   )
 }
 

@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import { ArrowLeft, LoaderCircle, Plus, RefreshCw, Workflow } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
@@ -73,6 +73,8 @@ type TaskThreadResult = {
   comments: OrchestrationBoardComment[]
   roster: OrchestrationBoardRosterRow[]
   inCharge: OrchestrationBoardInCharge
+  autopilot?: boolean
+  pipelineId?: string | null
 }
 
 const ALL_REPOS = '__all__'
@@ -82,6 +84,10 @@ const LOCAL_RUNTIME_TARGET = { kind: 'local' as const }
 
 export default function OrchestrationBoardPage(): React.JSX.Element {
   const closeOrchestrationBoardPage = useAppStore((s) => s.closeOrchestrationBoardPage)
+  const consumeOrchestrationBoardFocusTaskId = useAppStore(
+    (s) => s.consumeOrchestrationBoardFocusTaskId
+  )
+  const orchestrationBoardFocusTaskId = useAppStore((s) => s.orchestrationBoardFocusTaskId)
   const activeWorktreeId = useAppStore((s) => s.activeWorktreeId)
   const agentSquads = useAppStore((s) => s.settings?.agentSquads)
   const repoMap = useRepoMap()
@@ -116,6 +122,7 @@ export default function OrchestrationBoardPage(): React.JSX.Element {
   const [commentDraft, setCommentDraft] = useState('')
   const [commentSubmitting, setCommentSubmitting] = useState(false)
   const [replyParentId, setReplyParentId] = useState<string | null>(null)
+  const [autopilotBusy, setAutopilotBusy] = useState(false)
   const loadGenerationRef = React.useRef(0)
 
   const openTask = useCallback((task: OrchestrationBoardTask) => {
@@ -143,12 +150,11 @@ export default function OrchestrationBoardPage(): React.JSX.Element {
     }
     try {
       // Always local: task queue is desktop control-plane state, not remote runtime state.
+      const listParams = repoFilter !== ALL_REPOS ? { repoId: repoFilter } : {}
       const result = await callRuntimeRpc<TaskListResult>(
         LOCAL_RUNTIME_TARGET,
         'orchestration.taskList',
-        {
-          ...(repoFilter !== ALL_REPOS ? { repoId: repoFilter } : {})
-        },
+        listParams,
         { timeoutMs: 15_000, skipCompatibilityCheck: true }
       )
       if (generation !== loadGenerationRef.current) {
@@ -317,7 +323,11 @@ export default function OrchestrationBoardPage(): React.JSX.Element {
         { task: taskId },
         { timeoutMs: 15_000, skipCompatibilityCheck: true }
       )
-      setThread(result)
+      setThread({
+        ...result,
+        autopilot: result.autopilot === true,
+        pipelineId: result.pipelineId ?? result.task?.pipeline_id ?? null
+      })
       if (result.task) {
         setSelectedTask(result.task)
         setSelectedId(result.task.id)
@@ -339,6 +349,37 @@ export default function OrchestrationBoardPage(): React.JSX.Element {
     void loadThread(selectedId)
   }, [selectedId, loadThread])
 
+  // Why: right-sidebar "Open in main" hands off a task id so detail docks in the board without a covering modal.
+  useEffect(() => {
+    const focusId = orchestrationBoardFocusTaskId
+    if (!focusId) {
+      return
+    }
+    const local = tasks.find((t) => t.id === focusId)
+    if (local) {
+      openTask(local)
+      setDetailLayout('split')
+      consumeOrchestrationBoardFocusTaskId()
+      return
+    }
+    if (loading) {
+      return
+    }
+    setSelectedId(focusId)
+    setSelectedTask(null)
+    setDetailLayout('full')
+    void loadThread(focusId).finally(() => {
+      consumeOrchestrationBoardFocusTaskId()
+    })
+  }, [
+    consumeOrchestrationBoardFocusTaskId,
+    loadThread,
+    loading,
+    openTask,
+    orchestrationBoardFocusTaskId,
+    tasks
+  ])
+
   const handlePostComment = useCallback(
     async (parentId?: string | null) => {
       if (!selectedId || !commentDraft.trim()) {
@@ -348,7 +389,7 @@ export default function OrchestrationBoardPage(): React.JSX.Element {
       try {
         const result = await callRuntimeRpc<{
           comment: { id: string }
-          notified?: Array<{ handle: string; injected: boolean; error?: string }>
+          notified?: { handle: string; injected: boolean; error?: string }[]
           reassigned?: boolean
           warning?: string
         }>(
@@ -470,6 +511,50 @@ export default function OrchestrationBoardPage(): React.JSX.Element {
     [loadThread, openTask, tasks]
   )
 
+  const handleToggleAutopilot = useCallback(
+    async (task: OrchestrationBoardTask, enabled: boolean) => {
+      const rootId = task.pipeline_id || thread?.pipelineId
+      if (!rootId) {
+        toast.error(
+          translate(
+            'auto.components.orchestration.board.autopilot.needPipeline',
+            'Autopilot is only available for product pipeline tasks.'
+          )
+        )
+        return
+      }
+      setAutopilotBusy(true)
+      try {
+        const result = await callRuntimeRpc<{ autopilot: boolean }>(
+          LOCAL_RUNTIME_TARGET,
+          'orchestration.productAutopilot',
+          { pipeline: rootId, enabled },
+          { timeoutMs: 60_000, skipCompatibilityCheck: true }
+        )
+        setThread((prev) =>
+          prev
+            ? { ...prev, autopilot: result.autopilot === true, pipelineId: rootId }
+            : prev
+        )
+        toast.success(
+          result.autopilot
+            ? translate(
+                'auto.components.orchestration.board.autopilot.on',
+                'Autopilot ON — residual TODOs loop to manager'
+              )
+            : translate('auto.components.orchestration.board.autopilot.off', 'Autopilot OFF')
+        )
+        await loadThread(task.id)
+        await load({ showSpinner: false })
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : String(err))
+      } finally {
+        setAutopilotBusy(false)
+      }
+    },
+    [load, loadThread, thread?.pipelineId]
+  )
+
   const handleRetryTask = useCallback(
     async (task: OrchestrationBoardTask) => {
       setTaskActionId(task.id)
@@ -495,7 +580,11 @@ export default function OrchestrationBoardPage(): React.JSX.Element {
           { timeoutMs: 90_000, skipCompatibilityCheck: true }
         )
         if (result.task) {
-          openTask(result.task)
+          openTask({
+            ...result.task,
+            assignee_handle: result.to ?? result.task.assignee_handle ?? null,
+            status: result.assigned ? 'dispatched' : result.task.status
+          })
         }
         if (result.assigned && result.to) {
           toast.success(
@@ -627,7 +716,7 @@ export default function OrchestrationBoardPage(): React.JSX.Element {
         worktreeId: string | null
         worktreeCreated: boolean
         issueNumber: number | null
-        dispatches: Array<{ role: string; to: string; spawned: boolean }>
+        dispatches: { role: string; to: string; spawned: boolean }[]
       }>(
         LOCAL_RUNTIME_TARGET,
         'orchestration.productStart',
@@ -885,6 +974,10 @@ export default function OrchestrationBoardPage(): React.JSX.Element {
               onRetry={() => {
                 void handleRetryTask(activeTask)
               }}
+              autopilotBusy={autopilotBusy}
+              onToggleAutopilot={(enabled) => {
+                void handleToggleAutopilot(activeTask, enabled)
+              }}
               onStop={() => {
                 void handleStopTask(activeTask)
               }}
@@ -1004,6 +1097,10 @@ export default function OrchestrationBoardPage(): React.JSX.Element {
           }}
           onRetry={() => {
             void handleRetryTask(activeTask)
+          }}
+          autopilotBusy={autopilotBusy}
+          onToggleAutopilot={(enabled) => {
+            void handleToggleAutopilot(activeTask, enabled)
           }}
           onStop={() => {
             void handleStopTask(activeTask)

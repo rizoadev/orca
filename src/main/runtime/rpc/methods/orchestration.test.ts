@@ -58,7 +58,7 @@ describe('orchestration RPC methods', () => {
 
   it('registers all expected methods', () => {
     const registry = buildRegistry(ORCHESTRATION_METHODS)
-    expect(registry.size).toBe(30)
+    expect(registry.size).toBe(31)
     expect(registry.has('orchestration.send')).toBe(true)
     expect(registry.has('orchestration.check')).toBe(true)
     expect(registry.has('orchestration.reply')).toBe(true)
@@ -69,6 +69,7 @@ describe('orchestration RPC methods', () => {
     expect(registry.has('orchestration.taskStop')).toBe(true)
     expect(registry.has('orchestration.taskDelete')).toBe(true)
     expect(registry.has('orchestration.taskRetry')).toBe(true)
+    expect(registry.has('orchestration.productAutopilot')).toBe(true)
     expect(registry.has('orchestration.taskCommentList')).toBe(true)
     expect(registry.has('orchestration.taskCommentAdd')).toBe(true)
     expect(registry.has('orchestration.taskThread')).toBe(true)

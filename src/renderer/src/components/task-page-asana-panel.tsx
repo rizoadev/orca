@@ -63,6 +63,7 @@ export function TaskPageAsanaPanel({ isVisible }: TaskPageAsanaPanelProps): Reac
     try {
       const list = await window.api.asana.listTasks({
         projectGid: projectGid === 'all' ? undefined : projectGid,
+        workspaceGid: status?.activeWorkspaceGid ?? undefined,
         filter,
         limit: 50
       })

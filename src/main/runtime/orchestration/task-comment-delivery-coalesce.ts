@@ -11,10 +11,10 @@ export type CoalesceFlushResult<T> = {
 type Bucket<T> = {
   bodies: string[]
   timer: ReturnType<typeof setTimeout> | null
-  waiters: Array<{
+  waiters: {
     resolve: (value: CoalesceFlushResult<T>) => void
     reject: (err: unknown) => void
-  }>
+  }[]
   flushing: boolean
 }
 
@@ -55,7 +55,7 @@ export class CommentDeliveryCoalescer {
     }
 
     // Dedup identical consecutive bodies.
-    if (bucket.bodies[bucket.bodies.length - 1] !== cleaned) {
+    if (bucket.bodies.at(-1) !== cleaned) {
       bucket.bodies.push(cleaned)
       if (bucket.bodies.length > this.maxBodies) {
         bucket.bodies = bucket.bodies.slice(-this.maxBodies)

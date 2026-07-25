@@ -44,9 +44,9 @@ export type ResolveCommentTargetsInput = {
   task: Pick<TaskRow, 'id' | 'status' | 'worktree_id' | 'pipeline_id' | 'pipeline_role'>
   body: string
   /** Last/active dispatch handles newest-first. */
-  agentHandles: Array<{ handle: string | null; status: string }>
+  agentHandles: { handle: string | null; status: string }[]
   /** Pipeline roster rows for @role: resolution. */
-  roster: Array<{ role: string | null; assignee: string | null }>
+  roster: { role: string | null; assignee: string | null }[]
   squads: readonly AgentSquad[]
   /** Terminals for the task worktree (listed once by the service). */
   worktreeTerminals: readonly CommentTerminalIndexRow[]
@@ -290,7 +290,7 @@ export function planCommentDelivery(input: {
 }
 
 export function buildDeliveryAuditBody(
-  notified: Array<{ handle: string; injected: boolean }>
+  notified: { handle: string; injected: boolean }[]
 ): string {
   const ok = notified.filter((n) => n.injected).map((n) => n.handle)
   if (ok.length === 0) {

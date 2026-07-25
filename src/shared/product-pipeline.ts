@@ -71,7 +71,7 @@ export type ProductPipelinePlanStep = {
   role: ProductPipelineRole
   title: string
   /** Dependency stage keys (not task ids). */
-  dependsOnStages: Array<Exclude<ProductPipelineStage, 'done' | 'failed'>>
+  dependsOnStages: Exclude<ProductPipelineStage, 'done' | 'failed'>[]
 }
 
 export function buildProductPipelinePlan(): ProductPipelinePlanStep[] {
@@ -271,13 +271,13 @@ export function buildRoleTaskSpec(args: {
 
 export function defaultSquadSeed(
   defaultTuiAgent?: string | null
-): Array<{
+): {
   id: string
   name: string
   leader: { agent: string }
-  members: Array<{ agent: string }>
+  members: { agent: string }[]
   routing: 'leader_decide' | 'idle_first'
-}> {
+}[] {
   const agent = defaultTuiAgent?.trim() || 'pi'
   return PRODUCT_PIPELINE_ROLES.map((role) => ({
     id: role.squadId,

@@ -38,9 +38,11 @@ export type OrchestrationBoardTaskThread = {
   comments: OrchestrationBoardComment[]
   roster: OrchestrationBoardRosterRow[]
   inCharge: OrchestrationBoardInCharge
+  autopilot?: boolean
+  pipelineId?: string | null
 }
 
-export type OrchestrationBoardDetailLayout = 'split' | 'full' | 'modal'
+export type OrchestrationBoardDetailLayout = 'split' | 'full' | 'modal' | 'embedded'
 
 type ThreadFilter = 'all' | 'comment' | 'result' | 'dispatch' | 'system'
 
@@ -123,7 +125,9 @@ export function OrchestrationBoardTaskDialog({
   onRetry,
   onStop,
   onDelete,
-  onOpenStageTask
+  onOpenStageTask,
+  onToggleAutopilot,
+  autopilotBusy = false
 }: {
   task: OrchestrationBoardTask
   thread: OrchestrationBoardTaskThread | null
@@ -148,6 +152,8 @@ export function OrchestrationBoardTaskDialog({
   onStop: () => void
   onDelete: () => void
   onOpenStageTask: (taskId: string) => void
+  onToggleAutopilot?: (enabled: boolean) => void
+  autopilotBusy?: boolean
 }): React.JSX.Element {
   const [tab, setTab] = useState('thread')
   const [threadFilter, setThreadFilter] = useState<ThreadFilter>('all')
@@ -189,6 +195,7 @@ export function OrchestrationBoardTaskDialog({
   const inChargeRole = thread?.inCharge.role ?? task.pipeline_role ?? null
   const isModal = layout === 'modal'
   const isFull = layout === 'full'
+  const isEmbedded = layout === 'embedded'
 
   const agentStatusByPaneKey = useAppStore((s) => s.agentStatusByPaneKey)
   const runtimeAgentOrchestrationByPaneKey = useAppStore(
@@ -199,6 +206,9 @@ export function OrchestrationBoardTaskDialog({
       collectOrchestrationTaskRunningAgents({
         taskId: task.id,
         pipelineId: task.pipeline_id,
+        worktreeId: task.worktree_id,
+        allowWorktreeFallback:
+          task.status === 'dispatched' || thread?.inCharge?.status === 'dispatched',
         assigneeHandles: [task.assignee_handle, thread?.inCharge?.handle],
         roster: thread?.roster,
         inCharge: thread?.inCharge,
@@ -211,6 +221,8 @@ export function OrchestrationBoardTaskDialog({
       task.assignee_handle,
       task.id,
       task.pipeline_id,
+      task.status,
+      task.worktree_id,
       thread?.inCharge,
       thread?.roster
     ]
@@ -223,7 +235,9 @@ export function OrchestrationBoardTaskDialog({
         'flex min-h-0 min-w-0 flex-col overflow-hidden bg-card',
         isModal
           ? 'h-[min(920px,calc(100vh-1rem))] w-full max-h-[calc(100vh-1rem)] rounded-xl border border-border shadow-2xl sm:h-[min(860px,90vh)] sm:max-w-[min(1120px,calc(100vw-2rem))]'
-          : 'h-full w-full border-l border-border/60'
+          : isEmbedded
+            ? 'h-full w-full border-0 bg-background'
+            : 'h-full w-full border-l border-border/60'
       )}
       onClick={isModal ? (event) => event.stopPropagation() : undefined}
     >
@@ -356,7 +370,7 @@ export function OrchestrationBoardTaskDialog({
           ) : null}
         </div>
         <div className="flex shrink-0 items-center gap-0.5">
-          {onLayoutChange && !isModal ? (
+          {onLayoutChange && !isModal && !isEmbedded ? (
             <Button
               type="button"
               variant="ghost"
@@ -372,7 +386,7 @@ export function OrchestrationBoardTaskDialog({
               {isFull ? <Shrink className="size-4" /> : <Expand className="size-4" />}
             </Button>
           ) : null}
-          {onLayoutChange ? (
+          {onLayoutChange && !isEmbedded ? (
             <Button
               type="button"
               variant="ghost"
@@ -380,7 +394,10 @@ export function OrchestrationBoardTaskDialog({
               className="size-8"
               title={
                 isModal
-                  ? translate('auto.components.orchestration.board.dockMain', 'Dock to main window')
+                  ? translate(
+                      'auto.components.orchestration.board.openInMain',
+                      'Open in main window'
+                    )
                   : translate('auto.components.orchestration.board.popOut', 'Pop out modal')
               }
               onClick={() => onLayoutChange(isModal ? 'split' : 'modal')}
@@ -415,7 +432,7 @@ export function OrchestrationBoardTaskDialog({
       <div
         className={cn(
           'grid min-h-0 flex-1',
-          isFull || isModal
+          isFull || isModal || isEmbedded
             ? 'grid-cols-1 lg:grid-cols-[minmax(280px,340px)_minmax(0,1fr)]'
             : 'grid-cols-1'
         )}
@@ -423,7 +440,7 @@ export function OrchestrationBoardTaskDialog({
         <aside
           className={cn(
             'flex min-h-0 flex-col border-b border-border/60',
-            (isFull || isModal) && 'lg:border-b-0 lg:border-r'
+            (isFull || isModal || isEmbedded) && 'lg:border-b-0 lg:border-r'
           )}
         >
           <div className="min-h-0 flex-1 overflow-y-auto p-4 scrollbar-sleek sm:p-5">
@@ -468,6 +485,45 @@ export function OrchestrationBoardTaskDialog({
               <h3 className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
                 {translate('auto.components.orchestration.board.actions', 'Actions')}
               </h3>
+              {onToggleAutopilot && (task.pipeline_id || thread?.pipelineId) ? (
+                <div className="flex items-center justify-between gap-2 rounded-md border border-border/50 bg-muted/20 px-2.5 py-2">
+                  <div className="min-w-0">
+                    <div className="text-[12px] font-medium">
+                      {translate(
+                        'auto.components.orchestration.board.autopilot',
+                        'Fully autopilot'
+                      )}
+                    </div>
+                    <p className="text-[10px] leading-snug text-muted-foreground">
+                      {translate(
+                        'auto.components.orchestration.board.autopilotHint',
+                        'Residual agent TODOs auto-loop back to the manager.'
+                      )}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={thread?.autopilot === true}
+                    disabled={autopilotBusy || actionBusy}
+                    onClick={() => onToggleAutopilot(!(thread?.autopilot === true))}
+                    className={cn(
+                      'relative h-6 w-11 shrink-0 rounded-full transition-colors',
+                      thread?.autopilot
+                        ? 'bg-emerald-500'
+                        : 'bg-muted-foreground/30',
+                      (autopilotBusy || actionBusy) && 'opacity-50'
+                    )}
+                  >
+                    <span
+                      className={cn(
+                        'absolute top-0.5 size-5 rounded-full bg-background shadow transition-transform',
+                        thread?.autopilot ? 'left-5' : 'left-0.5'
+                      )}
+                    />
+                  </button>
+                </div>
+              ) : null}
               <div className="flex flex-wrap items-center gap-2">
                 {task.status === 'ready' ? (
                   <Button

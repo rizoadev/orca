@@ -109,10 +109,14 @@ export async function listTasks(args: {
     // Why: project task lists return completed tasks too; filter client-side below.
     path = `/projects/${args.projectGid}/tasks?opt_fields=${fields}&limit=${limit}`
   } else {
-    // Why: user task list is available on free plans (unlike workspace task search).
+    // Why: user task list needs an explicit workspace when the user has more than one.
+    const ws = args.workspaceGid ?? getActiveWorkspaceGid()
+    if (!ws) {
+      throw new AsanaApiError('No active Asana workspace. Connect and select a workspace first.')
+    }
     const me = await asanaFetch<{ data: { gid: string } }>('/users/me?opt_fields=gid')
     const utl = await asanaFetch<{ data: { gid: string } }>(
-      `/users/${me.data.gid}/user_task_list?opt_fields=gid`
+      `/users/${me.data.gid}/user_task_list?workspace=${ws}&opt_fields=gid`
     )
     path = `/user_task_lists/${utl.data.gid}/tasks?opt_fields=${fields}&limit=${limit}`
   }

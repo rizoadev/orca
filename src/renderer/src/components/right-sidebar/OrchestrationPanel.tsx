@@ -3,7 +3,7 @@
  * Scoped list only — full board lives in the main Orchestration Board view.
  */
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
-import { ExternalLink, LoaderCircle, RefreshCw, Workflow } from 'lucide-react'
+import { Bot, ExternalLink, LoaderCircle, RefreshCw, Workflow } from 'lucide-react'
 import { useAppStore } from '@/store'
 import { useActiveWorktree, useRepoById } from '@/store/selectors'
 import { Button } from '@/components/ui/button'
@@ -16,6 +16,10 @@ import {
   type OrchestrationBoardTask
 } from '@/components/orchestration-board/orchestration-board-model'
 import { OrchestrationTaskDetailHost } from '@/components/orchestration-board/OrchestrationTaskDetailHost'
+import {
+  collectRunningAgentsByTaskId,
+  summarizeRunningAgents
+} from '@/components/orchestration-board/orchestration-task-running-agents'
 
 const LOCAL_RUNTIME_TARGET = { kind: 'local' as const }
 const POLL_MS = 5_000
@@ -56,6 +60,11 @@ export default function OrchestrationPanel({
   const activeWorktree = useActiveWorktree()
   const activeRepo = useRepoById(activeWorktree?.repoId ?? null)
   const openOrchestrationBoardPage = useAppStore((s) => s.openOrchestrationBoardPage)
+  const openOrchestrationTaskDetails = useAppStore((s) => s.openOrchestrationTaskDetails)
+  const agentStatusByPaneKey = useAppStore((s) => s.agentStatusByPaneKey)
+  const runtimeAgentOrchestrationByPaneKey = useAppStore(
+    (s) => s.runtimeAgentOrchestrationByPaneKey
+  )
 
   const repoId = activeRepo?.id ?? activeWorktree?.repoId ?? null
   const worktreeId = activeWorktree?.id ?? null
@@ -81,18 +90,18 @@ export default function OrchestrationPanel({
         setLoading(true)
       }
       try {
+        const listParams =
+          scope === 'worktree' && worktreeId
+            ? { worktreeId }
+            : repoId
+              ? { repoId }
+              : worktreeId
+                ? { worktreeId }
+                : {}
         const result = await callRuntimeRpc<TaskListResult>(
           LOCAL_RUNTIME_TARGET,
           'orchestration.taskList',
-          {
-            ...(scope === 'worktree' && worktreeId
-              ? { worktreeId }
-              : repoId
-                ? { repoId }
-                : worktreeId
-                  ? { worktreeId }
-                  : {})
-          },
+          listParams,
           { timeoutMs: 15_000, skipCompatibilityCheck: true }
         )
         if (generation !== loadGenRef.current) {
@@ -170,6 +179,23 @@ export default function OrchestrationPanel({
     }
     return { active, done, failed }
   }, [tasks])
+
+  const runningByTaskId = useMemo(
+    () =>
+      collectRunningAgentsByTaskId({
+        tasks,
+        agentStatusByPaneKey,
+        runtimeAgentOrchestrationByPaneKey
+      }),
+    [agentStatusByPaneKey, runtimeAgentOrchestrationByPaneKey, tasks]
+  )
+  const totalWorkingAgents = useMemo(() => {
+    let n = 0
+    for (const agents of Object.values(runningByTaskId)) {
+      n += agents.filter((a) => a.state === 'working').length
+    }
+    return n
+  }, [runningByTaskId])
 
   if (!repoId && !worktreeId) {
     return (
@@ -249,7 +275,16 @@ export default function OrchestrationPanel({
         >
           {translate('auto.components.right.sidebar.orchestration.scopeWorktree', 'Worktree')}
         </button>
-        <span className="ml-auto text-[10px] tabular-nums text-muted-foreground">
+        <span className="ml-auto flex items-center gap-1.5 text-[10px] tabular-nums text-muted-foreground">
+          {totalWorkingAgents > 0 ? (
+            <span className="inline-flex items-center gap-1 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-1.5 py-0.5 font-medium text-emerald-700 dark:text-emerald-400">
+              <span className="relative flex size-1.5">
+                <span className="absolute inline-flex size-full animate-ping rounded-full bg-emerald-400 opacity-60" />
+                <span className="relative inline-flex size-1.5 rounded-full bg-emerald-500" />
+              </span>
+              {totalWorkingAgents} AI
+            </span>
+          ) : null}
           {counts.active} active
           {counts.failed ? ` · ${counts.failed} failed` : ''}
           {counts.done ? ` · ${counts.done} done` : ''}
@@ -301,7 +336,17 @@ export default function OrchestrationPanel({
                 selectedTask?.id === task.id && 'bg-accent'
               )}
               onClick={() => {
-                // Why: open the single-task detail sheet in-place; full board is the external link only.
+                const targetWorktreeId = task.worktree_id || worktreeId
+                // Why: dock into project main-box; fall back to local drawer if action is unavailable.
+                if (targetWorktreeId && openOrchestrationTaskDetails) {
+                  try {
+                    openOrchestrationTaskDetails(targetWorktreeId, { task })
+                    setSelectedTask(null)
+                    return
+                  } catch (err) {
+                    console.error('[OrchestrationPanel] openOrchestrationTaskDetails failed', err)
+                  }
+                }
                 setSelectedTask(task)
               }}
             >
@@ -317,6 +362,37 @@ export default function OrchestrationPanel({
                     {task.priority}
                   </span>
                 ) : null}
+                {(() => {
+                  const agents = runningByTaskId[task.id] ?? []
+                  const summary = summarizeRunningAgents(agents)
+                  if (summary.total === 0) {
+                    return null
+                  }
+                  return (
+                    <span
+                      className={cn(
+                        'ml-auto inline-flex items-center gap-1 rounded-full border px-1.5 py-0.5 text-[10px] font-medium',
+                        summary.workingCount > 0
+                          ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400'
+                          : 'border-amber-500/30 bg-amber-500/10 text-amber-800 dark:text-amber-300'
+                      )}
+                      title={agents
+                        .map(
+                          (a) =>
+                            `${a.agentType}${a.model ? ` (${a.model})` : ''} · ${a.state}`
+                        )
+                        .join('\n')}
+                    >
+                      <Bot className="size-3" />
+                      {summary.workingCount > 0
+                        ? `${summary.workingCount} working`
+                        : `${summary.total} live`}
+                      <span className="opacity-80">
+                        {summary.agentTypes.slice(0, 2).join(' · ')}
+                      </span>
+                    </span>
+                  )
+                })()}
               </div>
               <div className="line-clamp-2 text-[12px] leading-snug text-foreground">
                 {taskBoardLabel(task)}

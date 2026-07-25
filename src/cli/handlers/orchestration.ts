@@ -693,7 +693,7 @@ export const ORCHESTRATION_HANDLERS: Record<string, CommandHandler> = {
   'orchestration task-comment': async ({ flags, client, json }) => {
     const result = await client.call<{
       comment: { id: string; author: string }
-      notified?: Array<{ handle: string; injected: boolean; error?: string }>
+      notified?: { handle: string; injected: boolean; error?: string }[]
       reassigned?: boolean
     }>('orchestration.taskCommentAdd', {
       task: getRequiredStringFlag(flags, 'task'),
@@ -718,14 +718,14 @@ export const ORCHESTRATION_HANDLERS: Record<string, CommandHandler> = {
   'orchestration task-thread': async ({ flags, client, json }) => {
     const result = await client.call<{
       task: { id: string; status: string; pipeline_role?: string | null }
-      comments: Array<{ id: string; author: string; kind: string; body: string; role?: string | null }>
+      comments: { id: string; author: string; kind: string; body: string; role?: string | null }[]
       inCharge: { handle: string | null; role: string | null; status: string }
-      roster: Array<{
+      roster: {
         role: string | null
         status: string
         assignee: string | null
         stage: string | null
-      }>
+      }[]
     }>('orchestration.taskThread', {
       task: getRequiredStringFlag(flags, 'task')
     })
@@ -786,7 +786,7 @@ export const ORCHESTRATION_HANDLERS: Record<string, CommandHandler> = {
       worktreeId: string | null
       worktreeCreated: boolean
       issueNumber: number | null
-      dispatches: Array<{ taskId: string; to: string; role: string; spawned: boolean }>
+      dispatches: { taskId: string; to: string; role: string; spawned: boolean }[]
       loop: string
     }>('orchestration.productStart', {
       goal: getRequiredStringFlag(flags, 'goal'),
@@ -823,7 +823,7 @@ export const ORCHESTRATION_HANDLERS: Record<string, CommandHandler> = {
       dispatched: number
       completed: number
       failed: number
-      dispatches: Array<{ taskId: string; to: string; role: string; spawned: boolean }>
+      dispatches: { taskId: string; to: string; role: string; spawned: boolean }[]
       supervisor?: { running: boolean; activePipelines: string[]; ticks: number }
     }>('orchestration.productTick', {
       pipeline: getRequiredStringFlag(flags, 'pipeline'),
@@ -865,7 +865,7 @@ export const ORCHESTRATION_HANDLERS: Record<string, CommandHandler> = {
     printResult(result, json, (r) => `Unwatched ${r.pipelineId}`)
   },
 
-  'orchestration product-supervisor': async ({ flags, client, json }) => {
+  'orchestration product-supervisor': async ({ client, json }) => {
     const result = await client.call<{
       supervisor: {
         running: boolean
@@ -888,7 +888,7 @@ export const ORCHESTRATION_HANDLERS: Record<string, CommandHandler> = {
     })
   },
 
-  'orchestration product-stop': async ({ flags, client, json }) => {
+  'orchestration product-stop': async ({ client, json }) => {
     const result = await client.call<{ supervisor: { running: boolean } }>(
       'orchestration.productStop',
       {}
@@ -910,8 +910,8 @@ export const ORCHESTRATION_HANDLERS: Record<string, CommandHandler> = {
       squad: getRequiredStringFlag(flags, 'squad'),
       from,
       worktree: getOptionalStringFlag(flags, 'worktree'),
-      inject: flags.has('no-inject') ? false : true,
-      spawnIfMissing: flags.has('no-spawn') ? false : true,
+      inject: !flags.has('no-inject'),
+      spawnIfMissing: !flags.has('no-spawn'),
       waitTimeoutMs: getOptionalPositiveIntegerValueFlag(flags, 'wait-timeout-ms'),
       devMode: isDevCliInvocation()
     })

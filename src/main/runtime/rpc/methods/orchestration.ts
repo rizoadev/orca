@@ -12,7 +12,6 @@ import type { MessageType, MessagePriority, TaskStatus } from '../../orchestrati
 import { buildDispatchPreamble } from '../../orchestration/preamble'
 import {
   buildSquadLeaderBriefing,
-  findAgentSquad,
   normalizeAgentSquads,
   parseSquadAddress,
   resolveSquadLeader
@@ -32,7 +31,11 @@ import {
 } from '../../orchestration/query-retention'
 import { abbreviateOrchestrationTasks } from '../../../../shared/orchestration-task-summary'
 import { getRepoIdFromWorktreeId } from '../../../../shared/worktree-id'
-import { createProductPipelineTasks } from '../../orchestration/product-pipeline-engine'
+import {
+  createProductPipelineTasks,
+  isProductPipelineAutopilotEnabled,
+  setProductPipelineAutopilot
+} from '../../orchestration/product-pipeline-engine'
 import {
   dispatchAllReadyPipelineStages,
   dispatchPipelineStageTask
@@ -293,6 +296,11 @@ const TaskCommentAddParams = z.object({
 
 const TaskThreadParams = z.object({
   task: requiredString('Missing --task')
+})
+
+const ProductAutopilotParams = z.object({
+  pipeline: requiredString('Missing --pipeline'),
+  enabled: OptionalBoolean
 })
 
 // Why: separate from taskUpdate so lifecycle status changes stay distinct from scope rebinding (e.g. worktree deleted).
@@ -1033,11 +1041,16 @@ export const ORCHESTRATION_METHODS: RpcMethod[] = [
             ? db.listPipelineRoster(pipelineId)
             : []
       const active = agents.find((a) => a.status === 'dispatched') ?? agents[0] ?? null
+      const pipelineRoot =
+        task.pipeline_id != null ? db.getTask(task.pipeline_id) : undefined
+      const autopilot = isProductPipelineAutopilotEnabled(pipelineRoot)
       return {
         task,
         comments,
         agents,
         roster,
+        autopilot,
+        pipelineId: task.pipeline_id,
         inCharge: active
           ? {
               handle: active.handle,
@@ -1729,6 +1742,40 @@ export const ORCHESTRATION_METHODS: RpcMethod[] = [
     handler: () => {
       stopProductSupervisor()
       return { supervisor: getProductSupervisorSnapshot() }
+    }
+  }),
+
+  defineMethod({
+    name: 'orchestration.productAutopilot',
+    params: ProductAutopilotParams,
+    handler: async (params, { runtime }) => {
+      const db = runtime.getOrchestrationDb()
+      const pipelineId = params.pipeline.trim()
+      const existing = db.getTask(pipelineId)
+      if (!existing || existing.pipeline_id !== existing.id) {
+        throw new Error(`Product pipeline root not found: ${pipelineId}`)
+      }
+      const enabled = params.enabled !== false
+      const root = setProductPipelineAutopilot(db, pipelineId, enabled)
+      if (!root) {
+        throw new Error(`Failed to update autopilot for ${pipelineId}`)
+      }
+      if (enabled) {
+        watchProductPipeline(pipelineId, db, runtime)
+        try {
+          await dispatchAllReadyPipelineStages(db, runtime, pipelineId, {
+            waitTimeoutMs: 60_000
+          })
+        } catch {
+          // toggle still succeeded even if immediate dispatch fails
+        }
+      }
+      return {
+        pipelineId,
+        autopilot: enabled,
+        task: root,
+        supervisor: getProductSupervisorSnapshot()
+      }
     }
   }),
 

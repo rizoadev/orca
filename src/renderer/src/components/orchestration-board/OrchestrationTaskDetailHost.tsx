@@ -28,18 +28,25 @@ type TaskThreadResult = {
   comments: OrchestrationBoardComment[]
   roster: OrchestrationBoardRosterRow[]
   inCharge: OrchestrationBoardInCharge
+  autopilot?: boolean
+  pipelineId?: string | null
 }
 
 export function OrchestrationTaskDetailHost({
   task,
   onClose,
-  onChanged
+  onChanged,
+  layout = 'modal'
 }: {
   task: OrchestrationBoardTask
   onClose: () => void
   onChanged?: () => void
+  /** modal = covering drawer; full = docked project main-box tab. */
+  layout?: 'modal' | 'embedded'
 }): React.JSX.Element {
   const repoMap = useRepoMap()
+  const openOrchestrationTaskDetails = useAppStore((s) => s.openOrchestrationTaskDetails)
+  const activeWorktreeId = useAppStore((s) => s.activeWorktreeId)
   const agentSquads = useAppStore((s) => s.settings?.agentSquads)
   const squads = useMemo(() => normalizeAgentSquads(agentSquads ?? []), [agentSquads])
   const [selectedSquadId, setSelectedSquadId] = useState('')
@@ -51,6 +58,8 @@ export function OrchestrationTaskDetailHost({
   const [replyParentId, setReplyParentId] = useState<string | null>(null)
   const [assigning, setAssigning] = useState(false)
   const [actionBusy, setActionBusy] = useState(false)
+  const [autopilotBusy, setAutopilotBusy] = useState(false)
+  const [pipelineId, setPipelineId] = useState<string | null>(task.pipeline_id ?? null)
 
   useEffect(() => {
     setActiveTask(task)
@@ -75,7 +84,12 @@ export function OrchestrationTaskDetailHost({
         { task: taskId },
         { timeoutMs: 15_000, skipCompatibilityCheck: true }
       )
-      setThread(result)
+      setThread({
+        ...result,
+        autopilot: result.autopilot === true,
+        pipelineId: result.pipelineId ?? result.task?.pipeline_id ?? null
+      })
+      setPipelineId(result.pipelineId ?? result.task?.pipeline_id ?? null)
       if (result.task) {
         setActiveTask(result.task)
       }
@@ -98,7 +112,7 @@ export function OrchestrationTaskDetailHost({
       setCommentSubmitting(true)
       try {
         const result = await callRuntimeRpc<{
-          notified?: Array<{ handle: string; injected: boolean; error?: string }>
+          notified?: { handle: string; injected: boolean; error?: string }[]
           warning?: string
         }>(
           LOCAL_RUNTIME_TARGET,
@@ -196,6 +210,53 @@ export function OrchestrationTaskDetailHost({
     }
   }, [activeTask.id, loadThread, onChanged, selectedSquadId])
 
+  const handleToggleAutopilot = useCallback(
+    async (enabled: boolean) => {
+      const rootId = pipelineId || activeTask.pipeline_id
+      if (!rootId) {
+        toast.error(
+          translate(
+            'auto.components.orchestration.board.autopilot.needPipeline',
+            'Autopilot is only available for product pipeline tasks.'
+          )
+        )
+        return
+      }
+      setAutopilotBusy(true)
+      try {
+        const result = await callRuntimeRpc<{ autopilot: boolean }>(
+          LOCAL_RUNTIME_TARGET,
+          'orchestration.productAutopilot',
+          { pipeline: rootId, enabled },
+          { timeoutMs: 60_000, skipCompatibilityCheck: true }
+        )
+        setThread((prev) =>
+          prev
+            ? { ...prev, autopilot: result.autopilot === true, pipelineId: rootId }
+            : prev
+        )
+        toast.success(
+          result.autopilot
+            ? translate(
+                'auto.components.orchestration.board.autopilot.on',
+                'Autopilot ON — residual TODOs loop to manager'
+              )
+            : translate(
+                'auto.components.orchestration.board.autopilot.off',
+                'Autopilot OFF'
+              )
+        )
+        await loadThread(activeTask.id)
+        onChanged?.()
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : String(err))
+      } finally {
+        setAutopilotBusy(false)
+      }
+    },
+    [activeTask.id, activeTask.pipeline_id, loadThread, onChanged, pipelineId]
+  )
+
   const handleRetry = useCallback(async () => {
     setActionBusy(true)
     try {
@@ -219,8 +280,19 @@ export function OrchestrationTaskDetailHost({
         },
         { timeoutMs: 90_000, skipCompatibilityCheck: true }
       )
+      // Why: stamp assignee immediately so running-agent badges rematch before hook context catches up.
       if (result.task) {
-        setActiveTask(result.task)
+        setActiveTask({
+          ...result.task,
+          assignee_handle: result.to ?? result.task.assignee_handle ?? null,
+          status: result.assigned ? 'dispatched' : result.task.status
+        })
+      } else if (result.to) {
+        setActiveTask((prev) => ({
+          ...prev,
+          assignee_handle: result.to ?? prev.assignee_handle,
+          status: result.assigned ? 'dispatched' : prev.status
+        }))
       }
       if (result.assigned && result.to) {
         toast.success(
@@ -243,7 +315,7 @@ export function OrchestrationTaskDetailHost({
           translate('auto.components.orchestration.board.retry.success', 'Task retried')
         )
       }
-      await loadThread(activeTask.id)
+      await loadThread(result.task?.id ?? activeTask.id)
       onChanged?.()
     } catch (err) {
       toast.error(err instanceof Error ? err.message : String(err))
@@ -392,7 +464,28 @@ export function OrchestrationTaskDetailHost({
           : null
       }
       mentionOptions={mentionOptions}
-      layout="modal"
+      layout={layout}
+      onLayoutChange={
+        layout === 'modal'
+          ? (next) => {
+              // Why: dock into the current project main tab strip — stay on workspace, keep right sidebar.
+              if (next === 'split' || next === 'full') {
+                const worktreeId = activeTask.worktree_id || activeWorktreeId
+                if (!worktreeId) {
+                  toast.error(
+                    translate(
+                      'auto.components.orchestration.board.needWorktree',
+                      'Open a project worktree first.'
+                    )
+                  )
+                  return
+                }
+                openOrchestrationTaskDetails(worktreeId, { task: activeTask })
+                onClose()
+              }
+            }
+          : undefined
+      }
       onClose={onClose}
       onCommentDraftChange={setCommentDraft}
       onPostComment={(parentId) => {
@@ -410,6 +503,10 @@ export function OrchestrationTaskDetailHost({
       }}
       onRetry={() => {
         void handleRetry()
+      }}
+      autopilotBusy={autopilotBusy}
+      onToggleAutopilot={(enabled) => {
+        void handleToggleAutopilot(enabled)
       }}
       onStop={() => {
         void handleStop()

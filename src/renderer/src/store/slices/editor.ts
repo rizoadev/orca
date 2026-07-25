@@ -16,6 +16,11 @@ import {
   getIssueDetailsTabLabel,
   type OpenIssueDetailsState
 } from '@/components/editor/issue-details-tab'
+import {
+  buildOrchestrationTaskDetailsTabId,
+  getOrchestrationTaskDetailsTabLabel,
+  type OpenOrchestrationTaskDetailsState
+} from '@/components/editor/orchestration-task-details-tab'
 import { openHttpLink, type HttpLinkSourceOwner } from '@/lib/http-link-routing'
 import { getConnectionIdForFileFromState } from '@/lib/connection-owner-resolution'
 import { isLocalPathOpenBlocked, showLocalPathOpenBlockedToast } from '@/lib/local-path-open-guard'
@@ -260,13 +265,22 @@ export type OpenFile = {
   checkRunDetails?: OpenCheckRunDetailsState
   /** Why: issue-details tabs host GitHub/GitLab issue UI in the main tab strip (not a Tasks drawer). */
   issueDetails?: OpenIssueDetailsState
+  /** Why: orchestration task detail docks in the project main tab strip (not full-page board / covering modal). */
+  orchestrationTaskDetails?: OpenOrchestrationTaskDetailsState
   /** Why: web-client tab mirrored from the host snapshot; only mirrored tabs may be culled when they vanish, locally-opened tabs must survive. */
   mirroredFromRuntimeSession?: boolean
   /** Why: orthogonal to `mode` — an edit-mode tab that must never accept edits/autosave/rename (AI Vault View Log). Persisted only when true. */
   readOnly?: boolean
   /** Why: explicit live tail, only meaningful for a read-only local log. */
   liveTail?: boolean
-  mode: 'edit' | 'diff' | 'conflict-review' | 'markdown-preview' | 'check-details' | 'issue-details'
+  mode:
+    | 'edit'
+    | 'diff'
+    | 'conflict-review'
+    | 'markdown-preview'
+    | 'check-details'
+    | 'issue-details'
+    | 'orchestration-task'
 }
 
 export type ActivityBarPosition = 'top' | 'side'
@@ -549,6 +563,10 @@ export type EditorSlice = {
     state: Pick<OpenCheckRunDetailsState, 'details' | 'loading' | 'error'>
   ) => void
   openIssueDetails: (worktreeId: string, issueDetails: OpenIssueDetailsState) => void
+  openOrchestrationTaskDetails: (
+    worktreeId: string,
+    taskDetails: OpenOrchestrationTaskDetailsState
+  ) => void
   patchOpenCheckRunDetails: (
     worktreeId: string,
     contextKey: string,
@@ -708,7 +726,13 @@ function openWorkspaceEditorItem(
   fileId: string,
   worktreeId: string,
   label: string,
-  contentType: 'editor' | 'diff' | 'conflict-review' | 'check-details' | 'issue-details',
+  contentType:
+    | 'editor'
+    | 'diff'
+    | 'conflict-review'
+    | 'check-details'
+    | 'issue-details'
+    | 'orchestration-task',
   isPreview?: boolean,
   targetGroupId?: string
 ): string {
@@ -741,7 +765,8 @@ function isEditorTabContentType(contentType: Tab['contentType']): boolean {
     contentType === 'diff' ||
     contentType === 'conflict-review' ||
     contentType === 'check-details' ||
-    contentType === 'issue-details'
+    contentType === 'issue-details' ||
+    contentType === 'orchestration-task'
   )
 }
 
@@ -1598,16 +1623,19 @@ export const createEditorSlice: StateCreator<AppState, [], [], EditorSlice> = (s
       | 'diff'
       | 'conflict-review'
       | 'check-details'
-      | 'issue-details' =
+      | 'issue-details'
+      | 'orchestration-task' =
       file.mode === 'conflict-review'
         ? 'conflict-review'
         : file.mode === 'check-details'
           ? 'check-details'
           : file.mode === 'issue-details'
             ? 'issue-details'
-            : file.mode === 'diff'
-              ? 'diff'
-              : 'editor'
+            : file.mode === 'orchestration-task'
+              ? 'orchestration-task'
+              : file.mode === 'diff'
+                ? 'diff'
+                : 'editor'
     let editorItemTargetGroupId = options?.targetGroupId
     set((s) => {
       const worktreeId = file.worktreeId
@@ -3424,6 +3452,69 @@ export const createEditorSlice: StateCreator<AppState, [], [], EditorSlice> = (s
     void openWorkspaceEditorItem(get(), id, worktreeId, label, 'issue-details')
   },
 
+  // Why: open orchestration task detail as a project main-box tab (workspace stays put; right sidebar remains).
+  // One stable tab id per worktree so list clicks replace the existing main view instead of stacking tabs.
+  openOrchestrationTaskDetails: (worktreeId, taskDetails) => {
+    const task = taskDetails.task
+    const id = buildOrchestrationTaskDetailsTabId(worktreeId, task.id)
+    const label = getOrchestrationTaskDetailsTabLabel(task)
+    set((s) => {
+      // Prefer the worktree's existing orchestration-task slot (stable id, or legacy per-task ids).
+      const existing =
+        s.openFiles.find((f) => f.id === id && f.worktreeId === worktreeId) ??
+        s.openFiles.find(
+          (f) => f.worktreeId === worktreeId && f.mode === 'orchestration-task'
+        )
+      const targetId = existing?.id ?? id
+      if (existing) {
+        return {
+          openFiles: s.openFiles.map((f) =>
+            f.id === existing.id
+              ? {
+                  ...f,
+                  id: targetId === id ? id : f.id,
+                  filePath: targetId === id ? id : f.filePath,
+                  mode: 'orchestration-task' as const,
+                  relativePath: label,
+                  language: 'plaintext',
+                  orchestrationTaskDetails: taskDetails
+                }
+              : f
+          ),
+          activeFileId: existing.id,
+          activeTabType: 'editor',
+          activeFileIdByWorktree: { ...s.activeFileIdByWorktree, [worktreeId]: existing.id },
+          activeTabTypeByWorktree: { ...s.activeTabTypeByWorktree, [worktreeId]: 'editor' }
+        }
+      }
+
+      const newFile: OpenFile = {
+        id,
+        filePath: id,
+        relativePath: label,
+        worktreeId,
+        language: 'plaintext',
+        isDirty: false,
+        mode: 'orchestration-task',
+        orchestrationTaskDetails: taskDetails
+      }
+
+      return {
+        openFiles: [...s.openFiles, newFile],
+        activeFileId: id,
+        activeTabType: 'editor',
+        activeFileIdByWorktree: { ...s.activeFileIdByWorktree, [worktreeId]: id },
+        activeTabTypeByWorktree: { ...s.activeTabTypeByWorktree, [worktreeId]: 'editor' }
+      }
+    })
+    const state = get()
+    const activeId =
+      state.openFiles.find(
+        (f) => f.worktreeId === worktreeId && f.mode === 'orchestration-task'
+      )?.id ?? id
+    void openWorkspaceEditorItem(get(), activeId, worktreeId, label, 'orchestration-task')
+  },
+
   // Why: sidebar detail fetches can finish after the full-details tab is open; update the snapshot without stealing focus.
   patchOpenCheckRunDetails: (worktreeId, contextKey, check, state) => {
     const id = buildCheckRunDetailsTabId(worktreeId, check)
@@ -4777,7 +4868,8 @@ function reconcileOpenFilesForStatus(
     if (
       file.mode === 'conflict-review' ||
       file.mode === 'check-details' ||
-      file.mode === 'issue-details'
+      file.mode === 'issue-details' ||
+      file.mode === 'orchestration-task'
     ) {
       return [file]
     }

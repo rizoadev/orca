@@ -110,4 +110,22 @@ describe('collectOrchestrationTaskRunningAgents', () => {
       })
     ])
   })
+
+  it('falls back to worktree live agents after retry before task context is stamped', () => {
+    const agents = collectOrchestrationTaskRunningAgents({
+      taskId: 'task_retry',
+      worktreeId: 'repo::/wt',
+      allowWorktreeFallback: true,
+      agentStatusByPaneKey: {
+        't:new': entry({
+          paneKey: 't:new',
+          state: 'working',
+          agentType: 'pi',
+          worktreeId: 'repo::/wt',
+          terminalHandle: 'term_new'
+        })
+      }
+    })
+    expect(agents.map((a) => a.handle)).toEqual(['term_new'])
+  })
 })

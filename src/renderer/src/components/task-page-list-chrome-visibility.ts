@@ -30,5 +30,8 @@ export function shouldHideTaskPageListChrome({
       return hasJiraDetail
     case 'linear':
       return hasLinearIssueDetail || hasLinearProjectContext || hasLinearViewContext
+    case 'asana':
+      // Why: Asana MVP has no detail pane yet — always show list chrome.
+      return false
   }
 }
