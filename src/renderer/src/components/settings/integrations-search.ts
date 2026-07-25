@@ -207,6 +207,42 @@ export const getIntegrationsPaneSearchEntries = createLocalizedCatalog(() => [
     ]
   },
   {
+    title: translate(
+      'auto.components.settings.integrations.search.asanaTitle',
+      'Asana Integration'
+    ),
+    description: translate(
+      'auto.components.settings.integrations.search.asanaDesc',
+      'Connect Asana with a Personal Access Token to browse tasks.'
+    ),
+    keywords: [
+      ...translateSearchKeyword(
+        'auto.components.settings.integrations.search.asanaKw',
+        'asana'
+      ),
+      ...translateSearchKeyword(
+        'auto.components.settings.integrations.search.c450244ad7',
+        'integration'
+      ),
+      ...translateSearchKeyword(
+        'auto.components.settings.integrations.search.2ec2bd328c',
+        'api token'
+      ),
+      ...translateSearchKeyword(
+        'auto.components.settings.integrations.search.faa0b5a0d9',
+        'api key'
+      ),
+      ...translateSearchKeyword(
+        'auto.components.settings.integrations.search.3c3d3d8ffa',
+        'connect'
+      ),
+      ...translateSearchKeyword(
+        'auto.components.settings.integrations.search.a626990bd2',
+        'disconnect'
+      )
+    ]
+  },
+  {
     title: translate('settings.telegramBridge.search.title', 'Telegram bridge'),
     description: translate(
       'settings.telegramBridge.search.description',

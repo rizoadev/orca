@@ -17,17 +17,22 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { translate } from '@/i18n/i18n'
 import type { AsanaConnectionStatus } from '../../../shared/asana-types'
+import { cn } from '@/lib/utils'
 
 type AsanaConnectDialogProps = {
   open: boolean
   onOpenChange: (open: boolean) => void
   onConnected?: (status: AsanaConnectionStatus) => void
+  overlayClassName?: string
+  contentClassName?: string
 }
 
 export function AsanaConnectDialog({
   open,
   onOpenChange,
-  onConnected
+  onConnected,
+  overlayClassName,
+  contentClassName
 }: AsanaConnectDialogProps): React.JSX.Element {
   const [token, setToken] = useState('')
   const [connecting, setConnecting] = useState(false)
@@ -61,7 +66,10 @@ export function AsanaConnectDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-md">
+      <DialogContent
+        overlayClassName={overlayClassName}
+        className={cn('max-w-md', contentClassName)}
+      >
         <DialogHeader>
           <DialogTitle>
             {translate('auto.components.AsanaConnectDialog.title', 'Connect Asana')}
