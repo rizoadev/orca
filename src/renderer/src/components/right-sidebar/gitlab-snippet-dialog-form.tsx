@@ -13,6 +13,7 @@ import { translate } from '@/i18n/i18n'
 import { useAppStore } from '@/store'
 import { detectLanguage } from '@/lib/language-detect'
 import { computeEditorFontSize, resolveEditorFontFamily } from '@/lib/editor-font-zoom'
+import { SnippetRichMarkdownEditor } from './snippet-rich-markdown-editor'
 import type { GitLabSnippetVisibility } from '../../../../shared/types'
 
 // Why: lazy-load Monaco so the snippet dialog doesn't pull in the full
@@ -252,13 +253,10 @@ export function GitLabSnippetDialogForm({
 
           {/* Rich MD mode (only for .md files) */}
           {isMd && mdViewMode === 'rich' ? (
-            <textarea
+            <SnippetRichMarkdownEditor
               value={draft.content}
+              onChange={(v) => onDraftChange({ content: v })}
               disabled={disabled}
-              spellCheck
-              className="h-full min-h-[360px] w-full resize-none bg-transparent p-4 text-sm leading-6 text-foreground outline-none placeholder:text-muted-foreground disabled:opacity-60 scrollbar-sleek"
-              placeholder="Write Markdown…"
-              onChange={(event) => onDraftChange({ content: event.target.value })}
             />
           ) : (
             /* Monaco editor — default for all files, and source mode for .md */
