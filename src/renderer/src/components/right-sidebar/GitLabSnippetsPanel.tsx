@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { ExternalLink, FileCode2, RefreshCw } from 'lucide-react'
+import { FileCode2, Plus, RefreshCw } from 'lucide-react'
 import { toast } from 'sonner'
 import { useActiveWorktree, useRepoById } from '@/store/selectors'
 import { Button } from '@/components/ui/button'
@@ -8,8 +8,17 @@ import { translate } from '@/i18n/i18n'
 import type { GitLabSnippet } from '../../../../shared/types'
 import { detectRepoIssueProvider } from './repo-issue-provider'
 import { getRepoIssueSourceContext } from './issues-panel-rows'
+import { GitLabSnippetDialog } from './gitlab-snippet-dialog'
 
 const SNIPPET_LIST_LIMIT = 50
+
+/** Hive→GitLab snippet sync encodes nested paths as a__b for GitLab file names. */
+function displaySnippetFileName(fileName: string): string {
+  if (!fileName || fileName.includes('/')) {
+    return fileName
+  }
+  return fileName.includes('__') ? fileName.replaceAll('__', '/') : fileName
+}
 
 function formatUpdatedAt(value: string): string {
   if (!value) {
@@ -40,6 +49,9 @@ export default function GitLabSnippetsPanel({
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [refreshNonce, setRefreshNonce] = useState(0)
+  const [dialogOpen, setDialogOpen] = useState(false)
+  const [dialogMode, setDialogMode] = useState<'create' | 'edit'>('create')
+  const [selectedSnippet, setSelectedSnippet] = useState<GitLabSnippet | null>(null)
 
   const refresh = useCallback(async (): Promise<void> => {
     if (!activeRepo || provider !== 'gitlab' || !window.api.gl?.listProjectSnippets) {
@@ -82,7 +94,42 @@ export default function GitLabSnippetsPanel({
   useEffect(() => {
     setItems([])
     setError(null)
+    setDialogOpen(false)
+    setSelectedSnippet(null)
   }, [activeRepo?.id])
+
+  const openCreate = useCallback(() => {
+    setDialogMode('create')
+    setSelectedSnippet(null)
+    setDialogOpen(true)
+  }, [])
+
+  const openSnippet = useCallback((snippet: GitLabSnippet) => {
+    setDialogMode('edit')
+    setSelectedSnippet(snippet)
+    setDialogOpen(true)
+  }, [])
+
+  const handleSaved = useCallback((snippet: GitLabSnippet) => {
+    setItems((current) => {
+      const index = current.findIndex((item) => item.id === snippet.id)
+      if (index === -1) {
+        return [snippet, ...current]
+      }
+      const next = current.slice()
+      next[index] = {
+        ...next[index],
+        ...snippet
+      }
+      return next
+    })
+    setSelectedSnippet(snippet)
+  }, [])
+
+  const handleDeleted = useCallback((snippetId: number) => {
+    setItems((current) => current.filter((item) => item.id !== snippetId))
+    setSelectedSnippet(null)
+  }, [])
 
   if (!activeRepo) {
     return (
@@ -126,6 +173,20 @@ export default function GitLabSnippetsPanel({
               size="icon"
               className="h-7 w-7"
               disabled={loading}
+              onClick={openCreate}
+              aria-label={translate(
+                'auto.components.right.sidebar.GitLabSnippetsPanel.add',
+                'Add snippet'
+              )}
+            >
+              <Plus className="h-3.5 w-3.5" />
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="h-7 w-7"
+              disabled={loading}
               onClick={() => setRefreshNonce((value) => value + 1)}
               aria-label={translate(
                 'auto.components.right.sidebar.GitLabSnippetsPanel.refresh',
@@ -159,11 +220,20 @@ export default function GitLabSnippetsPanel({
             </Button>
           </div>
         ) : items.length === 0 ? (
-          <div className="px-3 py-6 text-center text-xs text-muted-foreground">
-            {translate(
-              'auto.components.right.sidebar.GitLabSnippetsPanel.empty',
-              'No project snippets yet.'
-            )}
+          <div className="space-y-3 px-3 py-6 text-center">
+            <p className="text-xs text-muted-foreground">
+              {translate(
+                'auto.components.right.sidebar.GitLabSnippetsPanel.empty',
+                'No project snippets yet.'
+              )}
+            </p>
+            <Button type="button" size="sm" onClick={openCreate}>
+              <Plus className="h-3.5 w-3.5" />
+              {translate(
+                'auto.components.right.sidebar.GitLabSnippetsPanel.addFirst',
+                'New snippet'
+              )}
+            </Button>
           </div>
         ) : (
           <ul className="py-1">
@@ -172,25 +242,14 @@ export default function GitLabSnippetsPanel({
                 <button
                   type="button"
                   className="flex w-full items-start gap-2 px-3 py-2 text-left transition-colors hover:bg-sidebar-accent"
-                  onClick={() => {
-                    if (snippet.webUrl) {
-                      void window.api.shell.openUrl(snippet.webUrl)
-                    }
-                  }}
+                  onClick={() => openSnippet(snippet)}
                 >
                   <FileCode2 className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                   <div className="min-w-0 flex-1">
-                    <div className="flex items-start justify-between gap-2">
-                      <p className="truncate text-xs font-medium text-foreground">
-                        {snippet.title}
-                      </p>
-                      {snippet.webUrl ? (
-                        <ExternalLink className="mt-0.5 h-3 w-3 shrink-0 text-muted-foreground" />
-                      ) : null}
-                    </div>
+                    <p className="truncate text-xs font-medium text-foreground">{snippet.title}</p>
                     <p className="truncate text-[11px] text-muted-foreground">
                       {[
-                        snippet.fileName || null,
+                        displaySnippetFileName(snippet.fileName) || null,
                         snippet.visibility,
                         snippet.authorUsername ? `@${snippet.authorUsername}` : null,
                         formatUpdatedAt(snippet.updatedAt) || null
@@ -210,6 +269,16 @@ export default function GitLabSnippetsPanel({
           </ul>
         )}
       </div>
+
+      <GitLabSnippetDialog
+        open={dialogOpen}
+        mode={dialogMode}
+        repo={activeRepo}
+        snippet={selectedSnippet}
+        onOpenChange={setDialogOpen}
+        onSaved={handleSaved}
+        onDeleted={handleDeleted}
+      />
     </div>
   )
 }

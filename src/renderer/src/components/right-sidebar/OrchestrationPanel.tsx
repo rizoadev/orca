@@ -1,8 +1,8 @@
 /**
  * Right-sidebar orchestration queue for the active project/repo.
- * Scoped list only — full board lives in the main Orchestration Board view.
+ * Scoped list only — task detail docks into the project main tab strip.
  */
-import React, { useCallback, useEffect, useMemo, useState } from 'react'
+import React, { Suspense, useCallback, useEffect, useMemo, useState } from 'react'
 import { Bot, ExternalLink, LoaderCircle, RefreshCw, Workflow } from 'lucide-react'
 import { useAppStore } from '@/store'
 import { useActiveWorktree, useRepoById } from '@/store/selectors'
@@ -15,7 +15,6 @@ import {
   taskBoardLabel,
   type OrchestrationBoardTask
 } from '@/components/orchestration-board/orchestration-board-model'
-import { OrchestrationTaskDetailHost } from '@/components/orchestration-board/OrchestrationTaskDetailHost'
 import {
   collectRunningAgentsByTaskId,
   summarizeRunningAgents
@@ -23,6 +22,12 @@ import {
 
 const LOCAL_RUNTIME_TARGET = { kind: 'local' as const }
 const POLL_MS = 5_000
+
+// Why: keep list panel mountable even if detail host chunk fails to load.
+const OrchestrationTaskDetailHost = React.lazy(async () => {
+  const mod = await import('@/components/orchestration-board/OrchestrationTaskDetailHost')
+  return { default: mod.OrchestrationTaskDetailHost }
+})
 
 const STATUS_TONE: Record<string, string> = {
   ready: 'border-sky-500/30 bg-sky-500/10 text-sky-700 dark:text-sky-300',
@@ -61,6 +66,7 @@ export default function OrchestrationPanel({
   const activeRepo = useRepoById(activeWorktree?.repoId ?? null)
   const openOrchestrationBoardPage = useAppStore((s) => s.openOrchestrationBoardPage)
   const openOrchestrationTaskDetails = useAppStore((s) => s.openOrchestrationTaskDetails)
+  const setActiveWorktree = useAppStore((s) => s.setActiveWorktree)
   const agentStatusByPaneKey = useAppStore((s) => s.agentStatusByPaneKey)
   const runtimeAgentOrchestrationByPaneKey = useAppStore(
     (s) => s.runtimeAgentOrchestrationByPaneKey
@@ -107,15 +113,8 @@ export default function OrchestrationPanel({
         if (generation !== loadGenRef.current) {
           return
         }
-        const nextTasks = result.tasks ?? []
-        setTasks(nextTasks)
+        setTasks(result.tasks ?? [])
         setError(null)
-        if (selectedTask) {
-          const fresh = nextTasks.find((t) => t.id === selectedTask.id)
-          if (fresh) {
-            setSelectedTask(fresh)
-          }
-        }
       } catch (err) {
         if (generation !== loadGenRef.current) {
           return
@@ -127,7 +126,7 @@ export default function OrchestrationPanel({
         }
       }
     },
-    [repoId, scope, selectedTask, worktreeId]
+    [repoId, scope, worktreeId]
   )
 
   useEffect(() => {
@@ -142,6 +141,17 @@ export default function OrchestrationPanel({
       intervalMs: POLL_MS
     })
   }, [isVisible, load])
+
+  // Keep selected drawer task fresh after poll without putting selectedTask in load deps.
+  useEffect(() => {
+    if (!selectedTask) {
+      return
+    }
+    const fresh = tasks.find((t) => t.id === selectedTask.id)
+    if (fresh && fresh !== selectedTask) {
+      setSelectedTask(fresh)
+    }
+  }, [selectedTask, tasks])
 
   const sorted = useMemo(() => {
     const rank = (status: string): number => {
@@ -180,15 +190,18 @@ export default function OrchestrationPanel({
     return { active, done, failed }
   }, [tasks])
 
-  const runningByTaskId = useMemo(
-    () =>
-      collectRunningAgentsByTaskId({
+  const runningByTaskId = useMemo(() => {
+    try {
+      return collectRunningAgentsByTaskId({
         tasks,
-        agentStatusByPaneKey,
-        runtimeAgentOrchestrationByPaneKey
-      }),
-    [agentStatusByPaneKey, runtimeAgentOrchestrationByPaneKey, tasks]
-  )
+        agentStatusByPaneKey: agentStatusByPaneKey ?? {},
+        runtimeAgentOrchestrationByPaneKey: runtimeAgentOrchestrationByPaneKey ?? {}
+      })
+    } catch {
+      return {}
+    }
+  }, [agentStatusByPaneKey, runtimeAgentOrchestrationByPaneKey, tasks])
+
   const totalWorkingAgents = useMemo(() => {
     let n = 0
     for (const agents of Object.values(runningByTaskId)) {
@@ -196,6 +209,27 @@ export default function OrchestrationPanel({
     }
     return n
   }, [runningByTaskId])
+
+  const openTaskFromList = useCallback(
+    (task: OrchestrationBoardTask) => {
+      const targetWorktreeId = task.worktree_id || worktreeId
+      if (targetWorktreeId && openOrchestrationTaskDetails) {
+        try {
+          // Align left-sidebar project + File Explorer with the task worktree being viewed.
+          if (targetWorktreeId !== worktreeId) {
+            setActiveWorktree?.(targetWorktreeId)
+          }
+          openOrchestrationTaskDetails(targetWorktreeId, { task })
+          setSelectedTask(null)
+          return
+        } catch (err) {
+          console.error('[OrchestrationPanel] open main task tab failed', err)
+        }
+      }
+      setSelectedTask(task)
+    },
+    [openOrchestrationTaskDetails, setActiveWorktree, worktreeId]
+  )
 
   if (!repoId && !worktreeId) {
     return (
@@ -327,48 +361,27 @@ export default function OrchestrationPanel({
           </div>
         ) : null}
         <div className="divide-y divide-border/40">
-          {sorted.map((task) => (
-            <button
-              key={task.id}
-              type="button"
-              className={cn(
-                'flex w-full flex-col gap-1 px-3 py-2 text-left hover:bg-accent',
-                selectedTask?.id === task.id && 'bg-accent'
-              )}
-              onClick={() => {
-                const targetWorktreeId = task.worktree_id || worktreeId
-                // Why: dock into project main-box; fall back to local drawer if action is unavailable.
-                if (targetWorktreeId && openOrchestrationTaskDetails) {
-                  try {
-                    openOrchestrationTaskDetails(targetWorktreeId, { task })
-                    setSelectedTask(null)
-                    return
-                  } catch (err) {
-                    console.error('[OrchestrationPanel] openOrchestrationTaskDetails failed', err)
-                  }
-                }
-                setSelectedTask(task)
-              }}
-            >
-              <div className="flex items-center gap-2">
-                <StatusChip status={task.status} />
-                {task.pipeline_role ? (
-                  <span className="text-[10px] capitalize text-muted-foreground">
-                    {task.pipeline_role}
-                  </span>
-                ) : null}
-                {task.priority && task.priority !== 'medium' ? (
-                  <span className="text-[10px] capitalize text-muted-foreground">
-                    {task.priority}
-                  </span>
-                ) : null}
-                {(() => {
-                  const agents = runningByTaskId[task.id] ?? []
-                  const summary = summarizeRunningAgents(agents)
-                  if (summary.total === 0) {
-                    return null
-                  }
-                  return (
+          {sorted.map((task) => {
+            const agents = runningByTaskId[task.id] ?? []
+            const summary = summarizeRunningAgents(agents)
+            return (
+              <button
+                key={task.id}
+                type="button"
+                className={cn(
+                  'flex w-full flex-col gap-1 px-3 py-2 text-left hover:bg-accent',
+                  selectedTask?.id === task.id && 'bg-accent'
+                )}
+                onClick={() => openTaskFromList(task)}
+              >
+                <div className="flex items-center gap-2">
+                  <StatusChip status={task.status} />
+                  {task.pipeline_role ? (
+                    <span className="text-[10px] capitalize text-muted-foreground">
+                      {task.pipeline_role}
+                    </span>
+                  ) : null}
+                  {summary.total > 0 ? (
                     <span
                       className={cn(
                         'ml-auto inline-flex items-center gap-1 rounded-full border px-1.5 py-0.5 text-[10px] font-medium',
@@ -391,31 +404,33 @@ export default function OrchestrationPanel({
                         {summary.agentTypes.slice(0, 2).join(' · ')}
                       </span>
                     </span>
-                  )
-                })()}
-              </div>
-              <div className="line-clamp-2 text-[12px] leading-snug text-foreground">
-                {taskBoardLabel(task)}
-              </div>
-              <div className="flex items-center gap-2 font-mono text-[10px] text-muted-foreground">
-                <span className="truncate">{task.id}</span>
-                {task.assignee_handle ? (
-                  <span className="ml-auto truncate">{task.assignee_handle}</span>
-                ) : null}
-              </div>
-            </button>
-          ))}
+                  ) : null}
+                </div>
+                <div className="line-clamp-2 text-[12px] leading-snug text-foreground">
+                  {taskBoardLabel(task)}
+                </div>
+                <div className="flex items-center gap-2 font-mono text-[10px] text-muted-foreground">
+                  <span className="truncate">{task.id}</span>
+                  {task.assignee_handle ? (
+                    <span className="ml-auto truncate">{task.assignee_handle}</span>
+                  ) : null}
+                </div>
+              </button>
+            )
+          })}
         </div>
       </div>
 
       {selectedTask ? (
-        <OrchestrationTaskDetailHost
-          task={selectedTask}
-          onClose={() => setSelectedTask(null)}
-          onChanged={() => {
-            void load({ showSpinner: false })
-          }}
-        />
+        <Suspense fallback={null}>
+          <OrchestrationTaskDetailHost
+            task={selectedTask}
+            onClose={() => setSelectedTask(null)}
+            onChanged={() => {
+              void load({ showSpinner: false })
+            }}
+          />
+        </Suspense>
       ) : null}
     </div>
   )

@@ -1,34 +1,8 @@
-import React, { useCallback, useEffect } from 'react'
-import Editor, { type OnMount } from '@monaco-editor/react'
+import React from 'react'
 import { LoaderCircle, RefreshCw, Save } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
-import { computeEditorFontSize, resolveEditorFontFamily } from '@/lib/editor-font-zoom'
-import { resolveDocumentTheme } from '@/lib/document-theme'
-import { monaco } from '@/lib/monaco-setup'
-import { useAppStore } from '@/store'
 import type { HiveEnvFile } from '../../../../shared/hive-types'
-
-function languageForEnvPath(path: string): string {
-  const lower = path.toLowerCase()
-  if (lower.endsWith('.json')) {
-    return 'json'
-  }
-  if (lower.endsWith('.yml') || lower.endsWith('.yaml')) {
-    return 'yaml'
-  }
-  if (lower.endsWith('.toml')) {
-    return 'ini'
-  }
-  if (lower.endsWith('.sh') || lower.endsWith('.bash')) {
-    return 'shell'
-  }
-  // Why: dotenv-style files get shell highlighting so KEY=value still has contrast.
-  if (lower.includes('.env') || lower.endsWith('env') || lower.endsWith('.properties')) {
-    return 'shell'
-  }
-  return 'plaintext'
-}
 
 type HiveEnvFilesEditorProps = {
   files: HiveEnvFile[]
@@ -55,24 +29,7 @@ export function HiveEnvFilesEditor({
   onReload,
   onSave
 }: HiveEnvFilesEditorProps): React.JSX.Element {
-  const settings = useAppStore((s) => s.settings)
-  const editorFontZoomLevel = useAppStore((s) => s.editorFontZoomLevel)
-  const isDark = resolveDocumentTheme(settings?.theme ?? 'system')
-  const editorFontSize = computeEditorFontSize(
-    settings?.terminalFontSize ?? 13,
-    editorFontZoomLevel
-  )
-  const editorFontFamily = resolveEditorFontFamily(settings)
   const activeContent = activeFilePath ? (fileDrafts[activeFilePath] ?? '') : ''
-  const activeLanguage = activeFilePath ? languageForEnvPath(activeFilePath) : 'plaintext'
-
-  useEffect(() => {
-    monaco.editor.setTheme(isDark ? 'vs-dark' : 'vs')
-  }, [isDark])
-
-  const handleEditorMount: OnMount = useCallback((editorInstance) => {
-    editorInstance.layout()
-  }, [])
 
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-hidden">
@@ -80,6 +37,7 @@ export function HiveEnvFilesEditor({
         <div className="text-[11px] text-muted-foreground">
           {loadingFiles ? 'Loading…' : `${files.length} file(s)`}
           {dirty ? ' · unsaved changes' : null}
+          {activeFilePath ? ` · ${activeFilePath} · ${activeContent.length} chars` : null}
         </div>
         <div className="ml-auto flex gap-1.5">
           <Button
@@ -121,7 +79,8 @@ export function HiveEnvFilesEditor({
         <div className="grid min-h-[560px] flex-1 grid-cols-[200px_minmax(0,1fr)] gap-2 overflow-hidden">
           <div className="min-h-0 space-y-1 overflow-y-auto rounded-md border border-border/50 p-1 scrollbar-sleek">
             {files.map((file) => {
-              const isDirty = (fileDrafts[file.path] ?? '') !== file.content
+              const draft = fileDrafts[file.path] ?? ''
+              const isDirty = draft !== file.content
               return (
                 <button
                   key={file.path}
@@ -140,41 +99,23 @@ export function HiveEnvFilesEditor({
               )
             })}
           </div>
-          <div className="h-full min-h-[560px] overflow-hidden rounded-md border border-border/60 bg-editor-surface">
-            <Editor
-              height="100%"
-              path={activeFilePath || 'env-file'}
-              language={activeLanguage}
-              theme={isDark ? 'vs-dark' : 'vs'}
-              value={activeContent}
-              onMount={handleEditorMount}
-              onChange={(value) => {
-                if (!activeFilePath) {
-                  return
+          <div className="relative flex h-[560px] min-h-[560px] w-full flex-col overflow-hidden rounded-md border border-border/60 bg-background">
+            {!activeFilePath ? (
+              <div className="flex h-full items-center justify-center text-xs text-muted-foreground">
+                Select a file
+              </div>
+            ) : (
+              <textarea
+                key={activeFilePath}
+                value={activeContent}
+                spellCheck={false}
+                className="h-full w-full resize-none bg-transparent p-3 font-mono text-[12px] leading-5 text-foreground outline-none placeholder:text-muted-foreground scrollbar-sleek"
+                placeholder={
+                  loadingFiles ? 'Loading…' : 'Empty file — paste env contents here, then Save.'
                 }
-                onDraftChange(activeFilePath, value ?? '')
-              }}
-              options={{
-                automaticLayout: true,
-                fontFamily: editorFontFamily,
-                fontSize: editorFontSize,
-                fontLigatures: true,
-                minimap: { enabled: false },
-                lineNumbers: 'on',
-                lineNumbersMinChars: 3,
-                glyphMargin: false,
-                folding: true,
-                wordWrap: 'on',
-                scrollBeyondLastLine: false,
-                renderLineHighlight: 'line',
-                tabSize: 2,
-                padding: { top: 10, bottom: 10 },
-                scrollbar: {
-                  verticalScrollbarSize: 10,
-                  horizontalScrollbarSize: 10
-                }
-              }}
-            />
+                onChange={(event) => onDraftChange(activeFilePath, event.target.value)}
+              />
+            )}
           </div>
         </div>
       )}

@@ -19,9 +19,17 @@ export async function hiveGetEnvFiles(
   if (!result.ok) {
     return result
   }
+  const rec = asRecord(result.data)
   const list = Array.isArray(result.data)
     ? result.data
-    : asArray(asRecord(result.data)?.files ?? asRecord(result.data)?.items)
+    : asArray(
+        rec?.files ??
+          rec?.items ??
+          rec?.env_files ??
+          rec?.envFiles ??
+          asRecord(rec?.environment)?.files ??
+          asRecord(rec?.environment)?.env_files
+      )
   const files = list.map(mapEnvFile).filter((f): f is HiveEnvFile => f !== null)
   return { ok: true, data: files }
 }
@@ -43,9 +51,11 @@ export async function hiveSaveEnvFiles(
   if (!result.ok) {
     return result
   }
+  // Why: hive-v3 save returns { files, snippet_sync }, not a bare array.
+  const rec = asRecord(result.data)
   const list = Array.isArray(result.data)
     ? result.data
-    : asArray(asRecord(result.data)?.files ?? asRecord(result.data)?.items)
+    : asArray(rec?.files ?? rec?.items ?? rec?.env_files ?? rec?.envFiles)
   if (list.length > 0) {
     const mapped = list.map(mapEnvFile).filter((f): f is HiveEnvFile => f !== null)
     return { ok: true, data: mapped }

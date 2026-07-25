@@ -68,17 +68,20 @@ export function HiveEnvDetailDialog({
         setFileDrafts({})
         return
       }
-      setFiles(result.data)
+      const nextFiles = Array.isArray(result.data) ? result.data : []
+      setFiles(nextFiles)
       const drafts: Record<string, string> = {}
-      for (const file of result.data) {
-        drafts[file.path] = file.content
+      for (const file of nextFiles) {
+        // Why: always string-coerce so Monaco never receives undefined/null content.
+        drafts[file.path] =
+          typeof file.content === 'string' ? file.content : String(file.content ?? '')
       }
       setFileDrafts(drafts)
       setActiveFilePath((prev) => {
-        if (prev && result.data.some((f) => f.path === prev)) {
+        if (prev && nextFiles.some((f) => f.path === prev)) {
           return prev
         }
-        return result.data[0]?.path ?? ''
+        return nextFiles[0]?.path ?? ''
       })
     } finally {
       setLoadingFiles(false)

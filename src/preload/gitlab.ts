@@ -96,6 +96,41 @@ export const glApi = {
   ): Promise<{ items: unknown[]; error?: unknown }> =>
     ipcRenderer.invoke('gitlab:listProjectSnippets', args),
 
+  getProjectSnippet: (
+    args: GitLabRepoSelectorArgs & {
+      snippetId: number
+    }
+  ): Promise<unknown> => ipcRenderer.invoke('gitlab:getProjectSnippet', args),
+
+  createProjectSnippet: (
+    args: GitLabRepoSelectorArgs & {
+      title: string
+      fileName: string
+      content: string
+      description?: string
+      visibility?: 'private' | 'internal' | 'public'
+    }
+  ): Promise<unknown> => ipcRenderer.invoke('gitlab:createProjectSnippet', args),
+
+  updateProjectSnippet: (
+    args: GitLabRepoSelectorArgs & {
+      snippetId: number
+      updates: {
+        title?: string
+        fileName?: string
+        content?: string
+        description?: string
+        visibility?: 'private' | 'internal' | 'public'
+      }
+    }
+  ): Promise<unknown> => ipcRenderer.invoke('gitlab:updateProjectSnippet', args),
+
+  deleteProjectSnippet: (
+    args: GitLabRepoSelectorArgs & {
+      snippetId: number
+    }
+  ): Promise<unknown> => ipcRenderer.invoke('gitlab:deleteProjectSnippet', args),
+
   workItemDetails: (
     args: GitLabRepoSelectorArgs & {
       iid: number

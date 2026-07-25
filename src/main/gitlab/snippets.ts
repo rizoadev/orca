@@ -10,11 +10,21 @@ import {
   resolveIssueSource,
   type LocalGitExecOptions
 } from './gl-utils'
+import { resolveSnippetDisplayFileName } from './snippet-path'
 
 export type ProjectSnippetListResult = {
   items: GitLabSnippet[]
   error?: ClassifiedError
 }
+
+export {
+  createProjectSnippet,
+  deleteProjectSnippet,
+  getProjectSnippet,
+  updateProjectSnippet,
+  type ProjectSnippetDeleteResult,
+  type ProjectSnippetMutationResult
+} from './snippet-mutations'
 
 function encodedProject(projectPath: string): string {
   return encodeURIComponent(projectPath)
@@ -30,6 +40,7 @@ type RESTSnippet = {
   raw_url?: string
   updated_at?: string
   created_at?: string
+  files?: { path?: string }[]
   author?: { username?: string | null; name?: string | null } | null
 }
 
@@ -37,7 +48,11 @@ function mapSnippet(row: RESTSnippet): GitLabSnippet {
   return {
     id: typeof row.id === 'number' ? row.id : 0,
     title: row.title?.trim() || row.file_name?.trim() || 'Untitled snippet',
-    fileName: row.file_name?.trim() || '',
+    fileName: resolveSnippetDisplayFileName({
+      description: row.description,
+      fileName: row.file_name,
+      files: row.files
+    }),
     description: row.description?.trim() || '',
     visibility:
       row.visibility === 'public' || row.visibility === 'internal' ? row.visibility : 'private',

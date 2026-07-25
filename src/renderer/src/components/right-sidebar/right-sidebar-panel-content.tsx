@@ -1,6 +1,7 @@
 import { Suspense } from 'react'
 import { lazyWithRetry as lazy } from '@/lib/lazy-with-retry'
 import type { ActiveRightSidebarTab } from '@/store/slices/editor'
+import { RecoverableRenderErrorBoundary } from '@/components/error-boundaries/RecoverableRenderErrorBoundary'
 
 const FileExplorer = lazy(() => import('./FileExplorer'))
 const SourceControl = lazy(() => import('./SourceControl'))
@@ -41,7 +42,16 @@ export function RightSidebarPanelContent({
           <IssuesPanel isVisible={rightSidebarOpen && effectiveTab === 'issues'} />
         )}
         {effectiveTab === 'orchestration' ? (
-          <OrchestrationPanel key="orchestration-panel" isVisible={rightSidebarOpen} />
+          <RecoverableRenderErrorBoundary
+            boundaryId="right-sidebar.orchestration"
+            surface="right-sidebar"
+            resetKey={`orchestration:${rightSidebarOpen}`}
+            compact
+            title="Orchestration panel hit an error."
+            description="Retry this panel, or switch tabs and come back."
+          >
+            <OrchestrationPanel key="orchestration-panel" isVisible={rightSidebarOpen} />
+          </RecoverableRenderErrorBoundary>
         ) : null}
         {/* Why: SSH port forwarding still depends on the raw ports.detect data,
             which the workspace-scoped status bar popover intentionally does not

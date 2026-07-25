@@ -1633,12 +1633,12 @@ export const ORCHESTRATION_METHODS: RpcMethod[] = [
         priority: params.priority ?? 'high'
       })
 
-      let dispatches: Array<{
+      let dispatches: {
         taskId: string
         to: string
         role: string
         spawned: boolean
-      }> = []
+      }[] = []
       if (params.autoDispatch !== false) {
         dispatches = await dispatchAllReadyPipelineStages(db, runtime, pipeline.root.id, {
           waitTimeoutMs: params.waitTimeoutMs ?? 90_000,

@@ -3522,6 +3522,52 @@ describe('web GitLab preload API', () => {
         expectedParams: { repoPath, repo: repoPath, limit: 40 }
       },
       {
+        key: 'getProjectSnippet',
+        invoke: (gl) => gl.getProjectSnippet({ repoPath, snippetId: 12 }),
+        expectedMethod: 'gitlab.getProjectSnippet',
+        expectedParams: { repoPath, repo: repoPath, snippetId: 12 }
+      },
+      {
+        key: 'createProjectSnippet',
+        invoke: (gl) =>
+          gl.createProjectSnippet({
+            repoPath,
+            title: 'Notes',
+            fileName: 'notes.md',
+            content: 'hello'
+          }),
+        expectedMethod: 'gitlab.createProjectSnippet',
+        expectedParams: {
+          repoPath,
+          repo: repoPath,
+          title: 'Notes',
+          fileName: 'notes.md',
+          content: 'hello'
+        }
+      },
+      {
+        key: 'updateProjectSnippet',
+        invoke: (gl) =>
+          gl.updateProjectSnippet({
+            repoPath,
+            snippetId: 12,
+            updates: { title: 'Updated' }
+          }),
+        expectedMethod: 'gitlab.updateProjectSnippet',
+        expectedParams: {
+          repoPath,
+          repo: repoPath,
+          snippetId: 12,
+          updates: { title: 'Updated' }
+        }
+      },
+      {
+        key: 'deleteProjectSnippet',
+        invoke: (gl) => gl.deleteProjectSnippet({ repoPath, snippetId: 12 }),
+        expectedMethod: 'gitlab.deleteProjectSnippet',
+        expectedParams: { repoPath, repo: repoPath, snippetId: 12 }
+      },
+      {
         key: 'workItemDetails',
         invoke: (gl) => gl.workItemDetails({ repoPath, iid: 8, type: 'mr' }),
         expectedMethod: 'gitlab.workItemDetails',

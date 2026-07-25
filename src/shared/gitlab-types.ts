@@ -217,6 +217,27 @@ export type GitLabSnippet = {
   authorUsername: string
 }
 
+/** Full snippet payload including body content for the modal viewer/editor. */
+export type GitLabSnippetDetail = GitLabSnippet & {
+  content: string
+}
+
+export type GitLabSnippetCreateInput = {
+  title: string
+  fileName: string
+  content: string
+  description?: string
+  visibility?: GitLabSnippetVisibility
+}
+
+export type GitLabSnippetUpdateInput = {
+  title?: string
+  fileName?: string
+  content?: string
+  description?: string
+  visibility?: GitLabSnippetVisibility
+}
+
 // Why: only the four Todo target types Orca renders meaningfully; others (e.g. DesignManagement::Design) fall back to a generic "open URL".
 export type GitLabTodoTargetType = 'MergeRequest' | 'Issue' | 'Commit' | 'Note'
 

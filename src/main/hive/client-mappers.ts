@@ -88,16 +88,79 @@ export function mapEnvironment(row: unknown): HiveEnvironmentSummary | null {
   }
 }
 
+function demangleSnippetEncodedPath(value: string): string {
+  // Why: hive→GitLab snippet sync encodes nested paths as a__b for GitLab
+  // file_path; only apply when no real slash path is present.
+  if (value.includes('/')) {
+    return value
+  }
+  return value.replaceAll('__', '/')
+}
+
+function pickEnvFilePath(r: Record<string, unknown>): string | null {
+  const nested = asRecord(r.file)
+  // Why: `path` is the Hive canonical field (e.g. app/readyou). Never prefer
+  // GitLab-mangled file_name/filename when path exists.
+  const direct = pickString(r, 'path')?.trim()
+  if (direct) {
+    return demangleSnippetEncodedPath(direct)
+  }
+  const nestedPath = nested ? pickString(nested, 'path')?.trim() : null
+  if (nestedPath) {
+    return demangleSnippetEncodedPath(nestedPath)
+  }
+  const fallback =
+    pickString(r, 'name', 'file_path', 'filePath', 'filename', 'file_name') ??
+    (nested ? pickString(nested, 'name', 'file_path', 'filePath', 'filename', 'file_name') : null)
+  const trimmed = fallback?.trim()
+  return trimmed ? demangleSnippetEncodedPath(trimmed) : null
+}
+
+function pickEnvFileContent(r: Record<string, unknown>): string {
+  const candidates: unknown[] = [r.content, r.body, r.value, r.text, r.data]
+  for (const candidate of candidates) {
+    if (typeof candidate === 'string') {
+      return candidate
+    }
+  }
+  const nested = asRecord(r.file)
+  if (nested) {
+    for (const key of ['content', 'body', 'value', 'text', 'data'] as const) {
+      const value = nested[key]
+      if (typeof value === 'string') {
+        return value
+      }
+    }
+  }
+  return ''
+}
+
 export function mapEnvFile(row: unknown): HiveEnvFile | null {
   const r = asRecord(row)
-  if (!r || typeof r.path !== 'string') {
+  if (!r) {
+    return null
+  }
+  const path = pickEnvFilePath(r)
+  if (!path) {
     return null
   }
   return {
-    path: r.path,
-    content: typeof r.content === 'string' ? r.content : '',
-    gitlabSnippetId: pickString(r, 'gitlab_snippet_id', 'gitlabSnippetId'),
-    gitlabSnippetWebUrl: pickString(r, 'gitlab_snippet_web_url', 'gitlabSnippetWebUrl')
+    path,
+    content: pickEnvFileContent(r),
+    gitlabSnippetId: pickString(
+      r,
+      'gitlab_snippet_id',
+      'gitlabSnippetId',
+      'snippet_id',
+      'snippetId'
+    ),
+    gitlabSnippetWebUrl: pickString(
+      r,
+      'gitlab_snippet_web_url',
+      'gitlabSnippetWebUrl',
+      'snippet_web_url',
+      'snippetWebUrl'
+    )
   }
 }
 

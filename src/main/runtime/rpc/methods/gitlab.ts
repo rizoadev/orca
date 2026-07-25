@@ -6,11 +6,13 @@ import {
   AddMRComment,
   AddMRInlineComment,
   CreateIssue,
+  CreateProjectSnippet,
   EmptyParams,
   GitLabRateLimit,
   IssuesList,
   JobTrace,
   MergeMr,
+  ProjectSnippetId,
   ProjectSnippetsList,
   RepoSelector,
   ResolveMRDiscussion,
@@ -19,6 +21,7 @@ import {
   UpdateMr,
   UpdateMrReviewers,
   UpdateMrState,
+  UpdateProjectSnippet,
   WorkItemByPath,
   WorkItemDetails,
   WorkItemsList
@@ -72,6 +75,36 @@ export const GITLAB_METHODS: RpcMethod[] = [
     params: ProjectSnippetsList,
     handler: async (params, { runtime }) =>
       runtime.listGitLabRepoProjectSnippets(params.repo, params.limit)
+  }),
+  defineMethod({
+    name: 'gitlab.getProjectSnippet',
+    params: ProjectSnippetId,
+    handler: async (params, { runtime }) =>
+      runtime.getGitLabRepoProjectSnippet(params.repo, params.snippetId)
+  }),
+  defineMethod({
+    name: 'gitlab.createProjectSnippet',
+    params: CreateProjectSnippet,
+    handler: async (params, { runtime }) =>
+      runtime.createGitLabRepoProjectSnippet(params.repo, {
+        title: params.title,
+        fileName: params.fileName,
+        content: params.content,
+        description: params.description,
+        visibility: params.visibility
+      })
+  }),
+  defineMethod({
+    name: 'gitlab.updateProjectSnippet',
+    params: UpdateProjectSnippet,
+    handler: async (params, { runtime }) =>
+      runtime.updateGitLabRepoProjectSnippet(params.repo, params.snippetId, params.updates)
+  }),
+  defineMethod({
+    name: 'gitlab.deleteProjectSnippet',
+    params: ProjectSnippetId,
+    handler: async (params, { runtime }) =>
+      runtime.deleteGitLabRepoProjectSnippet(params.repo, params.snippetId)
   }),
   defineMethod({
     name: 'gitlab.diagnoseAuth',

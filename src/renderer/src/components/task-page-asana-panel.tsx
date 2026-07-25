@@ -192,7 +192,16 @@ export function TaskPageAsanaPanel({ isVisible }: TaskPageAsanaPanelProps): Reac
           </span>
         )}
 
-        <Select value={projectGid} onValueChange={setProjectGid}>
+        <Select
+          value={projectGid}
+          onValueChange={(value) => {
+            setProjectGid(value)
+            // Why: project scope is where "Assigned to me" is most useful — default to it.
+            if (value !== 'all' && filter === 'all') {
+              setFilter('assigned')
+            }
+          }}
+        >
           <SelectTrigger className="h-8 w-[180px] text-xs">
             <SelectValue placeholder="Project" />
           </SelectTrigger>
@@ -214,13 +223,16 @@ export function TaskPageAsanaPanel({ isVisible }: TaskPageAsanaPanelProps): Reac
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="assigned">
-              {translate('auto.components.TaskPageAsanaPanel.filterAssigned', 'Open')}
+              {translate(
+                'auto.components.TaskPageAsanaPanel.filterAssignedToMe',
+                'Assigned to me'
+              )}
+            </SelectItem>
+            <SelectItem value="all">
+              {translate('auto.components.TaskPageAsanaPanel.filterAllOpen', 'All open')}
             </SelectItem>
             <SelectItem value="completed">
               {translate('auto.components.TaskPageAsanaPanel.filterCompleted', 'Completed')}
-            </SelectItem>
-            <SelectItem value="all">
-              {translate('auto.components.TaskPageAsanaPanel.filterAll', 'All')}
             </SelectItem>
           </SelectContent>
         </Select>

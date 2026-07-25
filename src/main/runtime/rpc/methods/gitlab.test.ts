@@ -19,6 +19,10 @@ describe('gitlab RPC methods', () => {
       listGitLabRepoIssues: vi.fn().mockResolvedValue({ items: [] }),
       listGitLabRepoTodos: vi.fn().mockResolvedValue([{ id: 1 }]),
       listGitLabRepoProjectSnippets: vi.fn().mockResolvedValue({ items: [] }),
+      getGitLabRepoProjectSnippet: vi.fn().mockResolvedValue({ ok: true, snippet: { id: 12 } }),
+      createGitLabRepoProjectSnippet: vi.fn().mockResolvedValue({ ok: true, snippet: { id: 13 } }),
+      updateGitLabRepoProjectSnippet: vi.fn().mockResolvedValue({ ok: true, snippet: { id: 12 } }),
+      deleteGitLabRepoProjectSnippet: vi.fn().mockResolvedValue({ ok: true }),
       listGitLabRepoLabels: vi.fn().mockResolvedValue(['bug']),
       createGitLabRepoIssue: vi.fn().mockResolvedValue({ ok: true, number: 7 }),
       updateGitLabRepoIssue: vi.fn().mockResolvedValue({ ok: true }),
@@ -78,6 +82,28 @@ describe('gitlab RPC methods', () => {
     await dispatcher.dispatch(makeRequest('gitlab.todos', { repo: 'id:repo-1' }))
     await dispatcher.dispatch(
       makeRequest('gitlab.listProjectSnippets', { repo: 'id:repo-1', limit: 40 })
+    )
+    await dispatcher.dispatch(
+      makeRequest('gitlab.getProjectSnippet', { repo: 'id:repo-1', snippetId: 12 })
+    )
+    await dispatcher.dispatch(
+      makeRequest('gitlab.createProjectSnippet', {
+        repo: 'id:repo-1',
+        title: 'Notes',
+        fileName: 'notes.md',
+        content: 'hello',
+        visibility: 'private'
+      })
+    )
+    await dispatcher.dispatch(
+      makeRequest('gitlab.updateProjectSnippet', {
+        repo: 'id:repo-1',
+        snippetId: 12,
+        updates: { title: 'Updated', content: 'next' }
+      })
+    )
+    await dispatcher.dispatch(
+      makeRequest('gitlab.deleteProjectSnippet', { repo: 'id:repo-1', snippetId: 12 })
     )
     await dispatcher.dispatch(makeRequest('gitlab.listLabels', { repo: 'id:repo-1' }))
     await dispatcher.dispatch(
@@ -210,6 +236,19 @@ describe('gitlab RPC methods', () => {
     expect(runtime.createGitLabRepoIssue).toHaveBeenCalledWith('id:repo-1', 'Fix bug', 'Details')
     expect(runtime.listGitLabRepoTodos).toHaveBeenCalledWith('id:repo-1')
     expect(runtime.listGitLabRepoProjectSnippets).toHaveBeenCalledWith('id:repo-1', 40)
+    expect(runtime.getGitLabRepoProjectSnippet).toHaveBeenCalledWith('id:repo-1', 12)
+    expect(runtime.createGitLabRepoProjectSnippet).toHaveBeenCalledWith('id:repo-1', {
+      title: 'Notes',
+      fileName: 'notes.md',
+      content: 'hello',
+      description: undefined,
+      visibility: 'private'
+    })
+    expect(runtime.updateGitLabRepoProjectSnippet).toHaveBeenCalledWith('id:repo-1', 12, {
+      title: 'Updated',
+      content: 'next'
+    })
+    expect(runtime.deleteGitLabRepoProjectSnippet).toHaveBeenCalledWith('id:repo-1', 12)
     expect(runtime.listGitLabRepoLabels).toHaveBeenCalledWith('id:repo-1')
     expect(runtime.updateGitLabRepoIssue).toHaveBeenCalledWith(
       'id:repo-1',

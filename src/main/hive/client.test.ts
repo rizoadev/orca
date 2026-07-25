@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { flattenHiveProjectPayload } from './client-mappers'
+import { flattenHiveProjectPayload, mapEnvFile } from './client-mappers'
 
 describe('flattenHiveProjectPayload', () => {
   it('keeps a flat project array', () => {
@@ -29,5 +29,39 @@ describe('flattenHiveProjectPayload', () => {
     expect(flattenHiveProjectPayload({ items: [{ id: 'y', name: 'Y' }] })).toEqual([
       { id: 'y', name: 'Y' }
     ])
+  })
+})
+
+describe('mapEnvFile', () => {
+  it('maps content from alternate payload keys', () => {
+    expect(mapEnvFile({ path: '.env', body: 'FOO=1' })).toEqual({
+      path: '.env',
+      content: 'FOO=1',
+      gitlabSnippetId: null,
+      gitlabSnippetWebUrl: null
+    })
+    expect(mapEnvFile({ name: 'app.env', value: 'BAR=2' })).toEqual({
+      path: 'app.env',
+      content: 'BAR=2',
+      gitlabSnippetId: null,
+      gitlabSnippetWebUrl: null
+    })
+  })
+
+  it('prefers Hive path over GitLab-mangled file_name', () => {
+    expect(
+      mapEnvFile({
+        path: 'app/readyou',
+        file_name: 'app__readyou',
+        content: 'X=1'
+      })
+    ).toMatchObject({ path: 'app/readyou', content: 'X=1' })
+  })
+
+  it('demangles GitLab snippet file_name when path is missing', () => {
+    expect(mapEnvFile({ file_name: 'app__readyou', content: 'X=1' })).toMatchObject({
+      path: 'app/readyou',
+      content: 'X=1'
+    })
   })
 })

@@ -6,6 +6,9 @@ import { markHiveCredentialInvalid, resolveHiveAuth } from './credential-store'
 
 type Envelope = {
   success?: boolean
+  /** hive-v3 standardized envelope uses status, not boolean success. */
+  status?: string
+  code?: number
   data?: unknown
   message?: string
   detail?: string
@@ -60,8 +63,15 @@ export async function hiveFetch(
         status: response.status
       }
     }
-    if (body && body.success === false) {
+    // Why: hive-v3 uses { status: 'success', data } (not boolean `success`).
+    if (body && (body.success === false || body.status === 'error' || body.status === 'fail')) {
       return { ok: false, error: body.detail || body.message || 'Request failed' }
+    }
+    if (body && body.status && body.status !== 'success' && body.data === undefined) {
+      return {
+        ok: false,
+        error: body.detail || body.message || `Unexpected Hive status: ${String(body.status)}`
+      }
     }
     return { ok: true, data: body?.data !== undefined ? body.data : body }
   } catch (error) {

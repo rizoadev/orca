@@ -40,6 +40,29 @@ export const ProjectSnippetsList = RepoSelector.extend({
   limit: OptionalFiniteNumber
 })
 
+export const ProjectSnippetId = RepoSelector.extend({
+  snippetId: z.number().int().positive()
+})
+
+export const CreateProjectSnippet = RepoSelector.extend({
+  title: requiredString('Missing title'),
+  fileName: requiredString('Missing file name'),
+  content: z.string(),
+  description: z.string().optional(),
+  visibility: z.enum(['private', 'internal', 'public']).optional()
+})
+
+export const UpdateProjectSnippet = RepoSelector.extend({
+  snippetId: z.number().int().positive(),
+  updates: z.object({
+    title: z.string().optional(),
+    fileName: z.string().optional(),
+    content: z.string().optional(),
+    description: z.string().optional(),
+    visibility: z.enum(['private', 'internal', 'public']).optional()
+  })
+})
+
 export const CreateIssue = RepoSelector.extend({
   title: requiredString('Missing title'),
   body: z.string()

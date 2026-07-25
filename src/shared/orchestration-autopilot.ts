@@ -13,7 +13,7 @@ export type ExtractedTodoList = {
 const IDLE_RE = /\b(now idle|i'?m idle|going idle|idle\.|waiting for (operator|you|human))\b/i
 const TODO_HEADER_RE =
   /\b(before go-?live|operator needs? to|remaining todos?|open todos?|todos?:|todo list|action items?|follow-?ups?)\b/i
-const NUMBERED_ITEM_RE = /^\s*(?:\d+[\).\]]|-|\*)\s+(.+?)\s*$/
+const NUMBERED_ITEM_RE = /^\s*(?:\d+[).\]]|-|\*)\s+(.+?)\s*$/
 
 /** Pull residual TODO / operator action items from agent worker_done bodies. */
 export function extractOpenTodosFromAgentOutput(text: string | null | undefined): ExtractedTodoList {
@@ -48,7 +48,7 @@ export function extractOpenTodosFromAgentOutput(text: string | null | undefined)
       continue
     }
     // Single-line "TODO: foo"
-    const inline = line.match(/^TODO\s*[:\-]\s*(.+)$/i)
+    const inline = line.match(/^TODO\s*[:-]\s*(.+)$/i)
     if (inline?.[1]) {
       todos.push(inline[1].replace(/\s+/g, ' ').trim())
     }

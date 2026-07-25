@@ -795,8 +795,8 @@ export const ORCHESTRATION_HANDLERS: Record<string, CommandHandler> = {
       worktree: getOptionalStringFlag(flags, 'worktree'),
       baseBranch: getOptionalStringFlag(flags, 'base-branch'),
       createIssue: flags.has('create-issue') ? true : undefined,
-      ensureSquads: flags.has('no-ensure-squads') ? false : true,
-      autoDispatch: flags.has('no-auto-dispatch') ? false : true,
+      ensureSquads: !flags.has('no-ensure-squads'),
+      autoDispatch: !flags.has('no-auto-dispatch'),
       waitTimeoutMs: getOptionalPositiveIntegerValueFlag(flags, 'wait-timeout-ms'),
       priority: getOptionalTaskPriorityFlag(flags),
       devMode: isDevCliInvocation()

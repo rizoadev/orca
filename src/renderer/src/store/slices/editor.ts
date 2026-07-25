@@ -3458,6 +3458,10 @@ export const createEditorSlice: StateCreator<AppState, [], [], EditorSlice> = (s
     const task = taskDetails.task
     const id = buildOrchestrationTaskDetailsTabId(worktreeId, task.id)
     const label = getOrchestrationTaskDetailsTabLabel(task)
+    // Why: keep File Explorer / right-sidebar project context on the worktree being viewed.
+    if (get().activeWorktreeId !== worktreeId) {
+      get().setActiveWorktree(worktreeId)
+    }
     set((s) => {
       // Prefer the worktree's existing orchestration-task slot (stable id, or legacy per-task ids).
       const existing =

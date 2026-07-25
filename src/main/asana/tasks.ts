@@ -1,7 +1,13 @@
 /**
  * Asana task/project list operations via REST v1.
  */
-import { asanaFetch, AsanaApiError, getActiveWorkspaceGid, getToken } from './client'
+import {
+  asanaFetch,
+  AsanaApiError,
+  getActiveWorkspaceGid,
+  getToken,
+  resolveWorkspaceGid
+} from './client'
 import type {
   AsanaCreateTaskArgs,
   AsanaCreateTaskResult,
@@ -67,10 +73,7 @@ function mapTask(t: RawTask): AsanaTask {
 }
 
 export async function listProjects(workspaceGid?: string): Promise<AsanaProject[]> {
-  const ws = workspaceGid ?? getActiveWorkspaceGid()
-  if (!ws) {
-    throw new AsanaApiError('No active Asana workspace. Connect and select a workspace first.')
-  }
+  const ws = await resolveWorkspaceGid(workspaceGid)
   const result = await asanaFetch<AsanaListResponse<RawProject>>(
     `/workspaces/${ws}/projects?opt_fields=gid,name,color,archived,workspace.gid&archived=false&limit=100`
   )
@@ -104,26 +107,29 @@ export async function listTasks(args: {
   const fields =
     'gid,name,notes,completed,assignee.gid,assignee.name,assignee.email,assignee.photo.image_128x128,due_on,permalink_url,memberships.section.name,memberships.project.gid,memberships.project.name,modified_at,created_at'
 
+  const me = await asanaFetch<{ data: { gid: string } }>('/users/me?opt_fields=gid')
+  const myGid = me.data.gid
+  const projectGid = args.projectGid?.trim() || undefined
+
   let path: string
-  if (args.projectGid) {
-    // Why: project task lists return completed tasks too; filter client-side below.
-    path = `/projects/${args.projectGid}/tasks?opt_fields=${fields}&limit=${limit}`
+  if (projectGid) {
+    // Why: project + "Assigned to me" stays on project endpoint; assignee filter is client-side.
+    path = `/projects/${projectGid}/tasks?opt_fields=${fields}&limit=${limit}`
   } else {
-    // Why: user task list needs an explicit workspace when the user has more than one.
-    const ws = args.workspaceGid ?? getActiveWorkspaceGid()
-    if (!ws) {
-      throw new AsanaApiError('No active Asana workspace. Connect and select a workspace first.')
-    }
-    const me = await asanaFetch<{ data: { gid: string } }>('/users/me?opt_fields=gid')
+    // Why: user task list requires workspace when the account belongs to multiple workspaces.
+    const ws = await resolveWorkspaceGid(args.workspaceGid)
     const utl = await asanaFetch<{ data: { gid: string } }>(
-      `/users/${me.data.gid}/user_task_list?workspace=${ws}&opt_fields=gid`
+      `/users/${myGid}/user_task_list?workspace=${encodeURIComponent(ws)}&opt_fields=gid`
     )
     path = `/user_task_lists/${utl.data.gid}/tasks?opt_fields=${fields}&limit=${limit}`
   }
 
   const result = await asanaFetch<AsanaListResponse<RawTask>>(path)
   let tasks = result.data.map(mapTask)
-  if (filter === 'assigned' || filter === 'all') {
+  if (filter === 'assigned') {
+    // Why: project lists include everyone; keep only incomplete tasks assigned to me.
+    tasks = tasks.filter((t) => !t.completed && t.assignee?.gid === myGid)
+  } else if (filter === 'all') {
     tasks = tasks.filter((t) => !t.completed)
   } else if (filter === 'completed') {
     tasks = tasks.filter((t) => t.completed)

@@ -285,6 +285,35 @@ export function getActiveWorkspaceGid(): string | null {
   return activeWorkspaceGid
 }
 
+/** Resolve a workspace gid, hydrating from /users/me when local state is empty. */
+export async function resolveWorkspaceGid(preferred?: string | null): Promise<string> {
+  const preferredTrimmed = preferred?.trim()
+  if (preferredTrimmed) {
+    if (activeWorkspaceGid !== preferredTrimmed) {
+      activeWorkspaceGid = preferredTrimmed
+      saveState()
+    }
+    return preferredTrimmed
+  }
+
+  loadState()
+  if (activeWorkspaceGid) {
+    return activeWorkspaceGid
+  }
+
+  const status = await ensureHydrated()
+  if (status.activeWorkspaceGid) {
+    return status.activeWorkspaceGid
+  }
+  if (status.workspaces[0]?.gid) {
+    activeWorkspaceGid = status.workspaces[0].gid
+    saveState()
+    return activeWorkspaceGid
+  }
+
+  throw new AsanaApiError('No active Asana workspace. Connect and select a workspace first.')
+}
+
 export function getToken(): string | null {
   return loadToken()
 }

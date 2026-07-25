@@ -364,6 +364,10 @@ type WebGitLabRouteKey =
   | 'listLabels'
   | 'todos'
   | 'listProjectSnippets'
+  | 'getProjectSnippet'
+  | 'createProjectSnippet'
+  | 'updateProjectSnippet'
+  | 'deleteProjectSnippet'
   | 'workItemDetails'
   | 'closeMR'
   | 'reopenMR'
@@ -389,6 +393,10 @@ type WebGitLabRuntimeMethod =
   | 'gitlab.listLabels'
   | 'gitlab.todos'
   | 'gitlab.listProjectSnippets'
+  | 'gitlab.getProjectSnippet'
+  | 'gitlab.createProjectSnippet'
+  | 'gitlab.updateProjectSnippet'
+  | 'gitlab.deleteProjectSnippet'
   | 'gitlab.workItemDetails'
   | 'gitlab.updateMRState'
   | 'gitlab.mergeMR'
@@ -469,6 +477,10 @@ export const GITLAB_WEB_RPC_METHODS = {
   listLabels: 'gitlab.listLabels',
   todos: 'gitlab.todos',
   listProjectSnippets: 'gitlab.listProjectSnippets',
+  getProjectSnippet: 'gitlab.getProjectSnippet',
+  createProjectSnippet: 'gitlab.createProjectSnippet',
+  updateProjectSnippet: 'gitlab.updateProjectSnippet',
+  deleteProjectSnippet: 'gitlab.deleteProjectSnippet',
   workItemDetails: 'gitlab.workItemDetails',
   closeMR: 'gitlab.updateMRState',
   reopenMR: 'gitlab.updateMRState',
@@ -2394,6 +2406,23 @@ function createGitLabApi(): WebGitLabApi {
     listProjectSnippets: (args) =>
       route<WebGitLabResult<'listProjectSnippets'>>(
         GITLAB_WEB_RPC_METHODS.listProjectSnippets,
+        args
+      ),
+    getProjectSnippet: (args) =>
+      route<WebGitLabResult<'getProjectSnippet'>>(GITLAB_WEB_RPC_METHODS.getProjectSnippet, args),
+    createProjectSnippet: (args) =>
+      route<WebGitLabResult<'createProjectSnippet'>>(
+        GITLAB_WEB_RPC_METHODS.createProjectSnippet,
+        args
+      ),
+    updateProjectSnippet: (args) =>
+      route<WebGitLabResult<'updateProjectSnippet'>>(
+        GITLAB_WEB_RPC_METHODS.updateProjectSnippet,
+        args
+      ),
+    deleteProjectSnippet: (args) =>
+      route<WebGitLabResult<'deleteProjectSnippet'>>(
+        GITLAB_WEB_RPC_METHODS.deleteProjectSnippet,
         args
       ),
     workItemDetails: (args) =>

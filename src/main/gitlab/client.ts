@@ -1447,7 +1447,13 @@ export {
   listLabels,
   updateIssue
 } from './issues'
-export { listProjectSnippets } from './snippets'
+export {
+  createProjectSnippet,
+  deleteProjectSnippet,
+  getProjectSnippet,
+  listProjectSnippets,
+  updateProjectSnippet
+} from './snippets'
 
 // Re-exported so paste-URL call sites don't import getProjectRefForRemote from gl-utils directly.
 export { getProjectRefForRemote }
