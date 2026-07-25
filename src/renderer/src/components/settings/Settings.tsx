@@ -1126,6 +1126,8 @@ function Settings(): React.JSX.Element {
     activeSectionId === 'shortcuts' && settingsSearchQuery.trim() === ''
   const isFocusedSetupGuidePane =
     activeSectionId === 'setup-guide' && settingsSearchQuery.trim() === ''
+  const isFocusedIntegrationsPane =
+    activeSectionId === 'integrations' && settingsSearchQuery.trim() === ''
 
   return (
     <div
@@ -1157,7 +1159,11 @@ function Settings(): React.JSX.Element {
             className={cn(
               'mx-auto flex w-full flex-col gap-10 px-8 pt-10',
               isFocusedShortcutsPane ? 'h-full pb-6' : 'pb-24',
-              isFocusedSetupGuidePane ? 'max-w-6xl' : 'max-w-4xl'
+              isFocusedIntegrationsPane
+                ? 'max-w-none'
+                : isFocusedSetupGuidePane
+                  ? 'max-w-6xl'
+                  : 'max-w-4xl'
             )}
           >
             {visibleNavSections.length === 0 ? (
