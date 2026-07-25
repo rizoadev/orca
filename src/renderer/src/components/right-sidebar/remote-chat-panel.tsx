@@ -18,7 +18,7 @@ export default function RemoteChatPanel({
 }: {
   isVisible: boolean
 }): React.JSX.Element {
-  const [activeTab, setActiveTab] = useState<RemoteChatTab>('telegram')
+  const [activeTab, setActiveTab] = useState<RemoteChatTab>('pi')
   const activeWorktree = useActiveWorktree()
 
   return (
