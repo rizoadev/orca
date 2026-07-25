@@ -12,8 +12,10 @@ const AiVaultPanel = lazy(() => import('./AiVaultPanel'))
 const FolderWorkspaceWorktreesPanel = lazy(() => import('./FolderWorkspaceWorktreesPanel'))
 const FolderWorkspacePrChecksPanel = lazy(() => import('./FolderWorkspacePrChecksPanel'))
 const TelegramBridgePanel = lazy(() => import('./TelegramBridgePanel'))
+const RemoteChatPanel = lazy(() => import('./remote-chat-panel'))
 const ProjectTodoPanel = lazy(() => import('./ProjectTodoPanel'))
 const GitLabSnippetsPanel = lazy(() => import('./GitLabSnippetsPanel'))
+const OrchestrationPanel = lazy(() => import('./OrchestrationPanel'))
 
 type RightSidebarPanelContentProps = {
   effectiveTab: ActiveRightSidebarTab
@@ -26,13 +28,24 @@ export function RightSidebarPanelContent({
 }: RightSidebarPanelContentProps): React.JSX.Element {
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-      <Suspense fallback={null}>
+      <Suspense
+        fallback={
+          <div className="flex h-full items-center justify-center px-3 text-xs text-muted-foreground">
+            Loading…
+          </div>
+        }
+      >
         {effectiveTab === 'explorer' && <FileExplorer />}
         {effectiveTab === 'source-control' && <SourceControl />}
         {effectiveTab === 'checks' && <ChecksPanel />}
         {effectiveTab === 'issues' && (
           <IssuesPanel isVisible={rightSidebarOpen && effectiveTab === 'issues'} />
         )}
+        {effectiveTab === 'orchestration' ? (
+          <OrchestrationPanel
+            isVisible={rightSidebarOpen && effectiveTab === 'orchestration'}
+          />
+        ) : null}
         {/* Why: SSH port forwarding still depends on the raw ports.detect data,
             which the workspace-scoped status bar popover intentionally does not
             expose. Keep this panel reachable only for SSH worktrees. */}
@@ -50,7 +63,7 @@ export function RightSidebarPanelContent({
           />
         )}
         {effectiveTab === 'remote-chat' && (
-          <TelegramBridgePanel isVisible={rightSidebarOpen && effectiveTab === 'remote-chat'} />
+          <RemoteChatPanel isVisible={rightSidebarOpen && effectiveTab === 'remote-chat'} />
         )}
         {effectiveTab === 'todos' && (
           <ProjectTodoPanel isVisible={rightSidebarOpen && effectiveTab === 'todos'} />
