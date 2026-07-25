@@ -17,6 +17,7 @@ import {
   DEFAULT_AGENT_FAILOVER_CHAIN,
   pickFailoverAgent
 } from '../../../shared/orchestration-blocker-policy'
+import type { RuntimeTerminalWaitCondition } from '../../../shared/runtime-types'
 import type { TuiAgent } from '../../../shared/types'
 import { isTuiAgent } from '../../../shared/tui-agent-config'
 
@@ -31,7 +32,11 @@ export type ProductDispatchRuntime = {
   ) => Promise<{ handle: string }>
   waitForTerminal: (
     handle: string,
-    options?: { condition?: string; timeoutMs?: number }
+    options?: {
+      condition?: RuntimeTerminalWaitCondition
+      timeoutMs?: number
+      signal?: AbortSignal
+    }
   ) => Promise<unknown>
   isTerminalRunningAgent: (handle: string) => Promise<boolean>
   getTerminalPaneKey: (handle: string) => string | null

@@ -11,50 +11,17 @@ import type { TaskPriority, TaskRow } from './types'
 import {
   buildProductPipelinePlan,
   buildRoleTaskSpec,
-  parsePipelineVerdict,
-  PRODUCT_PIPELINE_MAX_REWORK,
   type ProductPipelineRole
 } from '../../../shared/product-pipeline'
-import {
+
+export {
+  advanceProductPipelineAfterTaskComplete
+} from './product-pipeline-advance'
+export {
   setProductPipelineAutopilot,
-  isProductPipelineAutopilotEnabled
+  isProductPipelineAutopilotEnabled,
+  maybeSpawnAutopilotManagerLoop
 } from './product-pipeline-autopilot'
-
-type LogFn = (msg: string) => void
-
-function parseResultBody(result: string | null): string {
-  if (!result) {
-    return ''
-  }
-  try {
-    const parsed = JSON.parse(result) as { body?: unknown; subject?: unknown }
-    const body = typeof parsed.body === 'string' ? parsed.body : ''
-    const subject = typeof parsed.subject === 'string' ? parsed.subject : ''
-    return [subject, body].filter(Boolean).join('\n')
-  } catch {
-    return result
-  }
-}
-
-function stageTasks(tasks: TaskRow[], stage: string): TaskRow[] {
-  return tasks.filter((task) => task.pipeline_stage === stage)
-}
-
-function extractGoalFromRoot(root: TaskRow): string {
-  const lines = root.spec.split('\n')
-  const start = lines.findIndex((line) => line.trim() === 'PRODUCT PIPELINE ROOT')
-  if (start >= 0) {
-    const body = lines
-      .slice(start + 1)
-      .join('\n')
-      .replace(/Stages:[\s\S]*$/m, '')
-      .trim()
-    if (body) {
-      return body
-    }
-  }
-  return root.spec
-}
 
 /**
  * Create the product-pipeline DAG under a root goal task.

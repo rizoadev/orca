@@ -4,17 +4,10 @@
  */
 
 import type { OrchestrationDb } from './db'
-import type { TaskCommentRow, TaskRow } from './types'
-import { buildDispatchPreamble } from './preamble'
+import type { TaskCommentRow } from './types'
 import { normalizeAgentSquads } from '../../../shared/agent-squads'
 import type { TuiAgent } from '../../../shared/types'
-import { isTuiAgent } from '../../../shared/tui-agent-config'
 import {
-  buildOperatorFollowUpPrompt,
-  formatCoalescedPromptBodies
-} from './task-comment-mentions'
-import {
-  buildDeliveryAuditBody,
   matchSquadLeaderTerminal,
   normalizeCommentDeliveryMode,
   planCommentDelivery,
@@ -22,18 +15,14 @@ import {
   shouldDeliverOperatorComment,
   titleLooksLikeAgent,
   type CommentDeliveryMode,
-  type CommentDeliveryTarget,
   type CommentTerminalIndexRow
 } from './task-comment-delivery'
 import {
   CommentDeliveryCoalescer,
   globalCommentDeliveryCoalescer
 } from './task-comment-delivery-coalesce'
-import {
-  deliverResolved,
-  type CommentDeliveryRuntime as InjectRuntime,
-  type DeliverOperatorCommentResult as InjectResult
-} from './task-comment-delivery-inject'
+import { deliverResolved } from './task-comment-delivery-inject'
+import type { RuntimeTerminalWaitCondition } from '../../../shared/runtime-types'
 
 export type CommentDeliveryRuntime = {
   getClientSettings: () => { agentSquads?: unknown; defaultTuiAgent?: string | null }
@@ -53,7 +42,11 @@ export type CommentDeliveryRuntime = {
   ) => Promise<{ handle: string }>
   waitForTerminal?: (
     handle: string,
-    options?: { condition?: string; timeoutMs?: number }
+    options?: {
+      condition?: RuntimeTerminalWaitCondition
+      timeoutMs?: number
+      signal?: AbortSignal
+    }
   ) => Promise<unknown>
 }
 

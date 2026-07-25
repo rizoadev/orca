@@ -4,7 +4,6 @@
 import {
   asanaFetch,
   AsanaApiError,
-  getActiveWorkspaceGid,
   getToken,
   resolveWorkspaceGid
 } from './client'

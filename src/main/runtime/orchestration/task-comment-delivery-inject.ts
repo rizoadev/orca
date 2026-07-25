@@ -11,6 +11,7 @@ import {
   buildOperatorFollowUpPrompt,
   formatCoalescedPromptBodies
 } from './task-comment-mentions'
+import type { RuntimeTerminalWaitCondition } from '../../../shared/runtime-types'
 import {
   buildDeliveryAuditBody,
   type CommentDeliveryMode,
@@ -34,7 +35,11 @@ export type CommentDeliveryRuntime = {
   ) => Promise<{ handle: string }>
   waitForTerminal?: (
     handle: string,
-    options?: { condition?: string; timeoutMs?: number }
+    options?: {
+      condition?: RuntimeTerminalWaitCondition
+      timeoutMs?: number
+      signal?: AbortSignal
+    }
   ) => Promise<unknown>
 }
 
