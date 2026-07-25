@@ -74,7 +74,7 @@ export function TaskPageAsanaPanel({ isVisible }: TaskPageAsanaPanelProps): Reac
     } finally {
       setLoading(false)
     }
-  }, [filter, projectGid])
+  }, [filter, projectGid, status?.activeWorkspaceGid])
 
   useEffect(() => {
     if (!isVisible) {
