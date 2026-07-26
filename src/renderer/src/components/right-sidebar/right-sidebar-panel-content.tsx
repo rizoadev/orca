@@ -20,11 +20,13 @@ const OrchestrationPanel = lazy(() => import('./OrchestrationPanel'))
 type RightSidebarPanelContentProps = {
   effectiveTab: ActiveRightSidebarTab
   rightSidebarOpen: boolean
+  rightSidebarRouteRequestId: number
 }
 
 export function RightSidebarPanelContent({
   effectiveTab,
-  rightSidebarOpen
+  rightSidebarOpen,
+  rightSidebarRouteRequestId
 }: RightSidebarPanelContentProps): React.JSX.Element {
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
@@ -45,12 +47,19 @@ export function RightSidebarPanelContent({
           <RecoverableRenderErrorBoundary
             boundaryId="right-sidebar.orchestration"
             surface="right-sidebar"
-            resetKey={`orchestration:${rightSidebarOpen}`}
+            // Why: include rightSidebarRouteRequestId so every click on the
+            // orchestration icon (which increments the request id) resets the
+            // boundary — otherwise a stuck error state can't be cleared by
+            // clicking the same icon again.
+            resetKey={`orchestration:${rightSidebarOpen}:${effectiveTab}:${rightSidebarRouteRequestId}`}
             compact
             title="Orchestration panel hit an error."
             description="Retry this panel, or switch tabs and come back."
           >
-            <OrchestrationPanel key="orchestration-panel" isVisible={rightSidebarOpen} />
+            <OrchestrationPanel
+              key="orchestration-panel"
+              isVisible={rightSidebarOpen && effectiveTab === 'orchestration'}
+            />
           </RecoverableRenderErrorBoundary>
         ) : null}
         {/* Why: SSH port forwarding still depends on the raw ports.detect data,

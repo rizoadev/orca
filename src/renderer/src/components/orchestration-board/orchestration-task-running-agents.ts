@@ -60,7 +60,11 @@ export function collectOrchestrationTaskRunningAgents(input: {
   const seen = new Set<string>()
   const worktreeId = input.worktreeId?.trim() || null
 
-  const consider = (paneKey: string, entry: AgentStatusEntry): void => {
+  const consider = (paneKey: string, entry: AgentStatusEntry | null | undefined): void => {
+    // Why: agent-status maps can briefly hold holes during eviction/transfer; skip them.
+    if (!entry || typeof entry !== 'object') {
+      return
+    }
     if (entry.state === 'done') {
       return
     }
@@ -100,7 +104,7 @@ export function collectOrchestrationTaskRunningAgents(input: {
     })
   }
 
-  for (const [paneKey, entry] of Object.entries(input.agentStatusByPaneKey)) {
+  for (const [paneKey, entry] of Object.entries(input.agentStatusByPaneKey ?? {})) {
     consider(paneKey, entry)
   }
 

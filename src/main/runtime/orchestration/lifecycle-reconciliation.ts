@@ -263,6 +263,31 @@ function reconcileWorkerDoneMessage(
     )
   }
 
+  // Why: fan-out sub-task result to parent so the manager agent's thread shows
+  // child progress without polling individual tasks.
+  try {
+    const completedTask = db.getTask(taskId)
+    const parentId = completedTask?.parent_id
+    if (parentId) {
+      const parentTask = db.getTask(parentId)
+      if (parentTask && parentTask.status !== 'completed' && parentTask.status !== 'failed') {
+        const label = completedTask.display_name || completedTask.task_title || taskId
+        const summary = [msg.subject, msg.body].filter((p) => p && p.trim()).join('\n\n')
+        db.addTaskComment({
+          taskId: parentId,
+          author: 'system',
+          kind: 'system',
+          role: null,
+          body: `Sub-task done: **${label}**\n\n${summary || `Completed dispatch ${dispatchId}`}`
+        })
+      }
+    }
+  } catch (err) {
+    onLog(
+      `Warning: failed to fan-out sub-task result to parent: ${err instanceof Error ? err.message : String(err)}`
+    )
+  }
+
   // Why: multi-role product pipeline advances (rework / next stage) after a stage completes.
   try {
     advanceProductPipelineAfterTaskComplete(db, taskId, onLog)

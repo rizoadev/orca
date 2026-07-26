@@ -91,6 +91,7 @@ export type TaskListFilter = {
   worktreeId?: string
   hostId?: string
   priority?: TaskPriority
+  parentId?: string
 }
 
 function normalizeTaskPriority(priority: TaskPriority | string | undefined): TaskPriority {
@@ -159,6 +160,10 @@ function buildTaskListWhereClauses(filter?: TaskListFilter): {
   if (filter?.priority) {
     whereClauses.push('tasks.priority = ?')
     params.push(normalizeTaskPriority(filter.priority))
+  }
+  if (filter?.parentId) {
+    whereClauses.push('tasks.parent_id = ?')
+    params.push(filter.parentId)
   }
   return { whereClauses, params }
 }
@@ -980,6 +985,77 @@ export class OrchestrationDb {
     return this.getTask(id)!
   }
 
+  listTasksByParent(parentId: string): TaskRow[] {
+    const id = parentId.trim()
+    if (!id) {
+      return []
+    }
+    return this.readRows<TaskRow>(
+      `SELECT * FROM tasks
+       WHERE parent_id = ? AND (${TASK_ROW_BYTES_SQL}) <= ${ORCHESTRATION_QUERY_MAX_ROW_UTF8_BYTES}
+       ORDER BY ${TASK_PRIORITY_ORDER_SQL}, created_at, rowid`,
+      [id]
+    ).map(hydrateTaskRow)
+  }
+
+  /** Active pipeline roots for startup re-watch — any root not yet done/failed. */
+  listActivePipelineRoots(): TaskRow[] {
+    return this.readRows<TaskRow>(
+      `SELECT * FROM tasks
+       WHERE pipeline_id = id
+         AND pipeline_stage NOT IN ('done', 'failed')
+         AND status NOT IN ('failed')
+         AND (${TASK_ROW_BYTES_SQL}) <= ${ORCHESTRATION_QUERY_MAX_ROW_UTF8_BYTES}
+       ORDER BY created_at, rowid`
+    ).map(hydrateTaskRow)
+  }
+
+  /**
+   * On startup: tasks still marked 'dispatched' have no live agent — requeue
+   * them to 'ready' so the supervisor/coordinator can re-dispatch.
+   * Only requeues dispatches older than thresholdMs (default 5 min) to avoid
+   * racing a worker that just started before the runtime was ready.
+   */
+  requeueStuckDispatchesOnStartup(thresholdMs = 5 * 60 * 1000): number {
+    const thresholdIso = new Date(Date.now() - thresholdMs).toISOString()
+    const stale = this.db
+      .prepare(
+        `SELECT DISTINCT task_id FROM dispatch_contexts
+         WHERE status = 'dispatched'
+           AND dispatched_at < ?
+           AND (last_heartbeat_at IS NULL OR last_heartbeat_at < ?)`,
+      )
+      .all(thresholdIso, thresholdIso) as { task_id: string }[]
+
+    let requeued = 0
+    for (const { task_id } of stale) {
+      const task = this.getTask(task_id)
+      // Why: only requeue dispatched tasks — completed/failed ones are terminal.
+      if (task?.status !== 'dispatched') {
+        continue
+      }
+      this.db
+        .prepare(`UPDATE tasks SET status = 'ready' WHERE id = ? AND status = 'dispatched'`)
+        .run(task_id)
+      this.db
+        .prepare(`UPDATE dispatch_contexts SET status = 'failed', last_failure = ? WHERE task_id = ? AND status = 'dispatched'`)
+        .run('requeued on startup: no live agent', task_id)
+      try {
+        this.addTaskComment({
+          taskId: task_id,
+          author: 'system',
+          kind: 'system',
+          role: task.pipeline_role,
+          body: 'Requeued on startup: dispatch was orphaned (no live agent)'
+        })
+      } catch {
+        // comments optional
+      }
+      requeued += 1
+    }
+    return requeued
+  }
+
   listTasksByPipeline(pipelineId: string): TaskRow[] {
     const id = pipelineId.trim()
     if (!id) {
@@ -1228,12 +1304,16 @@ export class OrchestrationDb {
    */
   retryTask(
     id: string,
-    reason = 'Retried by operator'
+    reason = 'Retried by operator',
+    options?: { resetCircuitBreaker?: boolean }
   ): { task: TaskRow; retriedIds: string[] } | undefined {
     const task = this.getTask(id)
     if (!task) {
       return undefined
     }
+    // Why: operator retry is intentional — start a fresh 3-strike budget instead of
+    // carrying auto-retry failures that already tripped circuit_broken.
+    const resetCircuitBreaker = options?.resetCircuitBreaker !== false
     const targets =
       task.pipeline_id && task.pipeline_id === task.id
         ? this.listTasksByPipeline(task.id).filter(
@@ -1251,13 +1331,25 @@ export class OrchestrationDb {
       if (target.id !== task.id && target.status === 'completed') {
         continue
       }
+      // Why: keep prior result on the row so re-dispatch preamble can resume
+      // instead of cold-starting; successful completion overwrites it later.
+      const previousResult = target.result
       this.failActiveDispatchForTask(target.id, reason)
+      if (resetCircuitBreaker) {
+        this.db
+          .prepare(
+            `UPDATE dispatch_contexts
+             SET failure_count = 0,
+                 status = CASE WHEN status = 'circuit_broken' THEN 'failed' ELSE status END
+             WHERE task_id = ?`
+          )
+          .run(target.id)
+      }
       this.db
         .prepare(
           `UPDATE tasks
            SET status = 'ready',
                completed_at = NULL,
-               result = NULL,
                pipeline_stage = CASE
                  WHEN id = pipeline_id THEN 'running'
                  WHEN pipeline_stage = 'failed' OR pipeline_stage = 'done' THEN pipeline_stage
@@ -1273,19 +1365,21 @@ export class OrchestrationDb {
             `UPDATE tasks
              SET status = 'ready',
                  pipeline_stage = 'running',
-                 completed_at = NULL,
-                 result = NULL
+                 completed_at = NULL
              WHERE id = ?`
           )
           .run(target.id)
       }
       try {
+        const resumeNote = previousResult
+          ? `\n\nPrevious result (for resume):\n${previousResult.slice(0, 2000)}`
+          : ''
         this.addTaskComment({
           taskId: target.id,
           author: 'system',
           kind: 'system',
           role: target.pipeline_role,
-          body: `Retry: ${reason}`
+          body: `Retry: ${reason}${resumeNote}`
         })
       } catch {
         // comments optional in older DBs
@@ -1294,6 +1388,19 @@ export class OrchestrationDb {
     }
     const updated = this.getTask(id)
     return updated ? { task: updated, retriedIds } : undefined
+  }
+
+  /** Last failed/completed dispatch context for resume preamble. */
+  getLatestTerminalDispatch(taskId: string): DispatchContextRow | undefined {
+    return this.db
+      .prepare(
+        `SELECT * FROM dispatch_contexts
+         WHERE task_id = ?
+           AND status IN ('failed', 'completed', 'circuit_broken')
+         ORDER BY rowid DESC
+         LIMIT 1`
+      )
+      .get(taskId) as DispatchContextRow | undefined
   }
 
   /**
@@ -1856,6 +1963,29 @@ export class OrchestrationDb {
     // Why: back to 'ready' not 'pending' — 'pending' would strand it since promoteReadyTasks only runs when a dep completes.
     const taskStatus: TaskStatus = newStatus === 'circuit_broken' ? 'failed' : 'ready'
     this.db.prepare('UPDATE tasks SET status = ? WHERE id = ?').run(taskStatus, ctx.task_id)
+
+    // Why: manager parent needs a thread signal when a child fails mid-run, not only on worker_done success.
+    try {
+      const task = this.getTask(ctx.task_id)
+      if (task?.parent_id) {
+        const parent = this.getTask(task.parent_id)
+        if (parent && parent.status !== 'completed' && parent.status !== 'failed') {
+          const label = task.display_name || task.task_title || task.id
+          this.addTaskComment({
+            taskId: parent.id,
+            author: 'system',
+            kind: 'system',
+            role: null,
+            body:
+              taskStatus === 'failed'
+                ? `Sub-task failed (circuit broken): **${label}**\n${truncateOrchestrationDiagnostic(error)}`
+                : `Sub-task failed, requeued for retry: **${label}**\n${truncateOrchestrationDiagnostic(error)}`
+          })
+        }
+      }
+    } catch {
+      // Non-fatal
+    }
 
     return this.getDispatchContextById(ctxId)
   }

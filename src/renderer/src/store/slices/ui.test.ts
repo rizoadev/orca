@@ -79,6 +79,7 @@ function createUIStore(): StoreApi<AppState> {
     markdownTocPanelWidth: 240,
     rightSidebarTab: 'explorer',
     rightSidebarExplorerView: 'files',
+    rightSidebarRouteRequestId: 0,
     ...createSettingsSearchState(args[0]),
     ...createWorktreeNavHistorySlice(...(args as Parameters<typeof createWorktreeNavHistorySlice>)),
     ...createUISlice(...(args as Parameters<typeof createUISlice>))
@@ -2067,6 +2068,23 @@ describe('createUISlice settings navigation', () => {
     expect(store.getState().activeView).toBe('settings')
     expect(store.getState().settingsSearchInputQuery).toBe('')
     expect(store.getState().settingsSearchQuery).toBe('')
+  })
+
+  it('opens the orchestration board with an explicit right-sidebar route request', () => {
+    const store = createUIStore()
+    store.setState({
+      rightSidebarOpen: false,
+      rightSidebarTab: 'explorer',
+      rightSidebarRouteRequestId: 4
+    })
+
+    store.getState().openOrchestrationBoardPage({ taskId: 'task-1' })
+
+    expect(store.getState().activeView).toBe('orchestration-board')
+    expect(store.getState().rightSidebarOpen).toBe(true)
+    expect(store.getState().rightSidebarTab).toBe('orchestration')
+    expect(store.getState().rightSidebarRouteRequestId).toBe(5)
+    expect(store.getState().orchestrationBoardFocusTaskId).toBe('task-1')
   })
 })
 

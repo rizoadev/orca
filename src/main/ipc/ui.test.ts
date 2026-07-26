@@ -51,6 +51,12 @@ function makeStore() {
   }
 }
 
+function getUISetHandler():
+  | ((event: { sender: { id: number } }, args: Record<string, unknown>) => void)
+  | undefined {
+  return handleMock.mock.calls.find(([channel]) => channel === 'ui:set')?.[1]
+}
+
 function makeUIEvent(senderOverrides: Record<string, unknown> = {}): {
   sender: Record<string, unknown>
 } {
@@ -281,5 +287,34 @@ describe('UI IPC', () => {
     expect(fromWebContentsMock).not.toHaveBeenCalled()
     expect(paste).not.toHaveBeenCalled()
     expect(pasteAndMatchStyle).not.toHaveBeenCalled()
+  })
+
+  it('passes origin webContents id on ui:set and does not echo ui:stateChanged to the origin window', () => {
+    const originSend = vi.fn()
+    const otherSend = vi.fn()
+    const store = makeStore()
+    getAllWindowsMock.mockReturnValue([
+      { isDestroyed: () => false, webContents: { id: 17, send: originSend } },
+      { isDestroyed: () => false, webContents: { id: 42, send: otherSend } }
+    ])
+
+    registerUIHandlers(store as never)
+
+    const onUIChanged = store.onUIChanged.mock.calls[0]?.[0] as
+      | ((ui: Record<string, unknown>, originWebContentsId?: number) => void)
+      | undefined
+    expect(onUIChanged).toEqual(expect.any(Function))
+
+    getUISetHandler()?.({ sender: { id: 17 } }, { rightSidebarTab: 'orchestration' })
+    expect(store.updateUI).toHaveBeenCalledWith(
+      { rightSidebarTab: 'orchestration' },
+      { originWebContentsId: 17 }
+    )
+
+    onUIChanged?.({ rightSidebarTab: 'orchestration' }, 17)
+    expect(originSend).not.toHaveBeenCalled()
+    expect(otherSend).toHaveBeenCalledWith('ui:stateChanged', {
+      rightSidebarTab: 'orchestration'
+    })
   })
 })

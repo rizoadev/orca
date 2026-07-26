@@ -44,6 +44,7 @@ import { OrcaRuntimeService } from './runtime/orca-runtime'
 import { loadAgentSessionClaimSigner } from './runtime/agent-session-claim-identity'
 import { OrcaRuntimeRpcServer } from './runtime/runtime-rpc'
 import { resolveAdvertisedPairingEndpoint } from './runtime/pairing-endpoint'
+import { watchProductPipeline } from './runtime/orchestration/product-pipeline-supervisor'
 import { ServeReadinessPublisher } from './server/serve-readiness'
 import { reserveServeStdoutForReadiness } from './server/serve-stdout-boundary'
 import { DesktopRelayService } from './runtime/relay/desktop-relay-service'
@@ -2050,6 +2051,27 @@ app.whenReady().then(async () => {
       isAgentStatusHooksEnabled(store?.getSettings()) ? agentHookServer.buildPtyEnv() : {}
   })
   runtime = runtimeService
+
+  // Why: supervisor state is in-memory only; re-watch any pipelines that were
+  // still running when the app last closed so they resume without operator action.
+  // requeueStuckDispatches resets orphaned 'dispatched' tasks to 'ready' so the
+  // supervisor can re-dispatch them on the first tick.
+  try {
+    const orchDb = runtimeService.getOrchestrationDb()
+    const requeued = orchDb.requeueStuckDispatchesOnStartup()
+    if (requeued > 0) {
+      console.log(`[orchestration] Requeued ${requeued} orphaned dispatch(es) on startup`)
+    }
+    const activePipelines = orchDb.listActivePipelineRoots()
+    for (const pipeline of activePipelines) {
+      watchProductPipeline(pipeline.id, orchDb, runtimeService)
+    }
+    if (activePipelines.length > 0) {
+      console.log(`[orchestration] Re-watching ${activePipelines.length} active pipeline(s) on startup`)
+    }
+  } catch (err) {
+    console.warn('[orchestration] Startup re-watch failed:', err instanceof Error ? err.message : String(err))
+  }
   browserManager.setBrowserGuestStateChangedListener((worktreeId) => {
     runtimeService.notifyMobileSessionTabsChanged(worktreeId)
   })

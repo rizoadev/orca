@@ -32,6 +32,12 @@ export type PreambleParams = {
   workerKind?: 'prompt-returning-agent' | 'bare-shell'
   /** Optional squad-leader briefing injected before the task body. */
   squadBriefing?: string
+  /** Prior attempt context so a re-dispatched worker can resume instead of restarting cold. */
+  resumeContext?: {
+    attempt?: number | null
+    lastFailure?: string | null
+    previousResult?: string | null
+  }
 }
 
 // Why: 5 minutes is frequent enough that the coordinator's stale-heartbeat
@@ -142,10 +148,37 @@ ${postDoneInstructions}`
   const drift =
     params.baseDrift && params.baseDrift.behind > 0 ? buildDriftSection(params.baseDrift) : ''
 
-  return `${header}${drift}
+  const resume = buildResumeSection(params.resumeContext)
+
+  return `${header}${drift}${resume}
 
 === TASK ===
 ${params.taskSpec}`
+}
+
+function buildResumeSection(
+  resume?: PreambleParams['resumeContext']
+): string {
+  if (!resume) {
+    return ''
+  }
+  const attempt = resume.attempt && resume.attempt > 1 ? resume.attempt : null
+  const lastFailure = resume.lastFailure?.trim() || null
+  const previousResult = resume.previousResult?.trim() || null
+  if (!attempt && !lastFailure && !previousResult) {
+    return ''
+  }
+  const lines = [
+    '',
+    '=== RESUME CONTEXT ===',
+    'This task was re-dispatched after a previous attempt. Do NOT restart from scratch.',
+    'Inspect the worktree, reuse completed work, and finish only what is still open.',
+    attempt ? `Attempt: ${attempt}` : null,
+    lastFailure ? `Last failure: ${lastFailure.slice(0, 800)}` : null,
+    previousResult ? `Previous result/partial progress:\n${previousResult.slice(0, 2000)}` : null,
+    '==='
+  ].filter((line): line is string => line != null)
+  return `\n${lines.join('\n')}`
 }
 
 function buildPostWorkerDoneInstructions({

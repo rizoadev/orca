@@ -1289,6 +1289,20 @@ function App(): React.JSX.Element {
 
   // Why no periodic scrollback save: the old 3-min re-serialize (#461) stalled the main thread for seconds; the out-of-process daemon (#729) is the durable replacement, non-daemon users lose in-session scrollback on unexpected exit.
 
+  // Why: activity-bar tab clicks must hit durable state before the next ui:stateChanged
+  // sync hydrate. The broad 150ms writer below is too slow and used to snap the right
+  // sidebar back to the previous tab (orchestration → explorer/source-control).
+  useEffect(() => {
+    if (!persistedUIReady) {
+      return
+    }
+    void window.api.ui.set({
+      rightSidebarOpen,
+      rightSidebarTab,
+      rightSidebarExplorerView
+    })
+  }, [persistedUIReady, rightSidebarOpen, rightSidebarTab, rightSidebarExplorerView])
+
   useEffect(() => {
     if (!persistedUIReady) {
       return

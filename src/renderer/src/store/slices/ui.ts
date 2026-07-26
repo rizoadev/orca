@@ -1570,6 +1570,12 @@ export const createUISlice: StateCreator<AppState, [], [], UISlice> = (set, get)
       // Why: keep right-sidebar companion list usable while the board owns main content.
       rightSidebarOpen: true,
       rightSidebarTab: 'orchestration' as const,
+      // Why: bump route request id so folder-workspace tab memory and recoverable
+      // error boundaries treat this as an explicit orchestration navigation.
+      rightSidebarRouteRequestId:
+        (typeof state.rightSidebarRouteRequestId === 'number'
+          ? state.rightSidebarRouteRequestId
+          : 0) + 1,
       orchestrationBoardFocusTaskId: opts?.taskId?.trim() || null,
       previousViewBeforeOrchestrationBoard:
         state.activeView === 'orchestration-board'

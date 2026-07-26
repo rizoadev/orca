@@ -594,7 +594,8 @@ export const ORCHESTRATION_HANDLERS: Record<string, CommandHandler> = {
       repoId: getOptionalStringFlag(flags, 'repo'),
       projectId: getOptionalStringFlag(flags, 'project'),
       worktreeId: getOptionalStringFlag(flags, 'worktree'),
-      hostId: getOptionalStringFlag(flags, 'host')
+      hostId: getOptionalStringFlag(flags, 'host'),
+      parent: getOptionalStringFlag(flags, 'parent')
     })
     // Why: only older runtimes (no spec_truncated) skip server-side abbreviation and need this client-side fallback.
     const needsClientAbbreviation =

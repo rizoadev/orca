@@ -451,6 +451,9 @@ export class Coordinator {
       }
     }
 
+    // Snapshot resume fields before createDispatchContext flips status.
+    const resumeSource = this.db.getTask(task.id)
+    const priorDispatch = this.db.getLatestTerminalDispatch(task.id)
     const dispatch = this.db.createDispatchContext(
       task.id,
       targetHandle,
@@ -470,7 +473,12 @@ export class Coordinator {
         ? { cliCommand: this.runtime.getTerminalOrchestrationCliCommand(targetHandle) }
         : {}),
       // Why (§3.2): pass baseDrift unconditionally — the preamble builder itself gates the drift section on behind > 0.
-      ...(baseDrift ? { baseDrift } : {})
+      ...(baseDrift ? { baseDrift } : {}),
+      resumeContext: {
+        attempt: resumeSource?.pipeline_attempt ?? null,
+        lastFailure: priorDispatch?.last_failure ?? null,
+        previousResult: resumeSource?.result ?? null
+      }
     })
 
     // Why: surface a since-resolved decision gate's outcome to the worker via the preamble.

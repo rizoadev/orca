@@ -234,7 +234,8 @@ const TaskListParams = z.object({
   projectId: OptionalString,
   worktreeId: OptionalString,
   hostId: OptionalString,
-  priority: TaskPrioritySchema.optional()
+  priority: TaskPrioritySchema.optional(),
+  parent: OptionalString
 })
 
 const TaskUpdateParams = z.object({
@@ -707,7 +708,8 @@ export const ORCHESTRATION_METHODS: RpcMethod[] = [
         projectId: params.projectId,
         worktreeId: params.worktreeId,
         hostId: params.hostId,
-        priority: params.priority
+        priority: params.priority,
+        parentId: params.parent
       }
       // Why: listTasksWithDispatch adds assignee_handle + dispatch_id (NULL for non-dispatched), so legacy-shape consumers are unaffected.
       const joined = db.listTasksWithDispatch(filter)

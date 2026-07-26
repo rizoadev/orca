@@ -98,7 +98,7 @@ export const ORCHESTRATION_COMMAND_SPECS: CommandSpec[] = [
     path: ['orchestration', 'task-list'],
     summary: 'List orchestration tasks',
     usage:
-      'orca orchestration task-list [--status <status>] [--ready] [--brief] [--priority <level>] [--repo <id>] [--project <id>] [--worktree <id>] [--host <id>] [--json]',
+      'orca orchestration task-list [--status <status>] [--ready] [--brief] [--priority <level>] [--repo <id>] [--project <id>] [--worktree <id>] [--host <id>] [--parent <task_id>] [--json]',
     allowedFlags: [
       ...GLOBAL_FLAGS,
       'status',
@@ -108,11 +108,13 @@ export const ORCHESTRATION_COMMAND_SPECS: CommandSpec[] = [
       'repo',
       'project',
       'worktree',
-      'host'
+      'host',
+      'parent'
     ],
     notes: [
       '--brief collapses whitespace and caps each spec at 160 characters.',
-      'Results are ordered by priority (urgent→low) then created_at.'
+      'Results are ordered by priority (urgent→low) then created_at.',
+      '--parent <task_id> filters to direct sub-tasks of that task (manager-created children).'
     ]
   },
   {

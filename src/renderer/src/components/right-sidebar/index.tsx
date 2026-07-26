@@ -239,6 +239,11 @@ function RightSidebarInner(): React.JSX.Element {
     rememberedFolderTabByWorkspaceKeyRef.current[activeFolderWorkspaceKey] = effectiveTab
   }, [activeFolderWorkspaceKey, effectiveTab, visibleItems])
   const selectActivityTab = (tab: ActiveRightSidebarTab): void => {
+    // Why: always re-assert the route (even same-tab). setRightSidebarTab bumps
+    // rightSidebarRouteRequestId so error boundaries remount and folder-workspace
+    // memory cannot swallow an explicit icon click. Closing is only via the
+    // dedicated toggle/close control — never by re-clicking the active icon,
+    // which would hide the top activity strip and make the tab unreachable.
     if (activeFolderWorkspaceKey) {
       rememberedFolderTabByWorkspaceKeyRef.current[activeFolderWorkspaceKey] = tab
     }
@@ -281,7 +286,7 @@ function RightSidebarInner(): React.JSX.Element {
           property) rather than in a bottom-docked dashboard panel that
           competed with file Explorer/Search for vertical space. The right
           sidebar is back to tab-only content. */}
-      <RightSidebarPanelContent effectiveTab={effectiveTab} rightSidebarOpen={rightSidebarOpen} />
+      <RightSidebarPanelContent effectiveTab={effectiveTab} rightSidebarOpen={rightSidebarOpen} rightSidebarRouteRequestId={rightSidebarRouteRequestId} />
     </div>
   ) : null
 

@@ -18,6 +18,7 @@ const mockAppState = vi.hoisted(() => ({
   rightSidebarRouteRequestId: 0,
   setRightSidebarTab: vi.fn(),
   showRightSidebarFiles: vi.fn(),
+  toggleRightSidebar: vi.fn(),
   activityBarPosition: 'top' as 'top' | 'side',
   activeWorktreeId: 'worktree-1',
   activeRepo: { id: 'repo-1', kind: 'git', connectionId: null } as {
@@ -74,7 +75,7 @@ vi.mock('@/store', async () => {
       rightSidebarRouteRequestId: mockAppState.rightSidebarRouteRequestId,
       setRightSidebarTab: mockAppState.setRightSidebarTab,
       showRightSidebarFiles: mockAppState.showRightSidebarFiles,
-      toggleRightSidebar: vi.fn(),
+      toggleRightSidebar: mockAppState.toggleRightSidebar,
       activeWorktreeId: mockAppState.activeWorktreeId,
       getKnownWorktreeById: getMockKnownWorktree,
       activityBarPosition: mockAppState.activityBarPosition,
@@ -225,6 +226,7 @@ describe('rendered right sidebar titlebar drag regions', () => {
       mockAppState.rightSidebarRouteRequestId += 1
       notifyAppStore()
     })
+    mockAppState.toggleRightSidebar = vi.fn()
     mockAppState.activityBarPosition = 'top'
     mockAppState.activeWorktreeId = 'worktree-1'
     mockAppState.activeRepo = { id: 'repo-1', kind: 'git', connectionId: null }
@@ -348,6 +350,31 @@ describe('rendered right sidebar titlebar drag regions', () => {
     expect(markup).toContain('data-file-explorer')
     expect(markup).not.toContain('data-folder-workspace-pr-checks-panel')
     expect(mockAppState.setRightSidebarTab).not.toHaveBeenCalled()
+  })
+
+  it('re-asserts the same activity tab instead of closing the sidebar', async () => {
+    mockAppState.rightSidebarOpen = true
+    mockAppState.rightSidebarTab = 'orchestration'
+
+    const container = document.createElement('div')
+    const root: Root = createRoot(container)
+
+    await act(async () => {
+      root.render(<RightSidebar />)
+    })
+
+    await act(async () => {
+      container
+        .querySelector<HTMLButtonElement>('[aria-label^="Orchestration"]')
+        ?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(mockAppState.toggleRightSidebar).not.toHaveBeenCalled()
+    expect(mockAppState.setRightSidebarTab).toHaveBeenCalledWith('orchestration')
+
+    await act(async () => {
+      root.unmount()
+    })
   })
 
   it('keeps remembered folder PR Checks visible when the global route falls back to Explorer', async () => {

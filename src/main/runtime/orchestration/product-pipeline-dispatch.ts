@@ -179,6 +179,9 @@ export async function dispatchPipelineStageTask(
         throw new Error(`Task ${task.id} is no longer ready for dispatch`)
       }
 
+      // Snapshot resume fields before createDispatchContext flips status.
+      const resumeSource = db.getTask(task.id)
+      const priorDispatch = db.getLatestTerminalDispatch(task.id)
       const ctx = db.createDispatchContext(
         task.id,
         targetHandle,
@@ -192,7 +195,12 @@ export async function dispatchPipelineStageTask(
         workerHandle: targetHandle,
         devMode: options.devMode,
         cliCommand: runtime.getTerminalOrchestrationCliCommand(targetHandle),
-        ...(briefing ? { squadBriefing: briefing } : {})
+        ...(briefing ? { squadBriefing: briefing } : {}),
+        resumeContext: {
+          attempt: resumeSource?.pipeline_attempt ?? attempt,
+          lastFailure: priorDispatch?.last_failure ?? null,
+          previousResult: resumeSource?.result ?? null
+        }
       })
       await runtime.sendTerminalAgentPrompt(targetHandle, preamble)
 

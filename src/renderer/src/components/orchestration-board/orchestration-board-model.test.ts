@@ -27,6 +27,19 @@ describe('orchestration board model', () => {
     )
   })
 
+  it('does not throw when title and spec are missing', () => {
+    expect(
+      taskBoardLabel({
+        id: 'task-empty',
+        status: 'failed',
+        // Why: simulate a sparse RPC row after stop/retry.
+        spec: undefined as unknown as string,
+        display_name: null,
+        task_title: null
+      })
+    ).toBe('task-empty')
+  })
+
   it('maps statuses into board columns', () => {
     expect(columnForTaskStatus('pending')).toBe('ready')
     expect(columnForTaskStatus('ready')).toBe('ready')

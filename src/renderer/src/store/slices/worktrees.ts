@@ -2026,15 +2026,22 @@ function buildWorktreePurgeState(s: AppState, worktreeIds: string[]): Partial<Ap
     let changed = omitted !== s.rightSidebarTabByWorktree
     const out: AppState['rightSidebarTabByWorktree'] = {}
     for (const [id, tab] of Object.entries(omitted)) {
+      // Why: keep in sync with ActiveRightSidebarTab; dropping newer tabs (orchestration,
+      // hive, snippets, …) on worktree purge made later opens fall back and look broken.
       if (
         tab === 'explorer' ||
         tab === 'vault' ||
         tab === 'workspaces' ||
+        tab === 'pr-checks' ||
         tab === 'source-control' ||
         tab === 'checks' ||
         tab === 'issues' ||
+        tab === 'orchestration' ||
         tab === 'ports' ||
-        tab === 'remote-chat'
+        tab === 'hive' ||
+        tab === 'remote-chat' ||
+        tab === 'todos' ||
+        tab === 'snippets'
       ) {
         out[id] = tab
       } else {

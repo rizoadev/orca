@@ -79,7 +79,13 @@ export const ORCHESTRATION_BOARD_COLUMNS: {
 ]
 
 export function taskBoardLabel(task: OrchestrationBoardTask): string {
-  const label = task.display_name?.trim() || task.task_title?.trim() || task.spec
+  // Why: RPC/DB rows can omit title/spec after stop/retry races; never throw in list rows.
+  const label =
+    task.display_name?.trim() ||
+    task.task_title?.trim() ||
+    (typeof task.spec === 'string' ? task.spec : '') ||
+    task.id ||
+    'Task'
   return label.replace(/\s+/g, ' ').trim()
 }
 

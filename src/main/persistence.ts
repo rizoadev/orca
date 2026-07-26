@@ -2596,7 +2596,9 @@ export class Store {
       originWebContentsId?: number
     ) => void
   >()
-  private uiChangeListeners = new Set<(ui: PersistedState['ui']) => void>()
+  private uiChangeListeners = new Set<
+    (ui: PersistedState['ui'], originWebContentsId?: number) => void
+  >()
 
   constructor(options: StoreOptions = {}) {
     // Why: profile switching yields multiple state paths; capture per Store so late async writes can't follow a global path.
@@ -5211,20 +5213,22 @@ export class Store {
   }
 
   // Why: UI view-state is written from both desktop and mobile (ui.set RPC), so notify to keep bi-directional sync (desktop hydrates UI only once).
-  onUIChanged(listener: (ui: PersistedState['ui']) => void): () => void {
+  onUIChanged(
+    listener: (ui: PersistedState['ui'], originWebContentsId?: number) => void
+  ): () => void {
     this.uiChangeListeners.add(listener)
     return () => {
       this.uiChangeListeners.delete(listener)
     }
   }
 
-  private notifyUIChanged(): void {
+  private notifyUIChanged(originWebContentsId?: number): void {
     if (this.uiChangeListeners.size === 0) {
       return
     }
     const ui = this.getUI()
     for (const listener of this.uiChangeListeners) {
-      listener(ui)
+      listener(ui, originWebContentsId)
     }
   }
 
@@ -5428,13 +5432,16 @@ export class Store {
     }
   }
 
-  updateUI(updates: Partial<PersistedState['ui']>): void {
+  updateUI(
+    updates: Partial<PersistedState['ui']>,
+    options: { originWebContentsId?: number } = {}
+  ): void {
     const sanitizedUpdates = stripMainOwnedTelemetryMarkerFromUI(updates)
     const { activeView, ...durableUpdates } = sanitizedUpdates
     const activeViewChanged = this.activeViewPreference.set(activeView)
     if (Object.keys(durableUpdates).length === 0) {
       if (activeViewChanged) {
-        this.notifyUIChanged()
+        this.notifyUIChanged(options.originWebContentsId)
       }
       return
     }
@@ -5552,13 +5559,13 @@ export class Store {
     }
     if (persistedUIValuesEqual(previousUI, nextUI)) {
       if (activeViewChanged) {
-        this.notifyUIChanged()
+        this.notifyUIChanged(options.originWebContentsId)
       }
       return
     }
     this.state.ui = nextUI
     this.scheduleSave()
-    this.notifyUIChanged()
+    this.notifyUIChanged(options.originWebContentsId)
   }
 
   recordFeatureInteraction(id: FeatureInteractionId): PersistedState['ui'] {
