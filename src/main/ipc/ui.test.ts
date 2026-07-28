@@ -294,8 +294,8 @@ describe('UI IPC', () => {
     const otherSend = vi.fn()
     const store = makeStore()
     getAllWindowsMock.mockReturnValue([
-      { isDestroyed: () => false, webContents: { id: 17, send: originSend } },
-      { isDestroyed: () => false, webContents: { id: 42, send: otherSend } }
+      { isDestroyed: () => false, webContents: { id: 17, send: originSend } } as never,
+      { isDestroyed: () => false, webContents: { id: 42, send: otherSend } } as never
     ])
 
     registerUIHandlers(store as never)
