@@ -2395,7 +2395,15 @@ app.whenReady().then(async () => {
       setEnabled: (enabled) =>
         cloudflareRelayService ? cloudflareRelayService.setEnabled(enabled) : Promise.resolve({ ok: false, error: 'cloudflare_relay_unavailable' }),
       deleteTunnel: () =>
-        cloudflareRelayService ? cloudflareRelayService.deleteTunnel() : Promise.resolve({ ok: false, error: 'cloudflare_relay_unavailable' })
+        cloudflareRelayService ? cloudflareRelayService.deleteTunnel() : Promise.resolve({ ok: false, error: 'cloudflare_relay_unavailable' }),
+      getStatus: () =>
+        cloudflareRelayService ? cloudflareRelayService.getStatus() : { state: 'disabled' as const },
+      restart: () =>
+        cloudflareRelayService ? cloudflareRelayService.restart() : Promise.resolve({ ok: false, error: 'cloudflare_relay_unavailable' })
+    },
+    cloudflareRelayConfigured: () => {
+      const settings = store?.getSettings()
+      return Boolean(settings?.cloudflareRelayToken && settings?.cloudflareRelayDomain)
     },
     consumePendingUnpairedDeviceAuthFailure: (webContentsId) => {
       if (

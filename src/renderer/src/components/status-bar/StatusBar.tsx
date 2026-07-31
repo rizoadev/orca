@@ -120,6 +120,11 @@ const PortsStatusSegment = lazyWithRetry(() =>
 const SshStatusSegment = lazyWithRetry(() =>
   import('./SshStatusSegment').then((module) => ({ default: module.SshStatusSegment }))
 )
+const CloudflareRelayStatusSegment = lazyWithRetry(() =>
+  import('./CloudflareRelayStatusSegment').then((module) => ({
+    default: module.CloudflareRelayStatusSegment
+  }))
+)
 
 export type CodexStatusRuntimeTarget = {
   runtime: 'host' | 'wsl'
@@ -2353,6 +2358,7 @@ function StatusBarInner({ floatingTerminalOpen }: StatusBarProps): React.JSX.Ele
           ) : null}
           {showPorts ? <PortsStatusSegment compact={compact} iconOnly={iconOnly} /> : null}
           {showSsh ? <SshStatusSegment compact={compact} iconOnly={iconOnly} /> : null}
+          <CloudflareRelayStatusSegment compact={compact} iconOnly={iconOnly} />
         </React.Suspense>
         {showFloatingTerminalToggle && (
           <FloatingTerminalIconContextMenu currentLocation="status-bar" className="relative">

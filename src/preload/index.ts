@@ -51,6 +51,7 @@ import type {
 } from '../shared/agent-session-resume'
 import type { MobileRelayStatus } from '../shared/mobile-relay-status'
 import type { MobilePairingConnectionMode } from '../shared/mobile-pairing-connection-mode'
+import type { CloudflareRelayStatusPayload } from '../shared/cloudflare-relay-status'
 import type { SshMutationExpectation } from '../shared/ssh-types'
 import type {
   BaseRefSearchResult,
@@ -4524,6 +4525,12 @@ const api = {
 
     deleteCloudflareRelay: (): Promise<{ ok: boolean; error?: string }> =>
       ipcRenderer.invoke('mobile:deleteCloudflareRelay'),
+
+    getCloudflareRelayStatus: (): Promise<CloudflareRelayStatusPayload> =>
+      ipcRenderer.invoke('mobile:getCloudflareRelayStatus'),
+
+    restartCloudflareRelay: (): Promise<{ ok: boolean; error?: string }> =>
+      ipcRenderer.invoke('mobile:restartCloudflareRelay'),
 
     getPairingQR: (args?: {
       address?: string

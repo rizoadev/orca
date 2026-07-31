@@ -9,6 +9,7 @@ import type {
   HostedReviewProvider
 } from '../shared/hosted-review'
 import type { NativeFileDropPayload } from '../shared/native-file-drop'
+import type { CloudflareRelayStatusPayload } from '../shared/cloudflare-relay-status'
 import type { DashboardSnapshot, DashboardRevealAgentArgs } from '../shared/dashboard-snapshot'
 import type {
   TerminalPreviewConnectResult,
@@ -3458,6 +3459,8 @@ export type PreloadApi = {
     }>
     setCloudflareRelay: (enabled: boolean) => Promise<{ ok: boolean; error?: string }>
     deleteCloudflareRelay: () => Promise<{ ok: boolean; error?: string }>
+    getCloudflareRelayStatus: () => Promise<CloudflareRelayStatusPayload>
+    restartCloudflareRelay: () => Promise<{ ok: boolean; error?: string }>
     getPairingQR: (args?: {
       address?: string
       connectionMode?: MobilePairingConnectionMode

@@ -56,6 +56,20 @@ export class CloudflareRelayService {
     return this.status
   }
 
+  // Why: runtime restart — tears down the tunnel and re-provisions so the
+  // systemd unit reconnects with the current WS port.
+  async restart(): Promise<{ ok: boolean; error?: string }> {
+    const port = this.getWsPort()
+    if (port === null) {
+      return { ok: false, error: 'WebSocket transport is not ready.' }
+    }
+    this.stop()
+    await this.start(port)
+    return this.status.state === 'error'
+      ? { ok: false, error: this.status.message }
+      : { ok: true }
+  }
+
   // Why: runtime toggle — persists the setting, then starts/stops the tunnel
   // immediately instead of waiting for the next app launch.
   async setEnabled(enabled: boolean): Promise<{ ok: boolean; error?: string }> {
