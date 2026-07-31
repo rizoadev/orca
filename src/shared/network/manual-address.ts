@@ -17,6 +17,15 @@ const HOSTNAME_MAX_LENGTH = 253
 const MIN_PORT = 1
 const MAX_PORT = 65535
 const ERROR_MESSAGE = 'Enter an IPv4 address or hostname, optionally with a :port suffix'
+// Why: a full ws(s):// URL (e.g. a Cloudflare Tunnel endpoint) is a valid advertised
+// address — main's resolveAdvertisedPairingEndpoint already accepts it. The picker
+// grammar must not reject what the main process can dial.
+const WS_URL_PROTOCOLS = ['ws:', 'wss:'] as const
+const WS_URL_MAX_LENGTH = 2048
+
+export function isWsUrlAddress(value: string): boolean {
+  return /^wss?:\/\//i.test(value)
+}
 
 export type ParseManualAddressResult = { ok: true; address: string } | { ok: false; error: string }
 
@@ -27,6 +36,9 @@ export function parseManualNetworkAddress(input: string): ParseManualAddressResu
   }
   if (/\s/.test(trimmed)) {
     return { ok: false, error: ERROR_MESSAGE }
+  }
+  if (isWsUrlAddress(trimmed)) {
+    return parseWsUrlAddress(trimmed)
   }
 
   const { host, port } = splitHostPort(trimmed)
@@ -80,4 +92,35 @@ function isValidPort(port: string): boolean {
   }
   const value = Number(port)
   return value >= MIN_PORT && value <= MAX_PORT
+}
+
+// Why: mirrors resolveFullUrl in src/main/runtime/pairing-endpoint.ts — accept a
+// canonical ws(s):// origin only (hostname, optional port, no path/query/hash or
+// userinfo) so the QR endpoint matches what the main process will advertise.
+function parseWsUrlAddress(value: string): ParseManualAddressResult {
+  if (value.length > WS_URL_MAX_LENGTH) {
+    return { ok: false, error: ERROR_MESSAGE }
+  }
+  let parsed: URL
+  try {
+    parsed = new URL(value)
+  } catch {
+    return { ok: false, error: ERROR_MESSAGE }
+  }
+  if (
+    !WS_URL_PROTOCOLS.includes(parsed.protocol as (typeof WS_URL_PROTOCOLS)[number]) ||
+    !parsed.hostname ||
+    parsed.username ||
+    parsed.password ||
+    parsed.hash ||
+    parsed.pathname !== '/' ||
+    parsed.search ||
+    parsed.port === '0'
+  ) {
+    return { ok: false, error: ERROR_MESSAGE }
+  }
+  if (parsed.port !== '' && !isValidPort(parsed.port)) {
+    return { ok: false, error: ERROR_MESSAGE }
+  }
+  return { ok: true, address: parsed.toString().replace(/\/$/, '') }
 }

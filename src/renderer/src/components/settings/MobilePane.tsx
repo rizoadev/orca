@@ -29,6 +29,7 @@ export { getMobilePaneSearchEntries } from './mobile-pane-search'
 
 export function MobilePane(): React.JSX.Element {
   const autoRestoreFitMs = useAppStore((s) => s.settings?.mobileAutoRestoreFitMs ?? null)
+  const savedCustomAddress = useAppStore((s) => s.settings?.mobilePairingCustomAddress)
   const updateSettings = useAppStore((s) => s.updateSettings)
   const [qrDataUrl, setQrDataUrl] = useState<string | null>(null)
   const [pairingUrl, setPairingUrl] = useState<string | null>(null)
@@ -134,9 +135,16 @@ export function MobilePane(): React.JSX.Element {
         const result = await window.api.mobile.listNetworkInterfaces()
         if (mountedRef.current) {
           setNetworkInterfaces(result.interfaces)
+          // Why: a persisted custom address (tunnel endpoint) is not an OS
+          // interface; treat it as manual so a refresh keeps it instead of
+          // snapping back to a tailnet/LAN default.
+          const current = selectedAddressRef.current ?? savedCustomAddress
+          const currentIsManual =
+            current !== undefined && !result.interfaces.some((iface) => iface.address === current)
           const nextAddress = selectRefreshedNetworkAddress(
-            selectedAddressRef.current,
-            result.interfaces
+            current,
+            result.interfaces,
+            currentIsManual
           )
           if (nextAddress !== selectedAddressRef.current) {
             selectedAddressRef.current = nextAddress
@@ -161,7 +169,7 @@ export function MobilePane(): React.JSX.Element {
         }
       }
     },
-    [mountedRef, invalidatePairing]
+    [mountedRef, invalidatePairing, savedCustomAddress]
   )
 
   const generateQR = useCallback(
@@ -257,10 +265,17 @@ export function MobilePane(): React.JSX.Element {
     (address: string): void => {
       setSelectedAddress(address)
       selectedAddressRef.current = address
+      // Why: persist manual addresses (tunnel endpoints etc.) so the next
+      // pairing session offers them without retyping; OS interfaces stay
+      // ephemeral so they can't clobber a saved custom endpoint.
+      const isManual = !networkInterfaces.some((iface) => iface.address === address)
+      if (isManual && address !== savedCustomAddress) {
+        void updateSettings({ mobilePairingCustomAddress: address })
+      }
       // Switching endpoints: a shown QR now encodes the old address.
       invalidatePairing()
     },
-    [invalidatePairing]
+    [invalidatePairing, networkInterfaces, savedCustomAddress, updateSettings]
   )
 
   // Why: another window can persist a different path; the shared hook syncs

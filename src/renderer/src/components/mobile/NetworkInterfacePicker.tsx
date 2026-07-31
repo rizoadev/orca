@@ -1,5 +1,6 @@
 import React, { useMemo } from 'react'
 import { translate } from '@/i18n/i18n'
+import { useAppStore } from '@/store'
 import { AddressPicker, type AddressOption } from '../network/AddressPicker'
 import { parseManualNetworkAddress } from '../../../../shared/network/manual-address'
 import type { MobileNetworkInterface } from '../settings/mobile-network-interface-selection'
@@ -29,13 +30,23 @@ export function NetworkInterfacePicker({
   className,
   id
 }: NetworkInterfacePickerProps): React.JSX.Element {
+  const savedCustomAddress = useAppStore((s) => s.settings?.mobilePairingCustomAddress)
+
   const options = useMemo<AddressOption[]>(
-    () =>
-      networkInterfaces.map((iface) => ({
+    () => [
+      ...networkInterfaces.map((iface) => ({
         value: iface.address,
         label: `${iface.address} (${iface.name})`
       })),
-    [networkInterfaces]
+      // Why: a persisted custom address (e.g. a wss:// Cloudflare Tunnel endpoint)
+      // is not an OS interface; surface it as a one-click option so re-pairing
+      // doesn't force retyping it.
+      ...(savedCustomAddress &&
+      !networkInterfaces.some((iface) => iface.address === savedCustomAddress)
+        ? [{ value: savedCustomAddress, label: savedCustomAddress }]
+        : [])
+    ],
+    [networkInterfaces, savedCustomAddress]
   )
 
   return (

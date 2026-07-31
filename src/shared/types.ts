@@ -2919,6 +2919,9 @@ export type GlobalSettings = {
   /** Preferred mobile pairing path for new QR codes. Missing/'automatic' = Anywhere (Relay + local);
    *  explicit 'local-only' = same-network only. */
   mobilePairingConnectionMode?: 'automatic' | 'local-only'
+  /** Last user-typed custom address advertised in pairing (e.g. a wss:// tunnel
+   *  endpoint). Persisted so "Pair a phone" offers it again without retyping. */
+  mobilePairingCustomAddress?: string
   /** Experimental: floating animated pet in the bottom-right corner. Opt-in cosmetic;
    *  off never mounts the overlay, and toggling takes effect instantly (renderer-side). */
   experimentalPet: boolean

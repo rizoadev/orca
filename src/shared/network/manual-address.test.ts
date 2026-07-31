@@ -167,6 +167,55 @@ describe('parseManualNetworkAddress', () => {
     })
   })
 
+  describe('WebSocket URLs (tunnel / relay endpoints)', () => {
+    it('accepts wss:// origin URLs', () => {
+      expect(parseManualNetworkAddress('wss://orca.ikamai.com')).toEqual({
+        ok: true,
+        address: 'wss://orca.ikamai.com'
+      })
+      expect(parseManualNetworkAddress('wss://host.example.com:8443')).toEqual({
+        ok: true,
+        address: 'wss://host.example.com:8443'
+      })
+    })
+
+    it('accepts ws:// URLs', () => {
+      expect(parseManualNetworkAddress('ws://192.168.1.10:6768')).toEqual({
+        ok: true,
+        address: 'ws://192.168.1.10:6768'
+      })
+    })
+
+    it('is case-insensitive on the scheme', () => {
+      expect(parseManualNetworkAddress('WSS://orca.ikamai.com')).toEqual({
+        ok: true,
+        address: 'wss://orca.ikamai.com'
+      })
+    })
+
+    it('rejects schemes other than ws/wss', () => {
+      for (const bad of ['https://orca.ikamai.com', 'http://example.com', 'ftp://example.com']) {
+        expect(parseManualNetworkAddress(bad).ok).toBe(false)
+      }
+    })
+
+    it('rejects URLs with paths, query, hash, or credentials', () => {
+      for (const bad of [
+        'wss://orca.ikamai.com/path',
+        'wss://orca.ikamai.com/?a=1',
+        'wss://orca.ikamai.com#frag',
+        'wss://user:pass@orca.ikamai.com'
+      ]) {
+        expect(parseManualNetworkAddress(bad).ok).toBe(false)
+      }
+    })
+
+    it('rejects a zero port or out-of-range port', () => {
+      expect(parseManualNetworkAddress('wss://orca.ikamai.com:0').ok).toBe(false)
+      expect(parseManualNetworkAddress('wss://orca.ikamai.com:65536').ok).toBe(false)
+    })
+  })
+
   describe('length and whitespace', () => {
     it('rejects inputs longer than 253 chars', () => {
       const long = `${'a'.repeat(250)}.ts.net`

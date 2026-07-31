@@ -38,6 +38,7 @@ export default function MobilePage(): React.JSX.Element {
     useState<MobilePairingConnectionMode | null>(null)
   const [pairLoading, setPairLoading] = useState(false)
   const signedIn = useAppStore((state) => state.orcaProfileAuthStatus?.state === 'connected')
+  const savedCustomAddress = useAppStore((s) => s.settings?.mobilePairingCustomAddress)
   const [connectionMode, setConnectionMode] = useMobilePairingConnectionMode()
   const [networkInterfaces, setNetworkInterfaces] = useState<MobileNetworkInterface[]>([])
   const [selectedAddress, setSelectedAddress] = useState<string | undefined>(undefined)
@@ -165,13 +166,25 @@ export default function MobilePage(): React.JSX.Element {
       // not snap it back to a tailnet/LAN fallback.
       const isManual = !networkInterfaces.some((iface) => iface.address === address)
       setAddressIsManual(isManual)
+      // Why: persist manual addresses (tunnel endpoints etc.) so the next
+      // pairing session offers them without retyping.
+      if (isManual && address !== savedCustomAddress) {
+        void updateSettings({ mobilePairingCustomAddress: address })
+      }
       // Switching network must remint so the QR encodes the new endpoint —
       // but only when the selected path may honestly mint (not signed-out Anywhere).
       if (canMintMobilePairingOffer({ connectionMode, signedIn })) {
         void generatePairing(true, address)
       }
     },
-    [generatePairing, networkInterfaces, connectionMode, signedIn]
+    [
+      generatePairing,
+      networkInterfaces,
+      connectionMode,
+      signedIn,
+      updateSettings,
+      savedCustomAddress
+    ]
   )
 
   const copyPairingCode = useCallback(async () => {
@@ -219,6 +232,12 @@ export default function MobilePage(): React.JSX.Element {
     setPairQrDataUrl(null)
     setPairingUrl(null)
     setEncodedConnectionMode(null)
+    // Why: resume a persisted custom address (tunnel endpoint) instead of
+    // falling back to a LAN/tailnet default on every pairing session.
+    if (selectedAddress === undefined && savedCustomAddress) {
+      setSelectedAddress(savedCustomAddress)
+      setAddressIsManual(true)
+    }
     showFirstPairingFlow()
   }
 
@@ -229,6 +248,10 @@ export default function MobilePage(): React.JSX.Element {
     setPairQrDataUrl(null)
     setPairingUrl(null)
     setEncodedConnectionMode(null)
+    if (selectedAddress === undefined && savedCustomAddress) {
+      setSelectedAddress(savedCustomAddress)
+      setAddressIsManual(true)
+    }
     showPairAnotherDeviceFlow()
   }
 
