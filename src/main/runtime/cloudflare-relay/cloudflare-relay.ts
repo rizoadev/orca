@@ -216,10 +216,11 @@ export class CloudflareRelayService {
         `tunnel: ${tunnelId}`,
         `credentials-file: ${join(this.stateDir, `${tunnelId}.json`)}`,
         '',
-        // Why: some networks (this one included) block outbound QUIC/UDP 7844,
-        // which silently kills cloudflared's default quic transport. HTTP/2
-        // rides normal TCP and is always allowed.
+        // Why: some networks block outbound QUIC/UDP 7844 and Asia-edge
+        // (cgk/sin) is intermittently filtered by ISPs in this region; HTTP/2
+        // over the US edge has proven reliable here.
         'protocol: http2',
+        'region: us',
         '',
         'ingress:',
         `  - hostname: ${hostname}`,
@@ -245,7 +246,7 @@ export class CloudflareRelayService {
           'After=network-online.target',
           '',
           '[Service]',
-          `ExecStart=${binary} tunnel --protocol http2 --config ${configPath} run`,
+          `ExecStart=${binary} tunnel --protocol http2 --region us --config ${configPath} run`,
           'Restart=always',
           'RestartSec=3',
           '',
