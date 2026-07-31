@@ -90,7 +90,7 @@ describe('CloudflareRelayService', () => {
         body: { success: true, result: [{ id: 'z1', account: { id: 'a1' } }] }
       },
       { path: '/zones/z1', body: { success: true, result: { id: 'z1', account: { id: 'a1' } } } },
-      { path: '/accounts/a1/cfd_tunnel?name=', body: { success: true, result: [] } },
+      { path: '/accounts/a1/cfd_tunnel?is_deleted', body: { success: true, result: [] } },
       {
         path: '/accounts/a1/cfd_tunnel',
         body: {
@@ -150,7 +150,7 @@ describe('CloudflareRelayService', () => {
       },
       { path: '/zones/z1', body: { success: true, result: { id: 'z1', account: { id: 'a1' } } } },
       {
-        path: '/accounts/a1/cfd_tunnel?name=',
+        path: '/accounts/a1/cfd_tunnel?is_deleted',
         body: { success: true, result: [{ id: 't9', name: 'orca-x' }] }
       },
       {
