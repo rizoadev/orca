@@ -59,6 +59,9 @@ type OrcaRuntimeRpcServerOptions = {
   keepaliveIntervalMs?: number
   longPollCap?: number
   shortRequestCap?: number
+  // Why: fires with the bound WS endpoint once the WebSocket transport is
+  // listening, so callers (e.g. the Cloudflare relay) can target the real port.
+  onWebSocketReady?: (endpoint: string) => void
 }
 
 export type PairingOfferUnavailableReason =
@@ -436,6 +439,7 @@ export class OrcaRuntimeRpcServer {
   private readonly keepaliveIntervalMs: number
   private readonly longPollCap: number
   private readonly shortRequestCap: number
+  private readonly onWebSocketReady: ((endpoint: string) => void) | undefined
   private readonly relayRevokeOutbox: RelayRevokeOutbox
   private deviceRegistry: DeviceRegistry | null = null
   private e2eeKeypair: E2EEKeypair | null = null
@@ -470,7 +474,8 @@ export class OrcaRuntimeRpcServer {
     webClientRoot,
     keepaliveIntervalMs = KEEPALIVE_INTERVAL_MS,
     longPollCap = LONG_POLL_CAP,
-    shortRequestCap = SHORT_REQUEST_CAP
+    shortRequestCap = SHORT_REQUEST_CAP,
+    onWebSocketReady
   }: OrcaRuntimeRpcServerOptions) {
     this.runtime = runtime
     this.dispatcher = new RpcDispatcher({ runtime })
@@ -484,6 +489,7 @@ export class OrcaRuntimeRpcServer {
     this.keepaliveIntervalMs = keepaliveIntervalMs
     this.longPollCap = longPollCap
     this.shortRequestCap = shortRequestCap
+    this.onWebSocketReady = onWebSocketReady
     this.relayRevokeOutbox = new RelayRevokeOutbox(userDataPath)
   }
 
@@ -961,6 +967,7 @@ export class OrcaRuntimeRpcServer {
           if (this.wsPort !== 0 && wsTransport.resolvedPort !== this.wsPort) {
             writeWsFallbackPort(this.userDataPath, wsTransport.resolvedPort)
           }
+          this.onWebSocketReady?.(`ws://0.0.0.0:${wsTransport.resolvedPort}`)
           activeTransports.push(wsTransport)
           transportsMeta.push({
             kind: 'websocket',

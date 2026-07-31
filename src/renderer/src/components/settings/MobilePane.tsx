@@ -18,6 +18,7 @@ import { MobilePairedDevicesSection } from './MobilePairedDevicesSection'
 import { MobileAutoRestoreFitSection } from './MobileAutoRestoreFitSection'
 import { MobilePairingConnectionOptions } from './MobilePairingConnectionOptions'
 import { MobilePairingSetupSection } from './MobilePairingSetupSection'
+import { CloudflareRelaySection } from './CloudflareRelaySection'
 import { WindowsFirewallNotice } from '../mobile/WindowsFirewallNotice'
 import { translate } from '@/i18n/i18n'
 import {
@@ -354,6 +355,8 @@ export function MobilePane(): React.JSX.Element {
         hasQrCode={qrDataUrl != null}
         onGenerateQr={() => void generateQR({ rotate: qrDataUrl != null })}
       />
+
+      <CloudflareRelaySection />
 
       {qrDataUrl != null && connectionMode === 'automatic' && qrEncodedMode === 'local-only' ? (
         // Why: an Anywhere mint can degrade server-side when Relay provisioning

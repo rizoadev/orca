@@ -2922,6 +2922,16 @@ export type GlobalSettings = {
   /** Last user-typed custom address advertised in pairing (e.g. a wss:// tunnel
    *  endpoint). Persisted so "Pair a phone" offers it again without retyping. */
   mobilePairingCustomAddress?: string
+  /** Opt-in self-hosted Cloudflare relay: the app provisions a persistent
+   *  per-machine tunnel (wss://orca-<machineId>.<domain>) and runs cloudflared
+   *  instead of the Orca Cloud relay. Requires a Cloudflare API token with
+   *  Account-Tunnel:Edit + Zone-DNS:Edit. */
+  cloudflareRelayEnabled?: boolean
+  cloudflareRelayToken?: string
+  cloudflareRelayDomain?: string
+  /** Active wss:// endpoint of the Cloudflare relay, written by the main process
+   *  for UI status; not user-editable. */
+  cloudflareRelayHostname?: string
   /** Experimental: floating animated pet in the bottom-right corner. Opt-in cosmetic;
    *  off never mounts the overlay, and toggling takes effect instantly (renderer-side). */
   experimentalPet: boolean

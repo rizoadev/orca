@@ -49,6 +49,7 @@ import { ServeReadinessPublisher } from './server/serve-readiness'
 import { reserveServeStdoutForReadiness } from './server/serve-stdout-boundary'
 import { DesktopRelayService } from './runtime/relay/desktop-relay-service'
 import type { RelayBrokerStatus } from './runtime/relay/relay-session-broker'
+import { CloudflareRelayService } from './runtime/cloudflare-relay/cloudflare-relay'
 import { awaitRuntimeFileWatcherUnsubscribes } from './runtime/orca-runtime-files'
 import { clearRuntimeMetadataIfOwned } from './runtime/runtime-metadata'
 import { ensureMainI18n, setMainUiLanguage } from './i18n/main-i18n'
@@ -262,6 +263,7 @@ let rateLimits: RateLimitService | null = null
 let runtimeRpc: OrcaRuntimeRpcServer | null = null
 const serveReadinessPublisher = new ServeReadinessPublisher()
 let desktopRelayService: DesktopRelayService | null = null
+let cloudflareRelayService: CloudflareRelayService | null = null
 let desktopRelayStatus: RelayBrokerStatus = 'offline'
 let pendingUnpairedDeviceAuthFailure = false
 // Why: gates whether headless serve installs the offscreen browser backend (and advertises browser pane support).
@@ -2067,10 +2069,15 @@ app.whenReady().then(async () => {
       watchProductPipeline(pipeline.id, orchDb, runtimeService)
     }
     if (activePipelines.length > 0) {
-      console.log(`[orchestration] Re-watching ${activePipelines.length} active pipeline(s) on startup`)
+      console.log(
+        `[orchestration] Re-watching ${activePipelines.length} active pipeline(s) on startup`
+      )
     }
   } catch (err) {
-    console.warn('[orchestration] Startup re-watch failed:', err instanceof Error ? err.message : String(err))
+    console.warn(
+      '[orchestration] Startup re-watch failed:',
+      err instanceof Error ? err.message : String(err)
+    )
   }
   browserManager.setBrowserGuestStateChangedListener((worktreeId) => {
     runtimeService.notifyMobileSessionTabsChanged(worktreeId)
@@ -2348,6 +2355,10 @@ app.whenReady().then(async () => {
   }
   // Why: existing installs may have pairing creds under the late app.getPath('userData'); copy them forward before switching to the canonical path.
   migrateMobilePairingDataToCanonicalUserDataPath(app.getPath('userData'))
+  cloudflareRelayService = new CloudflareRelayService({
+    store,
+    userDataPath: getCanonicalUserDataPath()
+  })
   runtimeRpc = new OrcaRuntimeRpcServer({
     runtime,
     // Why: mobile pairing needs the stable pre-setName() path (getCanonicalUserDataPath), not a late app.getPath('userData') that drops paired devices across restarts.
@@ -2362,7 +2373,16 @@ app.whenReady().then(async () => {
           preferPinnedWsPort: true
         }
       : {}),
-    webClientRoot: getBundledWebClientRoot()
+    webClientRoot: getBundledWebClientRoot(),
+    // Why: Cloudflare relay ingresses the WS transport's real bound port; the
+    // endpoint fires after listen so the ingress is never pointed at a guess.
+    onWebSocketReady: (endpoint) => {
+      const match = /:(\d+)$/.exec(endpoint)
+      const port = match ? Number(match[1]) : null
+      if (port !== null && cloudflareRelayService) {
+        void cloudflareRelayService.start(port)
+      }
+    }
   })
   registerMobileHandlers(runtimeRpc, {
     getRelayStatus: () => desktopRelayStatus,
@@ -2523,6 +2543,8 @@ app.on('before-quit', () => {
   }
   isQuitting = true
   desktopRelayService?.fenceAndCloseNow()
+  cloudflareRelayService?.stop()
+  cloudflareRelayService = null
   runtimeRpc?.setMobileRelayPairingProvider(null)
   unsubscribeSystemResumeBroadcast?.()
   unsubscribeSystemResumeBroadcast = null
