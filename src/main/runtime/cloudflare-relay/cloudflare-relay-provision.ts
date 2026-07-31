@@ -84,6 +84,23 @@ export class CloudflareRelayProvisioner {
     return { hostname, tunnelName: tunnel.name }
   }
 
+  // Why: manual delete — removes the tunnel and its DNS CNAME from Cloudflare
+  // so the persistent endpoint is truly gone, not just disconnected.
+  async deleteTunnel(tunnelId: string, hostname?: string): Promise<void> {
+    const zoneId = await this.resolveZoneId()
+    const accountId = await this.resolveAccountId(zoneId)
+    await this.cf(`/accounts/${accountId}/cfd_tunnel/${tunnelId}`, { method: 'DELETE' })
+    if (hostname) {
+      const list = await this.cf(`/zones/${zoneId}/dns_records?name=${encodeURIComponent(hostname)}`)
+      const record = (list.result as { id: string; name: string }[] | undefined)?.find(
+        (r) => r.name === hostname
+      )
+      if (record) {
+        await this.cf(`/zones/${zoneId}/dns_records/${record.id}`, { method: 'DELETE' })
+      }
+    }
+  }
+
   private async resolveZoneId(): Promise<string> {
     const body = await this.cf(`/zones?name=${encodeURIComponent(this.domain)}`)
     const zone = (body.result as Zone[] | undefined)?.[0]

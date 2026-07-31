@@ -66,6 +66,7 @@ export type MobileHandlerDependencies = {
   consumePendingUnpairedDeviceAuthFailure?: (webContentsId: number) => boolean
   cloudflareRelay?: {
     setEnabled: (enabled: boolean) => Promise<{ ok: boolean; error?: string }>
+    deleteTunnel: () => Promise<{ ok: boolean; error?: string }>
   }
 }
 
@@ -92,6 +93,16 @@ export function registerMobileHandlers(
         return { ok: false, error: 'cloudflare_relay_unavailable' }
       }
       return await dependencies.cloudflareRelay.setEnabled(args.enabled === true)
+    }
+  )
+
+  ipcMain.handle(
+    'mobile:deleteCloudflareRelay',
+    async (): Promise<{ ok: boolean; error?: string }> => {
+      if (!dependencies.cloudflareRelay) {
+        return { ok: false, error: 'cloudflare_relay_unavailable' }
+      }
+      return await dependencies.cloudflareRelay.deleteTunnel()
     }
   )
 

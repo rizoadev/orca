@@ -4,8 +4,8 @@
 // own WS transport, and auto-advertises the endpoint in mobile pairing.
 // Requires a Cloudflare API token (Account-Tunnel:Edit, Zone-DNS:Edit) and a
 // `cloudflared` binary on PATH (or ORCA_CLOUDFLARED_PATH).
-import { spawn, type ChildProcess } from 'node:child_process'
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { spawn, spawnSync, type ChildProcess } from 'node:child_process'
+import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { Store } from '../../persistence'
 import { CloudflareRelayProvisioner } from './cloudflare-relay-provision'
@@ -105,7 +105,7 @@ export class CloudflareRelayService {
         }
         return
       }
-      this.spawnTunnel(binary, hostname)
+      this.runTunnel(binary, hostname)
       // Why: make pairing auto-advertise the tunnel endpoint without any UI
       // interaction — the renderer already prefers the persisted custom address.
       this.store.updateSettings({ cloudflareRelayHostname: `wss://${hostname}` })
@@ -128,10 +128,47 @@ export class CloudflareRelayService {
       clearTimeout(this.respawnTimer)
       this.respawnTimer = null
     }
+    // Why: with systemd the tunnel keeps running after Orca quits (persistent
+    // URL); only the fallback in-process child is killed here.
     if (this.child) {
       this.child.kill()
       this.child = null
     }
+  }
+
+  // ── persistent tunnel management ───────────────────────────────────
+
+  // Why: the tunnel is a durable artifact — the same URL survives Orca restarts
+  // (and even Orca being closed) until the user explicitly deletes it.
+  async deleteTunnel(): Promise<{ ok: boolean; error?: string }> {
+    const state = this.readState()
+    const settings = this.store.getSettings()
+    const token = settings.cloudflareRelayToken?.trim()
+    this.stop()
+    try {
+      await this.teardownSystemdService()
+      if (state.tunnelId && token) {
+        await new CloudflareRelayProvisioner({
+          token,
+          domain: settings.cloudflareRelayDomain?.trim() ?? '',
+          stateDir: this.stateDir,
+          fetch: this.fetchFn
+        }).deleteTunnel(state.tunnelId, state.hostname)
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      console.error('[cloudflare-relay] delete failed:', message)
+      return { ok: false, error: message }
+    } finally {
+      // Why: keep machineId so a later Connect recreates the same URL.
+      this.writeState({ machineId: state.machineId })
+      this.store.updateSettings({ cloudflareRelayHostname: '' })
+      if (this.store.getSettings().mobilePairingCustomAddress?.startsWith('wss://')) {
+        this.store.updateSettings({ mobilePairingCustomAddress: '' })
+      }
+      this.status = { state: 'disabled' }
+    }
+    return { ok: true }
   }
 
   // ── cloudflared lifecycle ──────────────────────────────────────────
@@ -155,7 +192,17 @@ export class CloudflareRelayService {
     return null
   }
 
-  private spawnTunnel(binary: string, hostname: string): void {
+  private runTunnel(binary: string, hostname: string): void {
+    const configPath = this.writeTunnelConfig(hostname)
+    // Why: a systemd user service keeps the tunnel alive independent of Orca —
+    // close the IDE, the URL keeps serving. Fall back to an in-process child
+    // when systemd is unavailable (containers, WSL without systemd).
+    if (!this.installSystemdService(binary, configPath)) {
+      this.launchChild(binary, configPath)
+    }
+  }
+
+  private writeTunnelConfig(hostname: string): string {
     const state = this.readState()
     const tunnelId = state.tunnelId
     if (!tunnelId || state.hostname !== hostname) {
@@ -177,7 +224,56 @@ export class CloudflareRelayService {
       ].join('\n'),
       'utf8'
     )
-    this.launchChild(binary, configPath)
+    return configPath
+  }
+
+  private installSystemdService(binary: string, configPath: string): boolean {
+    const unitName = 'orca-cloudflare-tunnel.service'
+    const unitDir = join(process.env.HOME ?? '', '.config', 'systemd', 'user')
+    try {
+      mkdirSync(unitDir, { recursive: true })
+      writeFileSync(
+        join(unitDir, unitName),
+        [
+          '[Unit]',
+          'Description=Orca Cloudflare Relay Tunnel',
+          'After=network-online.target',
+          '',
+          '[Service]',
+          `ExecStart=${binary} tunnel --config ${configPath} run`,
+          'Restart=always',
+          'RestartSec=3',
+          '',
+          '[Install]',
+          'WantedBy=default.target',
+          ''
+        ].join('\n'),
+        'utf8'
+      )
+      const run = (args: string[]): boolean => {
+        const result = spawnSync('systemctl', ['--user', ...args], { stdio: 'ignore' })
+        return result.status === 0
+      }
+      run(['daemon-reload'])
+      run(['enable', unitName])
+      return run(['restart', unitName])
+    } catch {
+      return false
+    }
+  }
+
+  private teardownSystemdService(): void {
+    const unitName = 'orca-cloudflare-tunnel.service'
+    try {
+      spawnSync('systemctl', ['--user', 'disable', '--now', unitName], { stdio: 'ignore' })
+      const unitPath = join(process.env.HOME ?? '', '.config', 'systemd', 'user', unitName)
+      if (existsSync(unitPath)) {
+        unlinkSync(unitPath)
+      }
+      spawnSync('systemctl', ['--user', 'daemon-reload'], { stdio: 'ignore' })
+    } catch {
+      // best-effort teardown
+    }
   }
 
   private readState(): RelayState {
@@ -186,6 +282,11 @@ export class CloudflareRelayService {
     } catch {
       return { machineId: '' }
     }
+  }
+
+  private writeState(state: RelayState): void {
+    mkdirSync(this.stateDir, { recursive: true })
+    writeFileSync(join(this.stateDir, 'state.json'), JSON.stringify(state, null, 2), 'utf8')
   }
 
   private launchChild(binary: string, configPath: string): void {

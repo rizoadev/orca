@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { CloudCog, Copy, Info, Link2, Loader2, RefreshCw } from 'lucide-react'
+import { CloudCog, Copy, Info, Link2, Loader2, RefreshCw, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { useAppStore } from '@/store'
 import { translate } from '@/i18n/i18n'
@@ -18,6 +18,7 @@ export function CloudflareRelaySection(): React.JSX.Element {
   const [token, setToken] = useState(savedToken)
   const [domain, setDomain] = useState(savedDomain)
   const [connecting, setConnecting] = useState(false)
+  const [deleting, setDeleting] = useState(false)
   const [syncUrl, setSyncUrl] = useState<string | null>(null)
   const [syncQr, setSyncQr] = useState<string | null>(null)
   const [generating, setGenerating] = useState(false)
@@ -85,6 +86,26 @@ export function CloudflareRelaySection(): React.JSX.Element {
       toast.success('Sync URL copied')
     } catch {
       toast.error('Failed to copy')
+    }
+  }
+
+  // Why: the tunnel is persistent — it keeps running after Orca closes. Only
+  // this explicit delete removes it from Cloudflare (tunnel + DNS record).
+  const deleteTunnel = async (): Promise<void> => {
+    setDeleting(true)
+    try {
+      const result = await window.api.mobile.deleteCloudflareRelay()
+      if (!result.ok) {
+        toast.error(result.error ?? 'Failed to delete tunnel')
+      } else {
+        setSyncUrl(null)
+        setSyncQr(null)
+        toast.success('Tunnel deleted')
+      }
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to delete tunnel')
+    } finally {
+      setDeleting(false)
     }
   }
 
@@ -239,6 +260,26 @@ export function CloudflareRelaySection(): React.JSX.Element {
                 />
               </div>
             ) : null}
+          </div>
+          <div className="flex items-center justify-between gap-2">
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="h-7 gap-1 text-xs text-destructive"
+              disabled={deleting}
+              onClick={() => void deleteTunnel()}
+            >
+              {deleting ? (
+                <Loader2 className="size-3.5 animate-spin" aria-hidden />
+              ) : (
+                <Trash2 className="size-3.5" aria-hidden />
+              )}
+              {translate(
+                'auto.components.settings.CloudflareRelaySection.deleteTunnel',
+                'Delete tunnel'
+              )}
+            </Button>
           </div>
         </div>
       ) : null}

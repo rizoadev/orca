@@ -4522,6 +4522,9 @@ const api = {
     setCloudflareRelay: (enabled: boolean): Promise<{ ok: boolean; error?: string }> =>
       ipcRenderer.invoke('mobile:setCloudflareRelay', { enabled }),
 
+    deleteCloudflareRelay: (): Promise<{ ok: boolean; error?: string }> =>
+      ipcRenderer.invoke('mobile:deleteCloudflareRelay'),
+
     getPairingQR: (args?: {
       address?: string
       connectionMode?: MobilePairingConnectionMode

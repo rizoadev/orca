@@ -3457,6 +3457,7 @@ export type PreloadApi = {
       interfaces: { name: string; address: string }[]
     }>
     setCloudflareRelay: (enabled: boolean) => Promise<{ ok: boolean; error?: string }>
+    deleteCloudflareRelay: () => Promise<{ ok: boolean; error?: string }>
     getPairingQR: (args?: {
       address?: string
       connectionMode?: MobilePairingConnectionMode
