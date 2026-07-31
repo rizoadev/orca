@@ -114,15 +114,23 @@ export class CloudflareRelayProvisioner {
     accountId: string,
     tunnelName: string
   ): Promise<CfdTunnelCreateResult> {
+    // Why: the secret is generated client-side and sent in the body; some API
+    // versions don't echo it back, so keep the local copy for credentials.
+    const tunnelSecret = randomBytes(32).toString('hex')
     const body = await this.cf(`/accounts/${accountId}/cfd_tunnel`, {
       method: 'POST',
-      body: JSON.stringify({ name: tunnelName, tunnel_secret: randomBytes(32).toString('hex') })
+      body: JSON.stringify({ name: tunnelName, tunnel_secret: tunnelSecret })
     })
     const tunnel = body.result as CfdTunnelCreateResult | undefined
-    if (!tunnel?.id || !tunnel.tunnel_secret) {
-      throw new Error('Cloudflare tunnel creation returned no secret.')
+    if (!tunnel?.id) {
+      throw new Error('Cloudflare tunnel creation returned no tunnel id.')
     }
-    return tunnel
+    return {
+      id: tunnel.id,
+      name: tunnel.name,
+      account_tag: tunnel.account_tag,
+      tunnel_secret: tunnel.tunnel_secret ?? tunnelSecret
+    }
   }
 
   private async ensureDnsRecord(zoneId: string, hostname: string, tunnelId: string): Promise<void> {
@@ -146,6 +154,23 @@ export class CloudflareRelayProvisioner {
   }
 
   private async cf(path: string, init?: { method?: string; body?: string }): Promise<CfResponse> {
+    // Why: api.cloudflare.com is occasionally flaky from home networks; a
+    // short retry makes provisioning self-heal instead of failing at startup.
+    let lastError: unknown = null
+    for (let attempt = 0; attempt < 3; attempt++) {
+      if (attempt > 0) {
+        await new Promise((resolve) => setTimeout(resolve, 1_000 * attempt))
+      }
+      try {
+        return await this.cfOnce(path, init)
+      } catch (error) {
+        lastError = error
+      }
+    }
+    throw lastError instanceof Error ? lastError : new Error(String(lastError))
+  }
+
+  private async cfOnce(path: string, init?: { method?: string; body?: string }): Promise<CfResponse> {
     const response = await this.fetchFn(`${CF_API}${path}`, {
       method: init?.method ?? 'GET',
       headers: {

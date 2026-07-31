@@ -64,6 +64,9 @@ export type MobileHandlerDependencies = {
   openWindowsNetworkSettings?: () => Promise<void>
   getRelayStatus?: () => RelayBrokerStatus
   consumePendingUnpairedDeviceAuthFailure?: (webContentsId: number) => boolean
+  cloudflareRelay?: {
+    setEnabled: (enabled: boolean) => Promise<{ ok: boolean; error?: string }>
+  }
 }
 
 export function registerMobileHandlers(
@@ -79,6 +82,18 @@ export function registerMobileHandlers(
   ipcMain.handle('mobile:listNetworkInterfaces', (): { interfaces: NetworkInterface[] } => ({
     interfaces: getNetworkInterfaces()
   }))
+
+  // Why: runtime Cloudflare relay toggle — persists + starts/stops the tunnel
+  // immediately, no app restart required.
+  ipcMain.handle(
+    'mobile:setCloudflareRelay',
+    async (_event, args: { enabled: boolean }): Promise<{ ok: boolean; error?: string }> => {
+      if (!dependencies.cloudflareRelay) {
+        return { ok: false, error: 'cloudflare_relay_unavailable' }
+      }
+      return await dependencies.cloudflareRelay.setEnabled(args.enabled === true)
+    }
+  )
 
   ipcMain.handle(
     'mobile:getPairingQR',

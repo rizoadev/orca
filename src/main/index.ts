@@ -2357,7 +2357,12 @@ app.whenReady().then(async () => {
   migrateMobilePairingDataToCanonicalUserDataPath(app.getPath('userData'))
   cloudflareRelayService = new CloudflareRelayService({
     store,
-    userDataPath: getCanonicalUserDataPath()
+    userDataPath: getCanonicalUserDataPath(),
+    getWsPort: () => {
+      const endpoint = runtimeRpc?.getWebSocketEndpoint()
+      const match = endpoint ? /:(\d+)$/.exec(endpoint) : null
+      return match ? Number(match[1]) : null
+    }
   })
   runtimeRpc = new OrcaRuntimeRpcServer({
     runtime,
@@ -2386,6 +2391,10 @@ app.whenReady().then(async () => {
   })
   registerMobileHandlers(runtimeRpc, {
     getRelayStatus: () => desktopRelayStatus,
+    cloudflareRelay: {
+      setEnabled: (enabled) =>
+        cloudflareRelayService ? cloudflareRelayService.setEnabled(enabled) : Promise.resolve({ ok: false, error: 'cloudflare_relay_unavailable' })
+    },
     consumePendingUnpairedDeviceAuthFailure: (webContentsId) => {
       if (
         !mainWindow ||

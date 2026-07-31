@@ -22,6 +22,9 @@ type CloudflareRelayOptions = {
   store: Store
   userDataPath: string
   fetch?: typeof globalThis.fetch
+  /** Why: the WS port is only known after the transport binds; a provider lets
+   * runtime toggles start the tunnel without waiting for the next app launch. */
+  getWsPort?: () => number | null
 }
 
 type RelayState = {
@@ -35,6 +38,7 @@ export class CloudflareRelayService {
   private readonly store: Store
   private readonly stateDir: string
   private readonly fetchFn: typeof globalThis.fetch
+  private readonly getWsPort: () => number | null
   private child: ChildProcess | null = null
   private respawnTimer: ReturnType<typeof setTimeout> | null = null
   private stopped = false
@@ -45,10 +49,30 @@ export class CloudflareRelayService {
     this.store = options.store
     this.stateDir = join(options.userDataPath, 'cloudflare-relay')
     this.fetchFn = options.fetch ?? globalThis.fetch
+    this.getWsPort = options.getWsPort ?? (() => this.wsPort)
   }
 
   getStatus(): CloudflareRelayStatus {
     return this.status
+  }
+
+  // Why: runtime toggle — persists the setting, then starts/stops the tunnel
+  // immediately instead of waiting for the next app launch.
+  async setEnabled(enabled: boolean): Promise<{ ok: boolean; error?: string }> {
+    this.store.updateSettings({ cloudflareRelayEnabled: enabled })
+    if (!enabled) {
+      this.stop()
+      return { ok: true }
+    }
+    const port = this.getWsPort()
+    if (port === null) {
+      return { ok: false, error: 'WebSocket transport is not ready yet; try again.' }
+    }
+    await this.start(port)
+    const status = this.status
+    return status.state === 'error'
+      ? { ok: false, error: status.message }
+      : { ok: true }
   }
 
   // Why: called once the WS transport binds; the ingress must point at the
@@ -57,17 +81,12 @@ export class CloudflareRelayService {
     this.stopped = false
     this.wsPort = wsPort
     const settings = this.store.getSettings()
-    if (!settings.cloudflareRelayEnabled) {
-      this.status = { state: 'disabled' }
-      return
-    }
     const token = settings.cloudflareRelayToken?.trim()
     const domain = settings.cloudflareRelayDomain?.trim()
+    // Why: active by default — presence of token + domain is the on-switch;
+    // no separate enable toggle to keep set.
     if (!token || !domain) {
-      this.status = {
-        state: 'error',
-        message: 'Cloudflare Relay needs an API token and domain (Settings → Mobile).'
-      }
+      this.status = { state: 'disabled' }
       return
     }
     try {
@@ -95,10 +114,11 @@ export class CloudflareRelayService {
       }
       this.status = { state: 'running', hostname, tunnelName }
     } catch (error) {
-      this.status = {
-        state: 'error',
-        message: error instanceof Error ? error.message : String(error)
-      }
+      const message = error instanceof Error ? error.message : String(error)
+      // Why: provisioning failures are otherwise invisible (status is only in
+      // memory); surface them for diagnosis.
+      console.error('[cloudflare-relay] provisioning failed:', message)
+      this.status = { state: 'error', message }
     }
   }
 

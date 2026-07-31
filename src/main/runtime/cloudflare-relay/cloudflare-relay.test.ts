@@ -181,11 +181,11 @@ describe('CloudflareRelayService', () => {
     service.stop()
   })
 
-  it('errors without a token or domain', async () => {
+  it('stays disabled without a token or domain', async () => {
     const store = fakeStore({ cloudflareRelayEnabled: true })
     const service = new CloudflareRelayService({ store, userDataPath: dir })
     await service.start(6768)
-    expect(service.getStatus().state).toBe('error')
+    expect(service.getStatus().state).toBe('disabled')
     service.stop()
   })
 

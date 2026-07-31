@@ -4519,6 +4519,9 @@ const api = {
       interfaces: { name: string; address: string }[]
     }> => ipcRenderer.invoke('mobile:listNetworkInterfaces'),
 
+    setCloudflareRelay: (enabled: boolean): Promise<{ ok: boolean; error?: string }> =>
+      ipcRenderer.invoke('mobile:setCloudflareRelay', { enabled }),
+
     getPairingQR: (args?: {
       address?: string
       connectionMode?: MobilePairingConnectionMode
