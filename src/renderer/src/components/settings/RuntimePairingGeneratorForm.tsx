@@ -1,4 +1,5 @@
 import { Loader2, RefreshCw } from 'lucide-react'
+import { useAppStore } from '@/store'
 import { Button } from '../ui/button'
 import { Label } from '../ui/label'
 import { Tooltip, TooltipContent, TooltipTrigger } from '../ui/tooltip'
@@ -36,6 +37,9 @@ export function RuntimePairingGeneratorForm({
   onGenerate,
   onCopy
 }: RuntimePairingGeneratorFormProps): React.JSX.Element {
+  // Why: a live Cloudflare relay tunnel is a first-class reachable endpoint
+  // for browser/desktop clients, not just mobile — surface it here too.
+  const relayHostname = useAppStore((s) => s.settings?.cloudflareRelayHostname ?? '')
   const options: AddressOption[] = [
     {
       value: loopbackAddress,
@@ -44,6 +48,9 @@ export function RuntimePairingGeneratorForm({
         'This computer ('
       )}${loopbackAddress})`
     },
+    ...(relayHostname
+      ? [{ value: relayHostname, label: `Cloudflare tunnel (${relayHostname})` }]
+      : []),
     ...networkInterfaces.map((networkInterface) => ({
       value: networkInterface.address,
       label: `${networkInterface.name} (${networkInterface.address})`
