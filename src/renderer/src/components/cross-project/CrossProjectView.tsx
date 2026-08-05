@@ -194,7 +194,7 @@ export function CrossProjectView({
   const availableWorktrees = allWorktrees.filter((w) => !columns.some((c) => c.worktreeId === w.id))
 
   return (
-    <div className="fixed inset-0 z-50 flex flex-col bg-[var(--bg-titlebar,var(--card))]">
+    <div className="flex flex-1 min-h-0 flex-col bg-[var(--bg-titlebar,var(--card))]">
       {/* Header — padding-right clears the OS window controls (minimize/maximize/close) */}
       <div
         className="flex h-8 shrink-0 items-center gap-2 border-b border-border px-3"
