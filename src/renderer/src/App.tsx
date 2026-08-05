@@ -368,6 +368,11 @@ const FloatingTerminalPanel = lazy(() =>
     default: module.FloatingTerminalPanel
   }))
 )
+const CrossProjectView = lazy(() =>
+  import('./components/cross-project/CrossProjectView').then((module) => ({
+    default: module.CrossProjectView
+  }))
+)
 // Why: lazy so the WebP asset + overlay module aren't fetched unless the experimental flag is on.
 const PetOverlay = lazy(() => import('./components/pet/PetOverlay'))
 // Why: lazy so onboarding's step modules + assets aren't fetched for users past first-launch.
@@ -418,6 +423,7 @@ function App(): React.JSX.Element {
   useRadixBodyPointerEventsRecovery()
   useWebSessionTabsSync()
   const [floatingTerminalOpen, setFloatingTerminalOpen] = useState(false)
+  const [crossProjectOpen, setCrossProjectOpen] = useState(false)
   const floatingWorkspaceTourInteractionSnapshotRef = useRef<{
     wasPreviouslyInteracted?: boolean
     persisted?: Promise<void>
@@ -617,7 +623,14 @@ function App(): React.JSX.Element {
       }
     }
     window.addEventListener(TOGGLE_FLOATING_TERMINAL_EVENT, toggleFloatingTerminal)
-    return () => window.removeEventListener(TOGGLE_FLOATING_TERMINAL_EVENT, toggleFloatingTerminal)
+    const toggleCrossProject = (): void => {
+      setCrossProjectOpen((open) => !open)
+    }
+    window.addEventListener('orca-toggle-cross-project', toggleCrossProject)
+    return () => {
+      window.removeEventListener(TOGGLE_FLOATING_TERMINAL_EVENT, toggleFloatingTerminal)
+      window.removeEventListener('orca-toggle-cross-project', toggleCrossProject)
+    }
   }, [floatingTerminalEnabled, setFloatingTerminalOpenWithFocus])
 
   useEffect(() => {
@@ -2301,6 +2314,14 @@ function App(): React.JSX.Element {
                     tourInteractionSnapshot={floatingWorkspaceTourInteractionSnapshotRef.current}
                   />
                 </RecoverableRenderErrorBoundary>
+              </Suspense>
+            ) : null}
+            {crossProjectOpen ? (
+              <Suspense fallback={null}>
+                <CrossProjectView
+                  open={crossProjectOpen}
+                  onClose={() => setCrossProjectOpen(false)}
+                />
               </Suspense>
             ) : null}
             {statusBarVisible ? (

@@ -6,6 +6,7 @@ import {
   Plug,
   ChevronDown,
   ChevronRight,
+  Columns3,
   Loader2,
   PanelsTopLeft,
   RefreshCw,
@@ -2360,6 +2361,23 @@ function StatusBarInner({ floatingTerminalOpen }: StatusBarProps): React.JSX.Ele
           {showSsh ? <SshStatusSegment compact={compact} iconOnly={iconOnly} /> : null}
           <CloudflareRelayStatusSegment compact={compact} iconOnly={iconOnly} />
         </React.Suspense>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              type="button"
+              className="inline-flex size-5 cursor-pointer items-center justify-center rounded border border-border bg-secondary text-secondary-foreground shadow-xs transition-colors hover:bg-accent hover:text-accent-foreground"
+              aria-label="Cross-project view"
+              onClick={() => {
+                window.dispatchEvent(new CustomEvent('orca-toggle-cross-project'))
+              }}
+            >
+              <Columns3 className="size-3.5" />
+            </button>
+          </TooltipTrigger>
+          <TooltipContent side="top" sideOffset={6}>
+            Cross-Project View
+          </TooltipContent>
+        </Tooltip>
         {showFloatingTerminalToggle && (
           <FloatingTerminalIconContextMenu currentLocation="status-bar" className="relative">
             <Tooltip>
