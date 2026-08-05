@@ -80,12 +80,14 @@ export function CrossProjectView({
   const worktreesByRepo = useAppStore((s) => s.worktreesByRepo)
   const unifiedTabsByWorktree = useAppStore((s) => s.unifiedTabsByWorktree)
   const activeWorktreeId = useAppStore((s) => s.activeWorktreeId)
+  const setActiveWorktree = useAppStore((s) => s.setActiveWorktree)
   const closeUnifiedTab = useAppStore((s) => s.closeUnifiedTab)
 
   const allWorktrees = useMemo(() => Object.values(worktreesByRepo ?? {}).flat(), [worktreesByRepo])
 
   const [columns, setColumns] = useState<ColumnState[]>([])
   const [ratios, setRatios] = useState<number[]>([])
+  const [focusedIndex, setFocusedIndex] = useState(0)
   const containerRef = useRef<HTMLDivElement>(null)
 
   // Why: seed columns from active worktree's first terminal tab on open.
@@ -110,6 +112,10 @@ export function CrossProjectView({
       }
     }
     setColumns(seed)
+    setFocusedIndex(0)
+    if (seed.length > 0 && seed[0]) {
+      setActiveWorktree(seed[0].worktreeId)
+    }
     // Why: only re-seed on open toggle, not on every tab/worktree change — user may have manually adjusted columns.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open])
@@ -187,6 +193,33 @@ export function CrossProjectView({
     [columns, closeUnifiedTab, removeColumn]
   )
 
+  // Why: sync right sidebar to focused column's worktree.
+  const focusColumn = useCallback(
+    (index: number) => {
+      setFocusedIndex(index)
+      const col = columns[index]
+      if (col) {
+        setActiveWorktree(col.worktreeId)
+      }
+    },
+    [columns, setActiveWorktree]
+  )
+
+  // Why: set initial focus on first column when columns change.
+  useEffect(() => {
+    if (columns.length > 0 && focusedIndex >= columns.length) {
+      focusColumn(0)
+    }
+  }, [columns.length, focusedIndex, focusColumn])
+
+  const handleClose = useCallback(() => {
+    // Why: restore the worktree that was active before cross-project view opened.
+    if (activeWorktreeId) {
+      setActiveWorktree(activeWorktreeId)
+    }
+    onClose()
+  }, [activeWorktreeId, setActiveWorktree, onClose])
+
   if (!open) {
     return null
   }
@@ -239,7 +272,7 @@ export function CrossProjectView({
             <button
               type="button"
               className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground hover:bg-accent hover:text-foreground"
-              onClick={onClose}
+              onClick={handleClose}
             >
               <X className="size-4" />
             </button>
@@ -257,12 +290,17 @@ export function CrossProjectView({
           return (
             <div
               key={`${col.worktreeId}:${col.tabId}`}
-              className="flex flex-col min-h-0 overflow-hidden"
+              className={`flex flex-col min-h-0 overflow-hidden${i === focusedIndex ? ' ring-1 ring-inset ring-blue-500/40' : ''}`}
               style={{ width: widthPct, flex: widthPct ? 'none' : '1 1 0' }}
+              onPointerDown={() => focusColumn(i)}
             >
               {/* Column header */}
-              <div className="flex h-7 shrink-0 items-center gap-1 border-b border-border px-2 bg-card">
-                <TerminalIcon className="size-3 shrink-0 text-muted-foreground" />
+              <div
+                className={`flex h-7 shrink-0 items-center gap-1 border-b px-2 ${i === focusedIndex ? 'border-blue-500/40 bg-blue-500/5' : 'border-border bg-card'}`}
+              >
+                <TerminalIcon
+                  className={`size-3 shrink-0 ${i === focusedIndex ? 'text-blue-500' : 'text-muted-foreground'}`}
+                />
                 <span className="text-[11px] font-medium text-foreground truncate flex-1">
                   {worktree?.displayName ?? col.worktreeId}
                 </span>
@@ -278,7 +316,7 @@ export function CrossProjectView({
               </div>
 
               {/* Terminal pane — rendered directly, bypassing overlay system */}
-              <div className="flex-1 min-h-0 overflow-hidden">
+              <div className="relative flex-1 min-h-0 overflow-hidden">
                 <Suspense
                   fallback={
                     <div className="flex h-full items-center justify-center text-xs text-muted-foreground">
