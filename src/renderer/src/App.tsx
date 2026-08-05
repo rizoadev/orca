@@ -2097,9 +2097,7 @@ function App(): React.JSX.Element {
                 'The app is still running. Retry the shell or use the menu to report the crash details.'
               )}
             >
-              <div
-                className={`flex flex-row flex-1 min-h-0 overflow-hidden${crossProjectOpen ? ' hidden' : ''}`}
-              >
+              <div className="flex flex-row flex-1 min-h-0 overflow-hidden">
                 {/* Why: keep the non-workspace titlebar inside this left+center wrapper so it doesn't span over the right-sidebar column. */}
                 <div className="flex flex-col flex-1 min-w-0 min-h-0">
                   {/* Why: workspace view drops the full-width titlebar so tab groups extend to the top; settings/landing/tasks keep it. */}
@@ -2200,7 +2198,7 @@ function App(): React.JSX.Element {
                           {shouldMountTerminalWorkbench ? (
                             <div
                               className={
-                                !terminalWorkbenchVisible
+                                !terminalWorkbenchVisible || crossProjectOpen
                                   ? 'hidden flex-1 min-w-0 min-h-0'
                                   : 'flex flex-1 min-w-0 min-h-0'
                               }
@@ -2221,6 +2219,16 @@ function App(): React.JSX.Element {
                                 >
                                   <Terminal />
                                 </RecoverableRenderErrorBoundary>
+                              </Suspense>
+                            </div>
+                          ) : null}
+                          {crossProjectOpen ? (
+                            <div className="flex flex-1 min-w-0 min-h-0">
+                              <Suspense fallback={null}>
+                                <CrossProjectView
+                                  open={crossProjectOpen}
+                                  onClose={() => setCrossProjectOpen(false)}
+                                />
                               </Suspense>
                             </div>
                           ) : null}
@@ -2316,14 +2324,6 @@ function App(): React.JSX.Element {
                     tourInteractionSnapshot={floatingWorkspaceTourInteractionSnapshotRef.current}
                   />
                 </RecoverableRenderErrorBoundary>
-              </Suspense>
-            ) : null}
-            {crossProjectOpen ? (
-              <Suspense fallback={null}>
-                <CrossProjectView
-                  open={crossProjectOpen}
-                  onClose={() => setCrossProjectOpen(false)}
-                />
               </Suspense>
             ) : null}
             {statusBarVisible ? (
