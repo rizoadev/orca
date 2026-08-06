@@ -51,9 +51,12 @@ function ResizeHandle({ onResize }: { onResize: (delta: number) => void }): Reac
   return (
     <div
       ref={handleRef}
-      className="w-1.5 shrink-0 cursor-col-resize bg-border/40 hover:bg-blue-500/60 active:bg-blue-500 transition-colors z-10"
+      className="group relative w-0.5 shrink-0 cursor-col-resize bg-border/50 transition-colors hover:bg-blue-500/70 active:bg-blue-500"
       onPointerDown={onPointerDown}
-    />
+    >
+      {/* Why: invisible wider hit target so the thin 2px border is still easy to grab. */}
+      <div className="absolute inset-y-0 -left-1 -right-1" />
+    </div>
   )
 }
 
@@ -281,13 +284,13 @@ export function CrossProjectView({
         </Tooltip>
       </div>
 
-      {/* Columns */}
+      {/* Columns — columns and resize handles interleaved so each handle sits between its two columns */}
       <div ref={containerRef} className="flex flex-1 min-h-0 overflow-hidden">
-        {columns.map((col, i) => {
+        {columns.flatMap((col, i) => {
           const worktree = allWorktrees.find((w) => w.id === col.worktreeId)
           const widthPct = ratios[i] ? `${ratios[i] * 100}%` : undefined
 
-          return (
+          const column = (
             <div
               key={`${col.worktreeId}:${col.tabId}`}
               className={`flex flex-col min-h-0 overflow-hidden${i === focusedIndex ? ' ring-1 ring-inset ring-blue-500/40' : ''}`}
@@ -338,13 +341,17 @@ export function CrossProjectView({
               </div>
             </div>
           )
-        })}
 
-        {/* Resize handles between columns */}
-        {columns.length > 1 &&
-          Array.from({ length: columns.length - 1 }).map((_, i) => (
-            <ResizeHandle key={`resize-${i}`} onResize={(delta) => onResize(i, delta)} />
-          ))}
+          // Why: interleave handle between this column and the next so the
+          // resize seam sits exactly at the column boundary.
+          if (i < columns.length - 1) {
+            return [
+              column,
+              <ResizeHandle key={`resize-${i}`} onResize={(delta) => onResize(i, delta)} />
+            ]
+          }
+          return [column]
+        })}
 
         {/* Empty state */}
         {columns.length === 0 && (
