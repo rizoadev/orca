@@ -10233,7 +10233,8 @@
             "fc3095d2ed": "资源管理器",
             "aiVaultSessionHistory": "智能体",
             "folderWorkspaces": "已附加的工作树",
-            "parentPrChecks": "PR 检查"
+            "parentPrChecks": "PR 检查",
+            "pomodoro": "Pomodoro"
           },
           "right": {
             "panel": {
@@ -10657,6 +10658,26 @@
                 }
               }
             }
+          },
+          "PomodoroPanel": {
+            "phase": {
+              "focus": "Focus",
+              "shortBreak": "Short Break",
+              "longBreak": "Long Break"
+            },
+            "timeRemaining": "Time remaining: {{value}}",
+            "pause": "Pause",
+            "start": "Start",
+            "reset": "Reset",
+            "skip": "Skip phase",
+            "durations": "Durations",
+            "decrease": "Decrease {{label}} by one minute",
+            "increase": "Increase {{label}} by one minute",
+            "minutesUnit": "min"
+          },
+          "pomodoroTimerStore": {
+            "focusComplete": "Focus session complete — time for a break",
+            "breakComplete": "Break over — back to focus"
           }
         }
       },

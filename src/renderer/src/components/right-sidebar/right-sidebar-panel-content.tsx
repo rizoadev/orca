@@ -16,6 +16,7 @@ const RemoteChatPanel = lazy(() => import('./remote-chat-panel'))
 const ProjectTodoPanel = lazy(() => import('./ProjectTodoPanel'))
 const GitLabSnippetsPanel = lazy(() => import('./GitLabSnippetsPanel'))
 const OrchestrationPanel = lazy(() => import('./OrchestrationPanel'))
+const PomodoroPanel = lazy(() => import('./PomodoroPanel'))
 
 type RightSidebarPanelContentProps = {
   effectiveTab: ActiveRightSidebarTab
@@ -87,6 +88,7 @@ export function RightSidebarPanelContent({
         {effectiveTab === 'snippets' && (
           <GitLabSnippetsPanel isVisible={rightSidebarOpen && effectiveTab === 'snippets'} />
         )}
+        {effectiveTab === 'pomodoro' && <PomodoroPanel />}
       </Suspense>
     </div>
   )

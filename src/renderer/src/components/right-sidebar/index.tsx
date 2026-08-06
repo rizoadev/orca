@@ -11,7 +11,8 @@ import {
   Rocket,
   Workflow,
   MessageCircle,
-  FileCode2
+  FileCode2,
+  Timer
 } from 'lucide-react'
 import { useAppStore } from '@/store'
 import type { ActiveRightSidebarTab } from '@/store/slices/editor'
@@ -117,10 +118,7 @@ function RightSidebarInner(): React.JSX.Element {
         // Why: pin early so top-bar overflow doesn't bury the orchestration companion list.
         id: 'orchestration',
         icon: Layers,
-        title: translate(
-          'auto.components.right.sidebar.index.orchestration',
-          'Orchestration'
-        ),
+        title: translate('auto.components.right.sidebar.index.orchestration', 'Orchestration'),
         shortcut: ''
       },
       {
@@ -182,6 +180,12 @@ function RightSidebarInner(): React.JSX.Element {
         title: translate('auto.components.right.sidebar.index.441733b630', 'Ports'),
         shortcut: portsShortcut === 'Unassigned' ? '' : portsShortcut,
         sshOnly: true
+      },
+      {
+        id: 'pomodoro',
+        icon: Timer,
+        title: translate('auto.components.right.sidebar.index.pomodoro', 'Pomodoro'),
+        shortcut: ''
       },
       {
         id: 'remote-chat',
@@ -286,7 +290,11 @@ function RightSidebarInner(): React.JSX.Element {
           property) rather than in a bottom-docked dashboard panel that
           competed with file Explorer/Search for vertical space. The right
           sidebar is back to tab-only content. */}
-      <RightSidebarPanelContent effectiveTab={effectiveTab} rightSidebarOpen={rightSidebarOpen} rightSidebarRouteRequestId={rightSidebarRouteRequestId} />
+      <RightSidebarPanelContent
+        effectiveTab={effectiveTab}
+        rightSidebarOpen={rightSidebarOpen}
+        rightSidebarRouteRequestId={rightSidebarRouteRequestId}
+      />
     </div>
   ) : null
 

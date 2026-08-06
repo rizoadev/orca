@@ -37,6 +37,13 @@ describe('normalizeRightSidebarRoute', () => {
     })
   })
 
+  it('preserves the pomodoro route', () => {
+    expect(normalizeRightSidebarRoute('pomodoro')).toEqual({
+      rightSidebarTab: 'pomodoro',
+      rightSidebarExplorerView: 'files'
+    })
+  })
+
   it('still normalizes invalid tabs to Explorer files', () => {
     expect(normalizeRightSidebarRoute('missing')).toEqual({
       rightSidebarTab: 'explorer',

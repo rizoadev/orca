@@ -10233,7 +10233,8 @@
             "fc3095d2ed": "탐색기",
             "aiVaultSessionHistory": "에이전트",
             "folderWorkspaces": "연결된 워크트리",
-            "parentPrChecks": "PR 검사"
+            "parentPrChecks": "PR 검사",
+            "pomodoro": "Pomodoro"
           },
           "right": {
             "panel": {
@@ -10657,6 +10658,26 @@
                 }
               }
             }
+          },
+          "PomodoroPanel": {
+            "phase": {
+              "focus": "Focus",
+              "shortBreak": "Short Break",
+              "longBreak": "Long Break"
+            },
+            "timeRemaining": "Time remaining: {{value}}",
+            "pause": "Pause",
+            "start": "Start",
+            "reset": "Reset",
+            "skip": "Skip phase",
+            "durations": "Durations",
+            "decrease": "Decrease {{label}} by one minute",
+            "increase": "Increase {{label}} by one minute",
+            "minutesUnit": "min"
+          },
+          "pomodoroTimerStore": {
+            "focusComplete": "Focus session complete — time for a break",
+            "breakComplete": "Break over — back to focus"
           }
         }
       },

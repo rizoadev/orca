@@ -3211,6 +3211,7 @@ export type RightSidebarTab =
   | 'remote-chat'
   | 'todos'
   | 'snippets'
+  | 'pomodoro'
 export type ActiveRightSidebarTab = Exclude<RightSidebarTab, 'search'>
 export type RightSidebarExplorerView = 'files' | 'search'
 

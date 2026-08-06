@@ -800,7 +800,8 @@ function normalizeRightSidebarTab(tab: unknown): PersistedState['ui']['rightSide
     tab === 'remote-chat' ||
     tab === 'todos' ||
     tab === 'snippets' ||
-    tab === 'pr-checks'
+    tab === 'pr-checks' ||
+    tab === 'pomodoro'
   ) {
     return tab
   }
