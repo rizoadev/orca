@@ -133,3 +133,6 @@ OrchestrationPanel-*.js
 
 # pi agent local state (review triggers, session artifacts)
 .pi/
+
+# AppImage extraction leftover (from --appimage-extract during local install)
+squashfs-root/

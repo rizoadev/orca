@@ -53,6 +53,7 @@ import {
 } from './right-sidebar-width'
 import { translate } from '@/i18n/i18n'
 import { RightSidebarPanelContent } from './right-sidebar-panel-content'
+import { YouTubePlayerBar } from './YouTubePlayerBar'
 import { useMeasuredWidth } from './right-sidebar-measured-width'
 import { normalizeRightSidebarRoute } from '@/store/right-sidebar-route'
 import { AgentSessionHistoryIcon } from './agent-session-history-icon'
@@ -302,6 +303,10 @@ function RightSidebarInner(): React.JSX.Element {
         rightSidebarOpen={rightSidebarOpen}
         rightSidebarRouteRequestId={rightSidebarRouteRequestId}
       />
+      {/* Why: persistent YouTube mini-player pinned at the bottom of the right
+          sidebar across all tabs; state lives in youtube-player-store so the
+          YouTube search tab can start playback and it survives tab switches. */}
+      <YouTubePlayerBar />
     </div>
   ) : null
 

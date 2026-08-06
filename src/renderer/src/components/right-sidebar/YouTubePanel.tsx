@@ -2,9 +2,9 @@ import React, { useCallback, useState } from 'react'
 import { AlertCircle, Loader2, Search, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
 import { translate } from '@/i18n/i18n'
+import { useYouTubePlayerStore } from './youtube-player-store'
 
 type SearchItem = {
   videoId: string
@@ -49,9 +49,8 @@ export function YouTubePanel(): React.JSX.Element {
   const [items, setItems] = useState<SearchItem[]>([])
   const [searching, setSearching] = useState(false)
   const [searchError, setSearchError] = useState<string | null>(null)
-  const [playingVideoId, setPlayingVideoId] = useState<string | null>(null)
-  const [playingTitle, setPlayingTitle] = useState('')
-  const [playingUploader, setPlayingUploader] = useState('')
+  const play = useYouTubePlayerStore((s) => s.play)
+  const playingVideoId = useYouTubePlayerStore((s) => s.videoId)
 
   const runSearch = useCallback(async (raw: string): Promise<void> => {
     const trimmed = raw.trim()
@@ -82,11 +81,12 @@ export function YouTubePanel(): React.JSX.Element {
     }
   }, [])
 
-  const playVideo = useCallback((item: SearchItem): void => {
-    setPlayingVideoId(item.videoId)
-    setPlayingTitle(item.title)
-    setPlayingUploader(item.uploader)
-  }, [])
+  const playVideo = useCallback(
+    (item: SearchItem): void => {
+      play(item.videoId, item.title, item.uploader)
+    },
+    [play]
+  )
 
   const onSubmitSearch = useCallback(
     (e: React.FormEvent) => {
@@ -95,19 +95,6 @@ export function YouTubePanel(): React.JSX.Element {
     },
     [query, runSearch]
   )
-
-  const closePlayer = useCallback((): void => {
-    setPlayingVideoId(null)
-    setPlayingTitle('')
-    setPlayingUploader('')
-  }, [])
-
-  // Why: rel=0 + modestbranding minimizes YouTube's end-of-video related-video
-  // overlay (which can surface ads); the official embed has no pre-roll for most
-  // videos. This is the most reliable ad-light approach — no third-party proxy.
-  const embedSrc = playingVideoId
-    ? `https://www.youtube.com/embed/${playingVideoId}?rel=0&modestbranding=1`
-    : null
 
   return (
     <div className="flex h-full min-h-0 flex-col overflow-hidden">
@@ -138,46 +125,6 @@ export function YouTubePanel(): React.JSX.Element {
         </form>
       </div>
 
-      {/* Player — official YouTube iframe embed */}
-      {playingVideoId ? (
-        <div className="shrink-0 border-b border-sidebar-border bg-black">
-          <div style={{ left: 0, width: '100%', height: 0, position: 'relative', paddingBottom: '56.25%' }}>
-            {embedSrc ? (
-              <iframe
-                src={embedSrc}
-                title={playingTitle}
-                style={{ top: 0, left: 0, width: '100%', height: '100%', position: 'absolute', border: 0 }}
-                allow="accelerometer *; clipboard-write *; encrypted-media *; gyroscope *; picture-in-picture *; web-share *;"
-                referrerPolicy="strict-origin"
-                allowFullScreen
-                scrolling="no"
-              />
-            ) : null}
-          </div>
-          <div className="flex items-start gap-2 px-2 py-1.5">
-            <div className="min-w-0 flex-1">
-              <p className="truncate text-xs font-medium text-foreground">{playingTitle}</p>
-              <p className="truncate text-[11px] text-muted-foreground">{playingUploader}</p>
-            </div>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  className="size-6 shrink-0 text-muted-foreground hover:text-foreground"
-                  onClick={closePlayer}
-                  aria-label="Close player"
-                >
-                  <X size={14} />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent side="bottom">Close</TooltipContent>
-            </Tooltip>
-          </div>
-        </div>
-      ) : null}
-
       {/* Results list */}
       <div className="min-h-0 flex-1 overflow-y-auto scrollbar-sleek">
         {searching ? (
@@ -203,7 +150,7 @@ export function YouTubePanel(): React.JSX.Element {
           <div className="flex items-center justify-center px-4 py-10 text-center text-xs text-muted-foreground">
             {translate(
               'auto.components.right.sidebar.YouTubePanel.emptyHint',
-              'Search for videos above.'
+              'Search for videos above. Click a result to play it in the bottom player.'
             )}
           </div>
         ) : (
