@@ -22,7 +22,13 @@ type ColumnState = {
   tabId: string
 }
 
-function ResizeHandle({ onResize }: { onResize: (delta: number) => void }): React.JSX.Element {
+function ResizeHandle({
+  onResize,
+  onResizeEnd
+}: {
+  onResize: (delta: number) => void
+  onResizeEnd: () => void
+}): React.JSX.Element {
   const handleRef = useRef<HTMLDivElement>(null)
 
   const onPointerDown = useCallback(
@@ -34,6 +40,7 @@ function ResizeHandle({ onResize }: { onResize: (delta: number) => void }): Reac
         return
       }
       handle.setPointerCapture(e.pointerId)
+      handle.classList.add('pointer-events-none')
 
       const onMove = (ev: PointerEvent) => {
         onResize(ev.clientX - startX)
@@ -41,11 +48,13 @@ function ResizeHandle({ onResize }: { onResize: (delta: number) => void }): Reac
       const onUp = () => {
         handle.removeEventListener('pointermove', onMove)
         handle.removeEventListener('pointerup', onUp)
+        handle.classList.remove('pointer-events-none')
+        onResizeEnd()
       }
       handle.addEventListener('pointermove', onMove)
       handle.addEventListener('pointerup', onUp)
     },
-    [onResize]
+    [onResize, onResizeEnd]
   )
 
   return (
@@ -92,6 +101,10 @@ export function CrossProjectView({
   const [ratios, setRatios] = useState<number[]>([])
   const [focusedIndex, setFocusedIndex] = useState(0)
   const containerRef = useRef<HTMLDivElement>(null)
+  // Why: drag resize mutates DOM directly (no React re-render per pointermove)
+  // for smooth 60fps resizing; commit to state once on pointerup.
+  const ratiosRef = useRef<number[]>([])
+  const columnElsRef = useRef<(HTMLDivElement | null)[]>([])
 
   // Why: seed columns from active worktree's first terminal tab on open.
   useEffect(() => {
@@ -136,6 +149,11 @@ export function CrossProjectView({
     }
   }, [columns.length])
 
+  // Why: keep ref in sync with committed ratios so drag starts from current widths.
+  useEffect(() => {
+    ratiosRef.current = ratios
+  }, [ratios])
+
   const addColumn = useCallback(
     (worktreeId: string) => {
       const tab = pickTerminalTab(worktreeId, unifiedTabsByWorktree)
@@ -159,24 +177,36 @@ export function CrossProjectView({
   const onResize = useCallback((colIndex: number, delta: number) => {
     const containerWidth = containerRef.current?.getBoundingClientRect().width ?? 1000
     const deltaRatio = delta / containerWidth
-    setRatios((prev) => {
-      const next = [...prev]
-      const left = next[colIndex] ?? 0
-      const right = next[colIndex + 1] ?? 0
-      let newLeft = left + deltaRatio
-      let newRight = right - deltaRatio
-      if (newLeft < MIN_COLUMN_RATIO) {
-        newLeft = MIN_COLUMN_RATIO
-        newRight = left + right - MIN_COLUMN_RATIO
-      }
-      if (newRight < MIN_COLUMN_RATIO) {
-        newRight = MIN_COLUMN_RATIO
-        newLeft = left + right - MIN_COLUMN_RATIO
-      }
-      next[colIndex] = newLeft
-      next[colIndex + 1] = newRight
-      return next
-    })
+    const next = [...ratiosRef.current]
+    const left = next[colIndex] ?? 0
+    const right = next[colIndex + 1] ?? 0
+    let newLeft = left + deltaRatio
+    let newRight = right - deltaRatio
+    if (newLeft < MIN_COLUMN_RATIO) {
+      newLeft = MIN_COLUMN_RATIO
+      newRight = left + right - MIN_COLUMN_RATIO
+    }
+    if (newRight < MIN_COLUMN_RATIO) {
+      newRight = MIN_COLUMN_RATIO
+      newLeft = left + right - MIN_COLUMN_RATIO
+    }
+    next[colIndex] = newLeft
+    next[colIndex + 1] = newRight
+    ratiosRef.current = next
+    // Why: mutate widths directly — no React re-render during drag for smooth resizing.
+    const leftEl = columnElsRef.current[colIndex]
+    const rightEl = columnElsRef.current[colIndex + 1]
+    if (leftEl) {
+      leftEl.style.width = `${newLeft * 100}%`
+    }
+    if (rightEl) {
+      rightEl.style.width = `${newRight * 100}%`
+    }
+  }, [])
+
+  const onResizeEnd = useCallback(() => {
+    // Why: commit final ratios once at drag end so React state matches DOM.
+    setRatios(ratiosRef.current)
   }, [])
 
   const handlePtyExit = useCallback((ptyId: string) => {
@@ -293,6 +323,9 @@ export function CrossProjectView({
           const column = (
             <div
               key={`${col.worktreeId}:${col.tabId}`}
+              ref={(node) => {
+                columnElsRef.current[i] = node
+              }}
               className={`flex flex-col min-h-0 overflow-hidden${i === focusedIndex ? ' ring-1 ring-inset ring-blue-500/40' : ''}`}
               style={{ width: widthPct, flex: widthPct ? 'none' : '1 1 0' }}
               onPointerDown={() => focusColumn(i)}
@@ -347,7 +380,11 @@ export function CrossProjectView({
           if (i < columns.length - 1) {
             return [
               column,
-              <ResizeHandle key={`resize-${i}`} onResize={(delta) => onResize(i, delta)} />
+              <ResizeHandle
+                key={`resize-${i}`}
+                onResize={(delta) => onResize(i, delta)}
+                onResizeEnd={onResizeEnd}
+              />
             ]
           }
           return [column]
