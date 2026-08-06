@@ -884,6 +884,19 @@ function createWebPreloadApi(): Partial<PreloadApi> {
       isWebSocketReady: () =>
         Promise.resolve({ ready: Boolean(activeEnvironment), endpoint: null }),
       getRelayStatus: () => Promise.resolve({ status: 'offline' as const }),
+      setCloudflareRelay: (_enabled: boolean) =>
+        Promise.resolve({ ok: false, error: 'cloudflare_relay_unavailable' }),
+      deleteCloudflareRelay: () =>
+        Promise.resolve({ ok: false, error: 'cloudflare_relay_unavailable' }),
+      getCloudflareRelayStatus: () =>
+        Promise.resolve({
+          configured: false,
+          state: 'disabled' as const,
+          hostname: '',
+          wsPort: null
+        }),
+      restartCloudflareRelay: () =>
+        Promise.resolve({ ok: false, error: 'cloudflare_relay_unavailable' }),
       onRelayStatusChanged: () => noopUnsubscribe,
       consumePendingUnpairedDeviceAuthFailure: () => Promise.resolve(false),
       onUnpairedDeviceAuthFailure: () => noopUnsubscribe
