@@ -1565,6 +1565,7 @@ export type PreloadApi = {
         }
       | { ok: false; error: string }
     >
+    embedPort: () => Promise<number>
   }
   crashReports: {
     getLatestPending: () => Promise<CrashReportRecord | null>

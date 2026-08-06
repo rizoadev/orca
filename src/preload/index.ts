@@ -1185,7 +1185,8 @@ const api = {
     search: (args: { query: string }): Promise<
       | { ok: true; items: { videoId: string; title: string; uploader: string; durationSeconds: number; thumbnail: string; uploadedDate: string; views: number }[] }
       | { ok: false; error: string }
-    > => ipcRenderer.invoke('youtube:search', args)
+    > => ipcRenderer.invoke('youtube:search', args),
+    embedPort: (): Promise<number> => ipcRenderer.invoke('youtube:embedPort')
   },
 
   crashReports: {

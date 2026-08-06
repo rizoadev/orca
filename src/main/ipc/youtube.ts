@@ -4,6 +4,7 @@
  * renderer avoids CORS. Piped strips YouTube ads by re-hosting streams.
  */
 import { ipcMain, net } from 'electron'
+import { ensureYouTubeEmbedServer } from './youtube-embed-server'
 
 // Why: Piped instances go down often; try each in order until one answers.
 // Keep the most reliable first; public instances fluctuate hourly.
@@ -116,6 +117,17 @@ export function registerYouTubeHandlers(): void {
       return { ok: true, items }
     } catch (err) {
       return { ok: false, error: err instanceof Error ? err.message : String(err) }
+    }
+  })
+
+  // Why: return the local embed server port so the renderer can load
+  // http://127.0.0.1:PORT/embed/VIDEO_ID in the webview — a real HTTP origin
+  // avoids YouTube's Error 153 (null/data: origin rejection).
+  ipcMain.handle('youtube:embedPort', async (): Promise<number> => {
+    try {
+      return await ensureYouTubeEmbedServer()
+    } catch {
+      return 0
     }
   })
 }
