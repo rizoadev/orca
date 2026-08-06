@@ -3212,6 +3212,7 @@ export type RightSidebarTab =
   | 'todos'
   | 'snippets'
   | 'pomodoro'
+  | 'youtube'
 export type ActiveRightSidebarTab = Exclude<RightSidebarTab, 'search'>
 export type RightSidebarExplorerView = 'files' | 'search'
 

@@ -31,7 +31,8 @@ export function normalizeRightSidebarRoute(
     tab === 'remote-chat' ||
     tab === 'todos' ||
     tab === 'snippets' ||
-    tab === 'pomodoro'
+    tab === 'pomodoro' ||
+    tab === 'youtube'
   ) {
     return {
       rightSidebarTab: tab,

@@ -6,7 +6,6 @@ import { readFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import type { PiModelOption } from '../../shared/pi-issue-chat-types'
-import { importPiSdk } from './pi-session-factory'
 
 /** Read all models from ~/.pi/agent/models.json without SDK auth overhead. */
 export function listPiModels(): PiModelOption[] {
@@ -64,17 +63,14 @@ export async function setPiSessionModel(
     throw new Error('Session not found')
   }
 
-  const { AuthStorage, ModelRegistry } = await importPiSdk()
-  const authStorage = AuthStorage.create()
-  const modelRegistry = ModelRegistry.create(authStorage)
-
   const slashIdx = modelRef.indexOf('/')
   if (slashIdx === -1) {
     throw new Error(`Invalid modelRef: ${modelRef}`)
   }
   const providerName = modelRef.slice(0, slashIdx)
   const modelId = modelRef.slice(slashIdx + 1)
-  const model = modelRegistry.find(providerName, modelId)
+  // Why: reuse the session's own runtime so setModel gets the exact Model instance it manages
+  const model = record.agentSession.modelRuntime?.getModel(providerName, modelId)
   if (!model) {
     throw new Error(`Model not found in registry: ${modelRef}`)
   }

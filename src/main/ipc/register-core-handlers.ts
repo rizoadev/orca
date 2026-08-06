@@ -30,6 +30,7 @@ import { registerAiVaultHandlers } from './ai-vault'
 import { registerNativeChatHandlers } from './native-chat'
 import { registerStrandsIssueChatHandlers } from './strands-issue-chat'
 import { registerPiIssueChatHandlers } from './pi-issue-chat'
+import { registerYouTubeHandlers } from './youtube'
 import { registerNotificationHandlers } from './notifications'
 import { registerNotebookHandlers } from './notebook'
 import { registerOnboardingHandlers } from './onboarding'
@@ -227,6 +228,7 @@ export function registerCoreHandlers(
   registerNativeChatHandlers()
   registerStrandsIssueChatHandlers()
   registerPiIssueChatHandlers()
+  registerYouTubeHandlers()
   registerClipboardHandlers(store)
   registerUpdaterHandlers(store)
   registerSpeechHandlers(store)

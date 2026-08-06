@@ -1181,6 +1181,13 @@ const api = {
       ipcRenderer.invoke('feedback:submit', args)
   },
 
+  youtube: {
+    search: (args: { query: string }): Promise<
+      | { ok: true; items: { videoId: string; title: string; uploader: string; durationSeconds: number; thumbnail: string; uploadedDate: string; views: number }[] }
+      | { ok: false; error: string }
+    > => ipcRenderer.invoke('youtube:search', args)
+  },
+
   crashReports: {
     getLatestPending: () => ipcRenderer.invoke('crashReports:getLatestPending'),
     getLatestReport: () => ipcRenderer.invoke('crashReports:getLatestReport'),

@@ -81,8 +81,7 @@ export async function createPiSession(
   // Why: lazy import keeps Electron main startup fast when chat panel is not open.
   const {
     createAgentSession,
-    AuthStorage,
-    ModelRegistry,
+    ModelRuntime,
     SessionManager,
     DefaultResourceLoader,
     getAgentDir
@@ -95,8 +94,9 @@ export async function createPiSession(
     args.sessionId,
     args.modelRef ?? 'none'
   )
-  const authStorage = AuthStorage.create()
-  const modelRegistry = ModelRegistry.create(authStorage)
+  // Why: SDK 0.83 dropped the AuthStorage/ModelRegistry.create facade; ModelRuntime is
+  // the canonical model+auth runtime (defaults to agentDir/auth.json + models.json).
+  const modelRuntime = await ModelRuntime.create()
 
   // Resolve model from modelRef if provided (matches ~/.pi/agent/models.json keys)
   let model: unknown
@@ -105,11 +105,11 @@ export async function createPiSession(
     if (parts.length >= 2) {
       const providerName = parts[0]
       const modelId = parts.slice(1).join('/')
-      model = modelRegistry.find(providerName, modelId) ?? undefined
+      model = modelRuntime.getModel(providerName, modelId) ?? undefined
     }
   }
   if (!model) {
-    const available = await modelRegistry.getAvailable()
+    const available = await modelRuntime.getAvailable()
     // Why: prefer models known to return real content. Some localhost models
     // (e.g. amanai/*) return empty responses. Prefer cb/* and kr/* first.
     const PREFERRED = ['cb/kimi-k3', 'cb/default-model', 'cb/gpt-5.5', 'kr/claude-sonnet-4.5', 'kr/auto']
@@ -160,8 +160,7 @@ export async function createPiSession(
     ...(model ? { model: model as never } : {}),
     resourceLoader: loader,
     sessionManager,
-    authStorage,
-    modelRegistry,
+    modelRuntime,
     tools: ['read', 'bash', 'edit', 'write']
   })
 

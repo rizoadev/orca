@@ -1549,6 +1549,23 @@ export type PreloadApi = {
       githubEmail: string | null
     }) => Promise<{ ok: true } | { ok: false; status: number | null; error: string }>
   }
+  youtube: {
+    search: (args: { query: string }) => Promise<
+      | {
+          ok: true
+          items: {
+            videoId: string
+            title: string
+            uploader: string
+            durationSeconds: number
+            thumbnail: string
+            uploadedDate: string
+            views: number
+          }[]
+        }
+      | { ok: false; error: string }
+    >
+  }
   crashReports: {
     getLatestPending: () => Promise<CrashReportRecord | null>
     getLatestReport: () => Promise<CrashReportRecord | null>

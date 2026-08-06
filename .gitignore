@@ -130,3 +130,6 @@ tools/benchmarks/results/terminal-pipeline-*.json
 
 # Vite chunk orphan (generated bundle)
 OrchestrationPanel-*.js
+
+# pi agent local state (review triggers, session artifacts)
+.pi/

@@ -2042,7 +2042,8 @@ function buildWorktreePurgeState(s: AppState, worktreeIds: string[]): Partial<Ap
         tab === 'remote-chat' ||
         tab === 'todos' ||
         tab === 'snippets' ||
-        tab === 'pomodoro'
+        tab === 'pomodoro' ||
+        tab === 'youtube'
       ) {
         out[id] = tab
       } else {
