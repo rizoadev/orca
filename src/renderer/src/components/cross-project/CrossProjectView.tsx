@@ -10,6 +10,7 @@ import {
   DropdownMenuTrigger
 } from '@/components/ui/dropdown-menu'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import { SYNC_FIT_PANES_EVENT } from '@/constants/terminal'
 import type { TerminalTab } from '../../../../shared/types'
 
 // Why: TerminalPane is 3k+ lines; lazy-load so cross-project view doesn't bloat initial bundle.
@@ -154,6 +155,19 @@ export function CrossProjectView({
     ratiosRef.current = ratios
   }, [ratios])
 
+  // Why: fit terminals after columns finish layout — first render can fit
+  // before the column width is known, and TerminalPane's ResizeObserver only
+  // fires on *changes*.
+  useEffect(() => {
+    if (!open || columns.length === 0) {
+      return
+    }
+    const frame = requestAnimationFrame(() => {
+      window.dispatchEvent(new Event(SYNC_FIT_PANES_EVENT))
+    })
+    return () => cancelAnimationFrame(frame)
+  }, [open, columns])
+
   const addColumn = useCallback(
     (worktreeId: string) => {
       const tab = pickTerminalTab(worktreeId, unifiedTabsByWorktree)
@@ -207,6 +221,8 @@ export function CrossProjectView({
   const onResizeEnd = useCallback(() => {
     // Why: commit final ratios once at drag end so React state matches DOM.
     setRatios(ratiosRef.current)
+    // Why: refit terminals to their new column widths after the drag settles.
+    window.dispatchEvent(new Event(SYNC_FIT_PANES_EVENT))
   }, [])
 
   const handlePtyExit = useCallback((ptyId: string) => {
