@@ -1,3 +1,4 @@
+/* eslint-disable max-lines -- Why: cross-project view co-locates column layout, resize handles, and per-column terminal mounting. */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Suspense } from 'react'
 import { lazyWithRetry as lazy } from '@/lib/lazy-with-retry'
@@ -24,9 +25,11 @@ type ColumnState = {
 }
 
 function ResizeHandle({
+  onResizeStart,
   onResize,
   onResizeEnd
 }: {
+  onResizeStart: () => void
   onResize: (delta: number) => void
   onResizeEnd: () => void
 }): React.JSX.Element {
@@ -35,6 +38,7 @@ function ResizeHandle({
   const onPointerDown = useCallback(
     (e: React.PointerEvent) => {
       e.preventDefault()
+      e.stopPropagation()
       const startX = e.clientX
       const handle = handleRef.current
       if (!handle) {
@@ -42,20 +46,44 @@ function ResizeHandle({
       }
       handle.setPointerCapture(e.pointerId)
       handle.classList.add('pointer-events-none')
+      onResizeStart()
 
+      // Why: coalesce pointermove to one resize per animation frame — a high
+      // polling-rate mouse can emit 240+ events/s, each forcing a layout read.
+      let pendingDelta: number | null = null
+      let frame: number | null = null
+      const flush = (): void => {
+        frame = null
+        if (pendingDelta !== null) {
+          const delta = pendingDelta
+          pendingDelta = null
+          onResize(delta)
+        }
+      }
       const onMove = (ev: PointerEvent) => {
-        onResize(ev.clientX - startX)
+        pendingDelta = ev.clientX - startX
+        if (frame === null) {
+          frame = requestAnimationFrame(flush)
+        }
       }
       const onUp = () => {
         handle.removeEventListener('pointermove', onMove)
         handle.removeEventListener('pointerup', onUp)
         handle.classList.remove('pointer-events-none')
+        if (frame !== null) {
+          cancelAnimationFrame(frame)
+        }
+        if (pendingDelta !== null) {
+          const delta = pendingDelta
+          pendingDelta = null
+          onResize(delta)
+        }
         onResizeEnd()
       }
       handle.addEventListener('pointermove', onMove)
       handle.addEventListener('pointerup', onUp)
     },
-    [onResize, onResizeEnd]
+    [onResizeStart, onResize, onResizeEnd]
   )
 
   return (
@@ -65,7 +93,7 @@ function ResizeHandle({
       onPointerDown={onPointerDown}
     >
       {/* Why: invisible wider hit target so the thin 2px border is still easy to grab. */}
-      <div className="absolute inset-y-0 -left-1 -right-1" />
+      <div className="absolute inset-y-0 -left-1.5 -right-1.5" />
     </div>
   )
 }
@@ -106,6 +134,8 @@ export function CrossProjectView({
   // for smooth 60fps resizing; commit to state once on pointerup.
   const ratiosRef = useRef<number[]>([])
   const columnElsRef = useRef<(HTMLDivElement | null)[]>([])
+  // Why: cached at drag start so resize doesn't re-read layout every pointermove.
+  const dragStartContainerWidthRef = useRef<number>(0)
 
   // Why: seed columns from active worktree's first terminal tab on open.
   useEffect(() => {
@@ -188,8 +218,16 @@ export function CrossProjectView({
     setColumns((prev) => prev.filter((_, i) => i !== index))
   }, [])
 
+  const onResizeStart = useCallback(() => {
+    dragStartContainerWidthRef.current = containerRef.current?.getBoundingClientRect().width ?? 1000
+  }, [])
+
   const onResize = useCallback((colIndex: number, delta: number) => {
-    const containerWidth = containerRef.current?.getBoundingClientRect().width ?? 1000
+    // Why: read container width from ref, set once per drag in onResizeStart.
+    const containerWidth =
+      dragStartContainerWidthRef.current ??
+      containerRef.current?.getBoundingClientRect().width ??
+      1000
     const deltaRatio = delta / containerWidth
     const next = [...ratiosRef.current]
     const left = next[colIndex] ?? 0
@@ -398,6 +436,7 @@ export function CrossProjectView({
               column,
               <ResizeHandle
                 key={`resize-${i}`}
+                onResizeStart={onResizeStart}
                 onResize={(delta) => onResize(i, delta)}
                 onResizeEnd={onResizeEnd}
               />
