@@ -7,6 +7,7 @@ import TabDragPreview from '../tab-bar/TabDragPreview'
 import { TabDragProvider } from './tab-drag-context'
 import TabPaneColumnSplitDragOverlay from './TabPaneColumnSplitDragOverlay'
 import { type HoveredTabInsertion, useTabDragSplit } from './useTabDragSplit'
+import PetHero from '../pet/PetHero'
 
 const MIN_RATIO = 0.15
 const MAX_RATIO = 0.85
@@ -286,6 +287,7 @@ export default function TabGroupSplitLayout({
           className="flex flex-col flex-1 min-w-0 min-h-0 overflow-hidden border-l border-border"
         >
           <div className="h-[4px] shrink-0 bg-card" data-terminal-focus-release-surface="true" />
+          <PetHero worktreeId={worktreeId} />
           <div className="flex flex-1 min-w-0 min-h-0 overflow-hidden">
             <SplitNode
               node={layout}

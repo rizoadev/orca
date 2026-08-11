@@ -32,7 +32,8 @@ export function normalizeRightSidebarRoute(
     tab === 'todos' ||
     tab === 'snippets' ||
     tab === 'pomodoro' ||
-    tab === 'youtube'
+    tab === 'youtube' ||
+    tab === 'telegram'
   ) {
     return {
       rightSidebarTab: tab,

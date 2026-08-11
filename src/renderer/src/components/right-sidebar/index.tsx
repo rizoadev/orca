@@ -13,7 +13,8 @@ import {
   MessageCircle,
   FileCode2,
   Timer,
-  Youtube
+  Youtube,
+  Send
 } from 'lucide-react'
 import { useAppStore } from '@/store'
 import type { ActiveRightSidebarTab } from '@/store/slices/editor'
@@ -199,6 +200,12 @@ function RightSidebarInner(): React.JSX.Element {
         id: 'youtube',
         icon: Youtube,
         title: translate('auto.components.right.sidebar.index.youtube', 'YouTube'),
+        shortcut: ''
+      },
+      {
+        id: 'telegram',
+        icon: Send,
+        title: 'Telegram',
         shortcut: ''
       }
     ],

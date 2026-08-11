@@ -18,6 +18,7 @@ const GitLabSnippetsPanel = lazy(() => import('./GitLabSnippetsPanel'))
 const OrchestrationPanel = lazy(() => import('./OrchestrationPanel'))
 const PomodoroPanel = lazy(() => import('./PomodoroPanel'))
 const YouTubePanel = lazy(() => import('./YouTubePanel'))
+const TelegramPanel = lazy(() => import('./TelegramPanel'))
 
 type RightSidebarPanelContentProps = {
   effectiveTab: ActiveRightSidebarTab
@@ -91,6 +92,7 @@ export function RightSidebarPanelContent({
         )}
         {effectiveTab === 'pomodoro' && <PomodoroPanel />}
         {effectiveTab === 'youtube' && <YouTubePanel />}
+        {effectiveTab === 'telegram' && <TelegramPanel />}
       </Suspense>
     </div>
   )

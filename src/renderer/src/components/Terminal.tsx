@@ -58,6 +58,7 @@ import {
 } from '../hooks/ipc-tab-switch'
 import TabGroupSplitLayout from './tab-group/TabGroupSplitLayout'
 import AiVaultSessionDropLayer from './tab-group/AiVaultSessionDropLayer'
+import PetHero from './pet/PetHero'
 import { shouldAutoCreateInitialTerminal } from './terminal/initial-terminal'
 import { resolveRepairedActiveTerminalTabId } from './terminal/active-terminal-repair'
 import { scheduleBackgroundTerminalWorktreeMeasure } from './terminal/background-terminal-worktree-visibility'
@@ -2139,61 +2140,64 @@ function Terminal(): React.JSX.Element | null {
                     key={workspace.id}
                     className={
                       isVisible
-                        ? 'absolute inset-0'
+                        ? 'absolute inset-0 flex min-h-0 flex-col'
                         : shouldMeasureHiddenWorktree
                           ? 'absolute inset-0 opacity-0 pointer-events-none'
                           : 'absolute inset-0 hidden'
                     }
                     aria-hidden={!isVisible}
                   >
-                    <CodexRestartChip isVisible={isVisible} worktreeId={workspace.id} />
-                    {(tabsByWorktree[workspace.id] ?? [])
-                      .filter((tab) =>
-                        shouldMountBackgroundWorktreeTab(
-                          backgroundMountTabIdsByWorktreeRef.current.get(workspace.id) ?? null,
-                          tab.id
-                        )
-                      )
-                      .map((tab) => {
-                        const activityTerminalPortal = findActivityTerminalPortal(
-                          activityTerminalPortals,
-                          { worktreeId: workspace.id, tabId: tab.id }
-                        )
-                        const isActivityPortalTab = activityTerminalPortal !== null
-                        const isActiveTerminalTab =
-                          isVisible && tab.id === activeTabId && activeTabType === 'terminal'
-                        // Why: parking unmounts the view but keeps the PTY; an Activity portal stays mounted as a visible consumer.
-                        if (shouldColdParkTerminalPanes && !isActivityPortalTab) {
-                          return null
-                        }
-                        const terminalPane = (
-                          <TerminalPane
-                            key={`${tab.id}-${tab.generation ?? 0}`}
-                            tabId={tab.id}
-                            worktreeId={workspace.id}
-                            cwd={tab.startupCwd ?? workspace.path}
-                            isActive={
-                              isActiveTerminalTab || activityTerminalPortal?.active === true
-                            }
-                            // Why: keep isVisible true for the portaled tab so xterm fits/streams while the workspace surface stays hidden.
-                            isVisible={isActiveTerminalTab || isActivityPortalTab}
-                            // Why: inactive tabs here are tab-hidden (not worktree-hidden), so they need the same light resume path as split-group overlays.
-                            isWorktreeActive={isVisible || isActivityPortalTab}
-                            // Why: isolate the portaled Activity leaf so split siblings stay hidden; workspace renders pass null.
-                            isolatedPaneKey={activityTerminalPortal?.paneKey ?? null}
-                            onPtyExit={(ptyId) => handlePtyExit(tab.id, ptyId)}
-                            onCloseTab={() => handleCloseTab(tab.id)}
-                          />
-                        )
-                        if (activityTerminalPortal) {
-                          return createPortal(
-                            terminalPane,
-                            activityTerminalPortal.target,
-                            `activity-terminal-${tab.id}`
+                    <PetHero worktreeId={workspace.id} />
+                    <div className="relative flex min-h-0 flex-1">
+                      <CodexRestartChip isVisible={isVisible} worktreeId={workspace.id} />
+                      {(tabsByWorktree[workspace.id] ?? [])
+                        .filter((tab) =>
+                          shouldMountBackgroundWorktreeTab(
+                            backgroundMountTabIdsByWorktreeRef.current.get(workspace.id) ?? null,
+                            tab.id
                           )
-                        }
-                        return terminalPane
-                      })}
+                        )
+                        .map((tab) => {
+                          const activityTerminalPortal = findActivityTerminalPortal(
+                            activityTerminalPortals,
+                            { worktreeId: workspace.id, tabId: tab.id }
+                          )
+                          const isActivityPortalTab = activityTerminalPortal !== null
+                          const isActiveTerminalTab =
+                            isVisible && tab.id === activeTabId && activeTabType === 'terminal'
+                          // Why: parking unmounts the view but keeps the PTY; an Activity portal stays mounted as a visible consumer.
+                          if (shouldColdParkTerminalPanes && !isActivityPortalTab) {
+                            return null
+                          }
+                          const terminalPane = (
+                            <TerminalPane
+                              key={`${tab.id}-${tab.generation ?? 0}`}
+                              tabId={tab.id}
+                              worktreeId={workspace.id}
+                              cwd={tab.startupCwd ?? workspace.path}
+                              isActive={
+                                isActiveTerminalTab || activityTerminalPortal?.active === true
+                              }
+                              // Why: keep isVisible true for the portaled tab so xterm fits/streams while the workspace surface stays hidden.
+                              isVisible={isActiveTerminalTab || isActivityPortalTab}
+                              // Why: inactive tabs here are tab-hidden (not worktree-hidden), so they need the same light resume path as split-group overlays.
+                              isWorktreeActive={isVisible || isActivityPortalTab}
+                              // Why: isolate the portaled Activity leaf so split siblings stay hidden; workspace renders pass null.
+                              isolatedPaneKey={activityTerminalPortal?.paneKey ?? null}
+                              onPtyExit={(ptyId) => handlePtyExit(tab.id, ptyId)}
+                              onCloseTab={() => handleCloseTab(tab.id)}
+                            />
+                          )
+                          if (activityTerminalPortal) {
+                            return createPortal(
+                              terminalPane,
+                              activityTerminalPortal.target,
+                              `activity-terminal-${tab.id}`
+                            )
+                          }
+                          return terminalPane
+                        })}
+                    </div>
                   </div>
                 )
               })}
