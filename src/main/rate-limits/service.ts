@@ -21,6 +21,7 @@ import {
 } from '../claude-accounts/runtime-selection'
 import { fetchGeminiRateLimits } from './gemini-usage-fetcher'
 import { fetchKimiRateLimits } from './kimi-fetcher'
+import { fetchDeepSeekRateLimits } from './deepseek-fetcher'
 import { fetchGrokRateLimits } from './grok-fetcher'
 import { readGrokAuthSession } from './grok-auth'
 import { hasMiniMaxSessionCookie } from '../minimax/minimax-cookie-store'
@@ -58,6 +59,10 @@ type MiniMaxResolvedConfig = {
   error: string | null
 }
 
+type DeepSeekRateLimitConfig = {
+  apiKey: string
+}
+type DeepSeekConfigResolver = () => DeepSeekRateLimitConfig
 type GeminiCliOAuthEnabledResolver = () => boolean
 type ActiveRateLimitProvider = ProviderRateLimits['provider']
 type ActiveProviderState = {
@@ -112,6 +117,7 @@ type InternalRateLimitState = {
   antigravity: ProviderRateLimits | null
   minimax: ProviderRateLimits | null
   grok: ProviderRateLimits | null
+  deepseek: ProviderRateLimits | null
 }
 
 function normalizePollingInterval(ms: number): number {
@@ -191,7 +197,8 @@ export class RateLimitService {
     kimi: null,
     antigravity: null,
     minimax: null,
-    grok: null
+    grok: null,
+    deepseek: null
   }
   private grokAuthConfigured = readGrokAuthSession().status === 'ok'
   private pollInterval: number = DEFAULT_POLL_MS
@@ -206,7 +213,8 @@ export class RateLimitService {
     kimi: 0,
     minimax: 0,
     grok: 0,
-    antigravity: 0
+    antigravity: 0,
+    deepseek: 0
   }
   // Why: consecutive failures drive exponential backoff of the fast activation-retry lane; reset on any success/unavailable result.
   private activeFailureStreakByProvider: Record<ActiveRateLimitProvider, number> = {
@@ -217,7 +225,8 @@ export class RateLimitService {
     kimi: 0,
     minimax: 0,
     grok: 0,
-    antigravity: 0
+    antigravity: 0,
+    deepseek: 0
   }
   private mainWindow: BrowserWindow | null = null
   private detachWindowListeners: (() => void) | null = null
@@ -250,6 +259,7 @@ export class RateLimitService {
   private openCodeGoConfigResolver: (() => OpenCodeGoRateLimitConfig) | null = null
   private miniMaxConfigResolver: (() => MiniMaxRateLimitConfig) | null = null
   private geminiCliOAuthEnabledResolver: GeminiCliOAuthEnabledResolver | null = null
+  private deepSeekConfigResolver: DeepSeekConfigResolver | null = null
   private inactiveClaudeAccountsResolver: (() => InactiveClaudeAccountInfo[]) | null = null
   private inactiveCodexAccountsResolver: (() => InactiveCodexAccountInfo[]) | null = null
   private networkProxySettingsResolver: (() => NetworkProxySettings) | null = null
@@ -298,6 +308,10 @@ export class RateLimitService {
 
   setGeminiCliOAuthEnabledResolver(resolver: GeminiCliOAuthEnabledResolver): void {
     this.geminiCliOAuthEnabledResolver = resolver
+  }
+
+  setDeepSeekConfigResolver(resolver: DeepSeekConfigResolver): void {
+    this.deepSeekConfigResolver = resolver
   }
 
   setNetworkProxySettingsResolver(resolver: () => NetworkProxySettings): void {
@@ -807,7 +821,8 @@ export class RateLimitService {
       kimi: this.state.kimi,
       minimax: this.state.minimax,
       grok: this.state.grok,
-      antigravity: this.state.antigravity
+      antigravity: this.state.antigravity,
+      deepseek: this.state.deepseek
     }
     return Object.entries(byProvider).map(([provider, limits]) => ({
       provider: provider as ActiveRateLimitProvider,
@@ -1465,6 +1480,7 @@ export class RateLimitService {
       | 'minimax'
       | 'grok'
       | 'antigravity'
+      | 'deepseek'
   ): ProviderRateLimits {
     if (!current) {
       return {
@@ -1512,6 +1528,7 @@ export class RateLimitService {
     const miniMaxGroupId = miniMaxConfigResult.config.groupId
     const miniMaxModels = miniMaxConfigResult.config.models
     const geminiCliOAuthEnabled = this.geminiCliOAuthEnabledResolver?.() ?? false
+    const deepSeekConfig = this.deepSeekConfigResolver?.() ?? { apiKey: '' }
     // Why: getState() is hot (renderer pushes + mobile snapshots); keep Grok's sync auth-file probe on fetch cycles instead.
     const grokAuthReadResult = readGrokAuthSession()
     this.grokAuthConfigured = grokAuthReadResult.status === 'ok'
@@ -1547,7 +1564,8 @@ export class RateLimitService {
       minimax: miniMaxConfigChanged
         ? this.withFetchingStatus(null, 'minimax')
         : this.withFetchingStatus(previousState.minimax, 'minimax'),
-      grok: this.withFetchingStatus(previousState.grok, 'grok')
+      grok: this.withFetchingStatus(previousState.grok, 'grok'),
+      deepseek: this.withFetchingStatus(previousState.deepseek, 'deepseek')
     })
 
     const missingWslCodexHome = codexHomePath
@@ -1565,7 +1583,7 @@ export class RateLimitService {
     const claudeFetchGated =
       !options?.force && this.shouldSkipAutomatedClaudeFetch(previousState.claude)
 
-    const [claudeResult, codexResult, geminiResult, opencodeGoResult, kimiResult, miniMaxResult] =
+    const [claudeResult, codexResult, geminiResult, opencodeGoResult, kimiResult, miniMaxResult, deepseekResult] =
       await Promise.allSettled([
         claudeFetchGated
           ? Promise.resolve(previousState.claude as ProviderRateLimits)
@@ -1595,7 +1613,8 @@ export class RateLimitService {
               cookie: miniMaxCookie,
               groupId: miniMaxGroupId,
               models: miniMaxModels
-            })
+            }),
+        fetchDeepSeekRateLimits({ apiKey: deepSeekConfig.apiKey, signal })
       ])
 
     if (signal.aborted) {
@@ -1675,7 +1694,7 @@ export class RateLimitService {
             status: 'error'
           } satisfies ProviderRateLimits)
 
-    const miniMax =
+     const miniMax =
       miniMaxResult.status === 'fulfilled'
         ? miniMaxResult.value
         : ({
@@ -1686,6 +1705,21 @@ export class RateLimitService {
             error:
               miniMaxResult.reason instanceof Error
                 ? miniMaxResult.reason.message
+                : 'Unknown error',
+            status: 'error'
+          } satisfies ProviderRateLimits)
+
+    const deepseek =
+      deepseekResult.status === 'fulfilled'
+        ? deepseekResult.value
+        : ({
+            provider: 'deepseek',
+            session: null,
+            weekly: null,
+            updatedAt: Date.now(),
+            error:
+              deepseekResult.reason instanceof Error
+                ? deepseekResult.reason.message
                 : 'Unknown error',
             status: 'error'
           } satisfies ProviderRateLimits)
@@ -1723,6 +1757,7 @@ export class RateLimitService {
     if (shouldApplyMiniMax) {
       this.trackActiveFailureStreak('minimax', miniMax)
     }
+    this.trackActiveFailureStreak('deepseek', deepseek)
 
     // Why: apply a Codex result only when provenance and generation still match, else a raced in-flight fetch overwrites the new account.
     this.updateState({
@@ -1745,7 +1780,8 @@ export class RateLimitService {
         ? miniMaxConfigChanged
           ? miniMax
           : this.applyStalePolicy(miniMax, previousState.minimax)
-        : this.state.minimax
+        : this.state.minimax,
+      deepseek: this.applyStalePolicy(deepseek, previousState.deepseek)
     })
 
     const grokResult = await grokResultPromise

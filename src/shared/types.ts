@@ -2869,6 +2869,8 @@ export type GlobalSettings = {
   minimaxUsageModels: string
   /** Extract OAuth credentials from the local Gemini CLI for rate-limit fetching. Off by default (explicit opt-in). */
   geminiCliOAuthEnabled: boolean
+  /** DeepSeek API key for usage/balance fetching. Stored encrypted. */
+  deepseekApiKey: string
   /** Per-agent CLI command overrides. A missing key means use the catalog default binary name. */
   agentCmdOverrides: Partial<Record<TuiAgent, string>>
   /** Custom CODEX_HOME for Codex session-history discovery (defaults to ~/.codex).
@@ -3173,6 +3175,7 @@ export type StatusBarItem =
   | 'kimi'
   | 'minimax'
   | 'grok'
+  | 'deepseek'
   | 'ssh'
   | 'resource-usage'
   | 'ports'
@@ -3239,6 +3242,8 @@ export type TopLevelView =
   | 'issues-board'
   | 'agent-dashboard'
   | 'orchestration-board'
+  | 'notes'
+  | 'docker'
 
 export type PersistedUIState = {
   lastActiveRepoId: string | null

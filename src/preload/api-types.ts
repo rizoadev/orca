@@ -533,6 +533,22 @@ import type {
   StrandsIssueChatEvent
 } from '../shared/strands-issue-chat-types'
 import type {
+  Note,
+  NoteCreateInput,
+  NoteSearchQuery,
+  NoteTagCreateInput,
+  NoteTagUpdateInput,
+  NoteUpdateInput,
+  NotesExportResult,
+  NotesImportResult,
+  NotesListResult
+} from '../shared/notes-types'
+import type {
+  NotesSyncRunResult,
+  NotesSyncStatus,
+  NotesSyncUserConfig
+} from '../shared/notes-sync-types'
+import type {
   HiveAddCredentialArgs,
   HiveApiResult,
   HiveBuildSummary,
@@ -553,6 +569,13 @@ import type {
   HiveTriggerDeployArgs,
   HiveUpdateCredentialArgs
 } from '../shared/hive-types'
+import type {
+  DockerContainerActionRequest,
+  DockerContainerActionResult,
+  DockerHostId,
+  DockerInspectResult,
+  DockerListResult
+} from '../shared/docker-types'
 
 type GitLabRepoSelectorArgs = {
   repoPath: string
@@ -3434,6 +3457,25 @@ export type PreloadApi = {
     streamHistory: (args: HiveStreamHistoryArgs) => Promise<HiveApiResult<HiveStreamLogLine[]>>
     deployEnvironment: (args: HiveDeployEnvironmentArgs) => Promise<HiveApiResult<unknown>>
   }
+  notes: {
+    list: (query?: NoteSearchQuery) => Promise<NotesListResult>
+    get: (id: string) => Promise<Note | null>
+    createNote: (input?: NoteCreateInput) => Promise<NotesListResult>
+    updateNote: (id: string, input?: NoteUpdateInput) => Promise<NotesListResult>
+    deleteNote: (id: string) => Promise<NotesListResult>
+    createTag: (input?: NoteTagCreateInput) => Promise<NotesListResult>
+    updateTag: (id: string, input?: NoteTagUpdateInput) => Promise<NotesListResult>
+    deleteTag: (id: string) => Promise<NotesListResult>
+    syncStatus: () => Promise<NotesSyncStatus>
+    syncNow: () => Promise<NotesSyncRunResult>
+    testConnection: () => Promise<{ ok: boolean; error?: string }>
+    syncConfig: () => Promise<NotesSyncUserConfig>
+    setSyncConfig: (updates: Partial<NotesSyncUserConfig>) => Promise<NotesSyncUserConfig>
+    onSyncStatusChanged: (callback: (status: NotesSyncStatus) => void) => () => void
+    exportNotes: () => Promise<NotesExportResult>
+    backupNotes: () => Promise<NotesExportResult>
+    importNotes: () => Promise<NotesImportResult>
+  }
   wsl: {
     isAvailable: () => Promise<boolean>
     listDistros: () => Promise<string[]>
@@ -3559,6 +3601,18 @@ export type PreloadApi = {
     onReady: (callback: (data: SpeechLifecycleEvent) => void) => () => void
     onStopped: (callback: (data: SpeechLifecycleEvent) => void) => () => void
     onError: (callback: (data: SpeechErrorEvent) => void) => () => void
+  }
+  docker: {
+    listContainers: (args?: {
+      hostIds?: DockerHostId[]
+      includeStopped?: boolean
+      enrich?: boolean
+    }) => Promise<DockerListResult>
+    inspect: (args: DockerContainerActionRequest) => Promise<DockerInspectResult>
+    startContainer: (args: DockerContainerActionRequest) => Promise<DockerContainerActionResult>
+    stopContainer: (args: DockerContainerActionRequest) => Promise<DockerContainerActionResult>
+    restartContainer: (args: DockerContainerActionRequest) => Promise<DockerContainerActionResult>
+    removeContainer: (args: DockerContainerActionRequest) => Promise<DockerContainerActionResult>
   }
 }
 

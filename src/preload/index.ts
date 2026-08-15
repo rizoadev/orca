@@ -32,6 +32,29 @@ import type {
   StrandsIssueChatEvent
 } from '../shared/strands-issue-chat-types'
 import type {
+  DockerContainerActionRequest,
+  DockerContainerActionResult,
+  DockerHostId,
+  DockerInspectResult,
+  DockerListResult
+} from '../shared/docker-types'
+import type {
+  Note,
+  NoteCreateInput,
+  NoteSearchQuery,
+  NoteTagCreateInput,
+  NoteTagUpdateInput,
+  NoteUpdateInput,
+  NotesExportResult,
+  NotesImportResult,
+  NotesListResult
+} from '../shared/notes-types'
+import type {
+  NotesSyncRunResult,
+  NotesSyncStatus,
+  NotesSyncUserConfig
+} from '../shared/notes-sync-types'
+import type {
   HiveAddCredentialArgs,
   HiveDeployEnvironmentArgs,
   HiveDispatchArgs,
@@ -4519,6 +4542,40 @@ const api = {
       ipcRenderer.invoke('hive:deployEnvironment', args)
   },
 
+  notes: {
+    list: (query?: NoteSearchQuery): Promise<NotesListResult> =>
+      ipcRenderer.invoke('notes:list', query),
+    get: (id: string): Promise<Note | null> => ipcRenderer.invoke('notes:get', id),
+    createNote: (input?: NoteCreateInput): Promise<NotesListResult> =>
+      ipcRenderer.invoke('notes:createNote', input),
+    updateNote: (id: string, input?: NoteUpdateInput): Promise<NotesListResult> =>
+      ipcRenderer.invoke('notes:updateNote', id, input),
+    deleteNote: (id: string): Promise<NotesListResult> =>
+      ipcRenderer.invoke('notes:deleteNote', id),
+    createTag: (input?: NoteTagCreateInput): Promise<NotesListResult> =>
+      ipcRenderer.invoke('notes:createTag', input),
+    updateTag: (id: string, input?: NoteTagUpdateInput): Promise<NotesListResult> =>
+      ipcRenderer.invoke('notes:updateTag', id, input),
+    deleteTag: (id: string): Promise<NotesListResult> =>
+      ipcRenderer.invoke('notes:deleteTag', id),
+    syncStatus: (): Promise<NotesSyncStatus> => ipcRenderer.invoke('notes:syncStatus'),
+    syncNow: (): Promise<NotesSyncRunResult> => ipcRenderer.invoke('notes:syncNow'),
+    testConnection: (): Promise<{ ok: boolean; error?: string }> =>
+      ipcRenderer.invoke('notes:testConnection'),
+    syncConfig: (): Promise<NotesSyncUserConfig> => ipcRenderer.invoke('notes:syncConfig'),
+    setSyncConfig: (updates: Partial<NotesSyncUserConfig>): Promise<NotesSyncUserConfig> =>
+      ipcRenderer.invoke('notes:setSyncConfig', updates),
+    exportNotes: (): Promise<NotesExportResult> => ipcRenderer.invoke('notes:exportNotes'),
+    backupNotes: (): Promise<NotesExportResult> => ipcRenderer.invoke('notes:backupNotes'),
+    importNotes: (): Promise<NotesImportResult> => ipcRenderer.invoke('notes:importNotes'),
+    onSyncStatusChanged: (callback: (status: NotesSyncStatus) => void): (() => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, status: NotesSyncStatus) =>
+        callback(status)
+      ipcRenderer.on('notes:syncStatusChanged', listener)
+      return () => ipcRenderer.removeListener('notes:syncStatusChanged', listener)
+    }
+  },
+
   e2e: {
     getConfig: () => preloadE2EConfig
   },
@@ -4741,7 +4798,31 @@ const api = {
       ipcRenderer.on('speech:error', listener)
       return () => ipcRenderer.removeListener('speech:error', listener)
     }
-  }
+  },
+
+  docker: {
+    listContainers: (args?: {
+      hostIds?: DockerHostId[]
+      includeStopped?: boolean
+      enrich?: boolean
+    }): Promise<DockerListResult> => ipcRenderer.invoke('docker:listContainers', args),
+
+    inspect: (args: DockerContainerActionRequest): Promise<DockerInspectResult> =>
+      ipcRenderer.invoke('docker:inspect', args),
+
+    startContainer: (args: DockerContainerActionRequest): Promise<DockerContainerActionResult> =>
+      ipcRenderer.invoke('docker:startContainer', args),
+
+    stopContainer: (args: DockerContainerActionRequest): Promise<DockerContainerActionResult> =>
+      ipcRenderer.invoke('docker:stopContainer', args),
+
+    restartContainer: (
+      args: DockerContainerActionRequest
+    ): Promise<DockerContainerActionResult> => ipcRenderer.invoke('docker:restartContainer', args),
+
+    removeContainer: (args: DockerContainerActionRequest): Promise<DockerContainerActionResult> =>
+      ipcRenderer.invoke('docker:removeContainer', args)
+  } satisfies PreloadApi['docker']
 }
 
 // Expose Electron APIs via contextBridge when context-isolated, otherwise attach to the DOM global.

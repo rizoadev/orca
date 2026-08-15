@@ -53,6 +53,7 @@ const {
   registerGitLabHandlersMock,
   registerHostedReviewHandlersMock,
   registerExportHandlersMock,
+  registerNotesHandlersMock,
   registerOnboardingHandlersMock,
   registerDashboardPopoutHandlersMock,
   registerTerminalPreviewHandlersMock,
@@ -117,6 +118,7 @@ const {
   registerGitLabHandlersMock: vi.fn(),
   registerHostedReviewHandlersMock: vi.fn(),
   registerExportHandlersMock: vi.fn(),
+  registerNotesHandlersMock: vi.fn(),
   registerOnboardingHandlersMock: vi.fn(),
   registerDashboardPopoutHandlersMock: vi.fn(),
   registerTerminalPreviewHandlersMock: vi.fn(),
@@ -190,6 +192,10 @@ vi.mock('./feedback', () => ({
 
 vi.mock('./export', () => ({
   registerExportHandlers: registerExportHandlersMock
+}))
+
+vi.mock('./notes', () => ({
+  registerNotesHandlers: registerNotesHandlersMock
 }))
 
 vi.mock('./stats', () => ({

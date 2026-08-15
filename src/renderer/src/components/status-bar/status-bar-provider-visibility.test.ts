@@ -73,6 +73,7 @@ function usageSettings(overrides: Partial<UsageProviderSettings> = {}): UsagePro
     antigravityUsageConfigured: false,
     minimaxCookieConfigured: false,
     grokAuthConfigured: false,
+    deepseekApiKey: '',
     ...overrides
   }
 }
@@ -127,6 +128,7 @@ describe('hasUsageProviderSettings', () => {
     )
     expect(hasUsageProviderSettings(usageSettings({ minimaxCookieConfigured: true }))).toBe(true)
     expect(hasUsageProviderSettings(usageSettings({ grokAuthConfigured: true }))).toBe(true)
+    expect(hasUsageProviderSettings(usageSettings({ deepseekApiKey: 'sk-test' }))).toBe(true)
   })
 
   it('does not treat empty or unloaded settings as configured', () => {
@@ -201,6 +203,17 @@ describe('hasUsageProviderSettingsForProvider', () => {
     ).toBe(true)
     expect(hasUsageProviderSettingsForProvider('grok', usageSettings())).toBe(false)
     expect(hasUsageProviderSettingsForProvider('grok', null)).toBe(false)
+  })
+
+  it('treats deepseekApiKey as the durable signal for DeepSeek', () => {
+    expect(
+      hasUsageProviderSettingsForProvider('deepseek', usageSettings({ deepseekApiKey: 'sk-test' }))
+    ).toBe(true)
+    expect(hasUsageProviderSettingsForProvider('deepseek', usageSettings({ deepseekApiKey: '  ' }))).toBe(
+      false
+    )
+    expect(hasUsageProviderSettingsForProvider('deepseek', usageSettings())).toBe(false)
+    expect(hasUsageProviderSettingsForProvider('deepseek', null)).toBe(false)
   })
 })
 
@@ -316,6 +329,31 @@ describe('getVisibleUsageProvider', () => {
     ).toBe(null)
   })
 
+  it('keeps DeepSeek visible while the snapshot is pending when an API key is configured', () => {
+    const visible = getVisibleUsageProvider(
+      'deepseek',
+      null,
+      usageSettings({ deepseekApiKey: 'sk-test' })
+    )
+    expect(visible).toMatchObject({
+      provider: 'deepseek',
+      status: 'fetching',
+      session: null,
+      weekly: null
+    })
+  })
+
+  it('hides DeepSeek when no API key is configured and the snapshot is empty', () => {
+    expect(getVisibleUsageProvider('deepseek', null, usageSettings())).toBe(null)
+    expect(
+      getVisibleUsageProvider(
+        'deepseek',
+        provider('unavailable', { provider: 'deepseek' }),
+        usageSettings()
+      )
+    ).toBe(null)
+  })
+
   it('keeps Antigravity visible while the snapshot is pending when checked and Gemini OAuth is on', () => {
     const visible = getVisibleUsageProvider(
       'antigravity',
@@ -365,7 +403,8 @@ describe('isUsageEmptyState', () => {
           kimi: null,
           antigravity: null,
           minimax: null,
-          grok: null
+          grok: null,
+          deepseek: null
         },
         usageSettings()
       )
@@ -383,7 +422,8 @@ describe('isUsageEmptyState', () => {
           kimi: provider('unavailable', { provider: 'kimi' }),
           antigravity: provider('unavailable', { provider: 'antigravity' }),
           minimax: provider('unavailable', { provider: 'minimax' }),
-          grok: provider('unavailable', { provider: 'grok' })
+          grok: provider('unavailable', { provider: 'grok' }),
+          deepseek: provider('unavailable', { provider: 'deepseek' })
         },
         usageSettings()
       )
@@ -401,7 +441,8 @@ describe('isUsageEmptyState', () => {
           kimi: provider('unavailable', { provider: 'kimi' }),
           antigravity: provider('unavailable', { provider: 'antigravity' }),
           minimax: provider('unavailable', { provider: 'minimax' }),
-          grok: provider('unavailable', { provider: 'grok' })
+          grok: provider('unavailable', { provider: 'grok' }),
+          deepseek: provider('unavailable', { provider: 'deepseek' })
         },
         usageSettings({
           codexManagedAccounts: [
@@ -430,7 +471,8 @@ describe('isUsageEmptyState', () => {
           kimi: null,
           antigravity: null,
           minimax: null,
-          grok: null
+          grok: null,
+          deepseek: null
         },
         null
       )
@@ -448,7 +490,8 @@ describe('isUsageEmptyState', () => {
           kimi: provider('unavailable', { provider: 'kimi' }),
           antigravity: null,
           minimax: provider('unavailable', { provider: 'minimax' }),
-          grok: provider('unavailable', { provider: 'grok' })
+          grok: provider('unavailable', { provider: 'grok' }),
+          deepseek: provider('unavailable', { provider: 'deepseek' })
         },
         usageSettings()
       )
@@ -466,7 +509,8 @@ describe('isUsageEmptyState', () => {
           kimi: provider('unavailable', { provider: 'kimi' }),
           antigravity: null,
           grok: provider('unavailable', { provider: 'grok' }),
-          minimax: provider('unavailable', { provider: 'minimax' })
+          minimax: provider('unavailable', { provider: 'minimax' }),
+          deepseek: provider('unavailable', { provider: 'deepseek' })
         },
         usageSettings({ antigravityUsageConfigured: true, geminiCliOAuthEnabled: true })
       )
@@ -486,10 +530,49 @@ describe('isUsageEmptyState', () => {
           kimi: provider('unavailable', { provider: 'kimi' }),
           antigravity: null,
           grok: provider('unavailable', { provider: 'grok' }),
-          minimax: provider('unavailable', { provider: 'minimax' })
+          minimax: provider('unavailable', { provider: 'minimax' }),
+          deepseek: provider('unavailable', { provider: 'deepseek' })
         },
         usageSettings({ antigravityUsageConfigured: true })
       )
     ).toBe(true)
+  })
+
+  it('waits for DeepSeek snapshot when the API key is set but data has not loaded', () => {
+    expect(
+      isUsageEmptyState(
+        {
+          claude: provider('unavailable', { provider: 'claude' }),
+          codex: provider('unavailable', { provider: 'codex' }),
+          gemini: provider('unavailable'),
+          opencodeGo: provider('unavailable', { provider: 'opencode-go' }),
+          kimi: provider('unavailable', { provider: 'kimi' }),
+          antigravity: provider('unavailable', { provider: 'antigravity' }),
+          minimax: provider('unavailable', { provider: 'minimax' }),
+          grok: provider('unavailable', { provider: 'grok' }),
+          deepseek: provider('fetching', { provider: 'deepseek' })
+        },
+        usageSettings({ deepseekApiKey: 'sk-test-key' })
+      )
+    ).toBe(false)
+  })
+
+  it('shows the setup CTA when DeepSeek API key is set but snapshot fails', () => {
+    expect(
+      isUsageEmptyState(
+        {
+          claude: provider('unavailable', { provider: 'claude' }),
+          codex: provider('unavailable', { provider: 'codex' }),
+          gemini: provider('unavailable'),
+          opencodeGo: provider('unavailable', { provider: 'opencode-go' }),
+          kimi: provider('unavailable', { provider: 'kimi' }),
+          antigravity: provider('unavailable', { provider: 'antigravity' }),
+          minimax: provider('unavailable', { provider: 'minimax' }),
+          grok: provider('unavailable', { provider: 'grok' }),
+          deepseek: provider('error', { provider: 'deepseek', error: 'bad key' })
+        },
+        usageSettings({ deepseekApiKey: 'sk-test-key' })
+      )
+    ).toBe(false)
   })
 })

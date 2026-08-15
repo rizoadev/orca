@@ -2827,6 +2827,9 @@ export class Store {
         if (parsed.settings?.opencodeSessionCookie) {
           parsed.settings.opencodeSessionCookie = decrypt(parsed.settings.opencodeSessionCookie)
         }
+        if (parsed.settings?.deepseekApiKey) {
+          parsed.settings.deepseekApiKey = decrypt(parsed.settings.deepseekApiKey)
+        }
         if (parsed.settings?.httpProxyUrl) {
           parsed.settings.httpProxyUrl = decrypt(parsed.settings.httpProxyUrl)
         }
@@ -3596,7 +3599,8 @@ export class Store {
       settings: {
         ...this.state.settings,
         opencodeSessionCookie: replaceSecretWithSentinel(this.state.settings.opencodeSessionCookie),
-        httpProxyUrl: replaceSecretWithSentinel(this.state.settings.httpProxyUrl ?? '')
+        httpProxyUrl: replaceSecretWithSentinel(this.state.settings.httpProxyUrl ?? ''),
+        deepseekApiKey: replaceSecretWithSentinel(this.state.settings.deepseekApiKey ?? '')
       },
       ui: {
         ...this.state.ui,

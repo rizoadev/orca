@@ -327,6 +327,31 @@ export function ClaudeIcon({ size = 14 }: { size?: number }): React.JSX.Element 
   )
 }
 
+export function DeepSeekIcon({ size = 14 }: { size?: number }): React.JSX.Element {
+  return (
+    <svg
+      fill="none"
+      height={size}
+      width={size}
+      viewBox="0 0 24 24"
+      xmlns="http://www.w3.org/2000/svg"
+    >
+      <path
+        d="M2 12c0-1.657 1.343-3 3-3h1c.552 0 1 .448 1 1v8c0 .552-.448 1-1 1H5c-1.657 0-3-1.343-3-3v-4z"
+        fill="currentColor"
+      />
+      <path
+        d="M8 7c0-1.657 1.343-3 3-3h1c.552 0 1 .448 1 1v12c0 .552-.448 1-1 1h-1c-1.657 0-3-1.343-3-3V7z"
+        fill="currentColor"
+      />
+      <path
+        d="M14 5v14c0 .552.448 1 1 1h1c1.657 0 3-1.343 3-3V7c0-1.657-1.343-3-3-3h-1c-.552 0-1 .448-1 1z"
+        fill="currentColor"
+      />
+    </svg>
+  )
+}
+
 export function DroidIcon({ size = 14 }: { size?: number }): React.JSX.Element {
   // Why: Factory.ai's favicon is a white glyph on transparent bg — unreadable on
   // light surfaces (README kbd pills, light-mode UI). Bake in a black rounded

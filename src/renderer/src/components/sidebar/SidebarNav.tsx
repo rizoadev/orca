@@ -25,6 +25,8 @@ import { SetupGuideSidebarEntry } from './SetupGuideSidebarEntry'
 import { SidebarIssueBoardNavButton } from './SidebarIssueBoardNavButton'
 import { SidebarOrchestrationBoardNavButton } from './SidebarOrchestrationBoardNavButton'
 import { SidebarTaskNavButton } from './SidebarTaskNavButton'
+import { SidebarNotesNavButton } from './SidebarNotesNavButton'
+import { SidebarDockerNavButton } from './SidebarDockerNavButton'
 import { HideSidebarMenu } from './sidebar-nav-controls'
 import { translate } from '@/i18n/i18n'
 
@@ -168,6 +170,8 @@ const SidebarNav = React.memo(function SidebarNav() {
       <SidebarTaskNavButton />
       <SidebarOrchestrationBoardNavButton />
       <SidebarIssueBoardNavButton />
+      <SidebarNotesNavButton />
+      <SidebarDockerNavButton />
       {showAutomationsButton ? (
         <ContextMenu>
           <ContextMenuTrigger asChild>

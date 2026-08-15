@@ -316,6 +316,7 @@ export function getDefaultSettings(homedir: string): GlobalSettings {
     minimaxGroupId: '',
     minimaxUsageModels: 'general',
     geminiCliOAuthEnabled: false,
+    deepseekApiKey: '',
     agentCmdOverrides: {},
     agentDefaultArgs: { ...DEFAULT_TUI_AGENT_ARGS },
     agentDefaultEnv: { ...DEFAULT_TUI_AGENT_ENV },

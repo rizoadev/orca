@@ -16,4 +16,10 @@ describe('createRateLimitSlice', () => {
 
     expect(store.getState().rateLimits.antigravity).toBeNull()
   })
+
+  it('initializes DeepSeek usage as null', () => {
+    const store = createRateLimitStore()
+
+    expect(store.getState().rateLimits.deepseek).toBeNull()
+  })
 })

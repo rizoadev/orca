@@ -20,6 +20,8 @@ import { registerAsanaHandlers } from './asana'
 import { registerFeedbackHandlers } from './feedback'
 import { registerCrashReportingHandlers } from './crash-reporting'
 import { registerExportHandlers } from './export'
+import { registerNotesHandlers } from './notes'
+import { registerDockerHandlers } from './docker'
 import { registerStatsHandlers } from './stats'
 import { registerMemoryHandlers } from './memory'
 import { registerRateLimitHandlers } from './rate-limits'
@@ -162,6 +164,8 @@ export function registerCoreHandlers(
     registerCrashReportingHandlers(crashReports)
   }
   registerExportHandlers()
+  registerNotesHandlers()
+  registerDockerHandlers(store)
   registerStatsHandlers(stats)
   registerMemoryHandlers(store)
   registerNotificationHandlers(store, runtime)

@@ -3146,7 +3146,9 @@
             "antigravityUsage": "Antigravity Usage",
             "antigravityUsageDetails": "Open Antigravity usage details",
             "grokUsageAria": "Open Grok usage details",
-            "grokUsageMenu": "Grok Usage"
+            "grokUsageMenu": "Grok Usage",
+            "deepseekUsageAria": "Open DeepSeek usage details",
+            "deepseekUsageMenu": "DeepSeek Usage"
           },
           "StatusBarUsageEmptyCta": {
             "828c764a79": "Connect an account",

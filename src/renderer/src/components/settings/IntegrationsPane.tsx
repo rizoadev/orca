@@ -10,12 +10,13 @@ import { JiraIntegrationCard, LinearIntegrationCard } from './task-tracker-integ
 import { AsanaIntegrationCard } from './asana-integration-card'
 import { useIntegrationProviderStatusRefresh } from './use-integration-provider-status-refresh'
 import { TelegramBridgeSettingsCard } from './TelegramBridgeSettingsCard'
+import { TursoIntegrationCard } from './TursoIntegrationCard'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { translate } from '@/i18n/i18n'
 
 export { getIntegrationsPaneSearchEntries } from './integrations-search'
 
-type IntegrationsTab = 'remote-chat' | 'review' | 'tasks'
+type IntegrationsTab = 'remote-chat' | 'review' | 'tasks' | 'notes'
 
 export function IntegrationsPane(): React.JSX.Element {
   useIntegrationProviderStatusRefresh()
@@ -36,6 +37,9 @@ export function IntegrationsPane(): React.JSX.Element {
         </TabsTrigger>
         <TabsTrigger value="tasks" className="px-3 text-xs">
           {translate('auto.components.settings.IntegrationsPane.70e885705b', 'Task providers')}
+        </TabsTrigger>
+        <TabsTrigger value="notes" className="px-3 text-xs">
+          {translate('settings.integrations.notes', 'Notes')}
         </TabsTrigger>
       </TabsList>
 
@@ -77,6 +81,16 @@ export function IntegrationsPane(): React.JSX.Element {
           <JiraIntegrationCard />
           <AsanaIntegrationCard />
         </div>
+      </TabsContent>
+
+      <TabsContent value="notes" className="space-y-3">
+        <p className="text-xs text-muted-foreground">
+          {translate(
+            'settings.integrations.notesDescription',
+            'Configure a remote database for backing up and syncing your notes.'
+          )}
+        </p>
+        <TursoIntegrationCard />
       </TabsContent>
     </Tabs>
   )

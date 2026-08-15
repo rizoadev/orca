@@ -12,7 +12,9 @@ const RIGHT_SIDEBAR_SUPPRESSED_VIEWS = new Set<ActiveView>([
   'skills',
   'mobile',
   'issues-board',
-  'agent-dashboard'
+  'agent-dashboard',
+  'notes',
+  'docker'
   // Why: orchestration board is a full main view, but the right-sidebar Orchestration
   // tab is the project-scoped companion list — keep it available while the board is open.
 ])
