@@ -25,7 +25,8 @@ import type {
   PiIssueChatSetModelArgs,
   PiIssueChatEvent,
   PiModelOption,
-  PiSessionInfo
+  PiSessionInfo,
+  PiIssueChatSessionSnapshot
 } from '../shared/pi-issue-chat-types'
 import type {
   StrandsIssueChatStartArgs,
