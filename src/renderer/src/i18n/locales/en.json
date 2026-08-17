@@ -10698,6 +10698,24 @@
             "increase": "Increase {{label}} by one minute",
             "minutesUnit": "min"
           },
+          "PomodoroTaskList": {
+            "title": "Tasks",
+            "addPlaceholder": "Add a task…",
+            "add": "Add",
+            "estimatePlaceholder": "Estimated minutes",
+            "addEstimate": "+ Add estimate",
+            "confirmEstimate": "Confirm task",
+            "doThis": "Do this task",
+            "stopTask": "Stop task",
+            "delete": "Delete task",
+            "markDone": "Mark done",
+            "markOpen": "Mark open",
+            "current": "● Current task",
+            "sessionsProgress": "{{done}}/{{total}} sessions",
+            "doneSessions": "{{count}} sessions",
+            "empty": "No tasks yet. Add one above and start a focus session on it.",
+            "clearDone": "Clear completed ({{count}})"
+          },
           "pomodoroTimerStore": {
             "focusComplete": "Focus session complete — time for a break",
             "breakComplete": "Break over — back to focus"

@@ -1,6 +1,10 @@
 import { spawnSync } from 'node:child_process'
 import { join } from 'node:path'
-import type { NormalizedOutputOptions, OutputBundle, OutputChunk, Plugin } from 'rollup'
+import type { Plugin, Rollup } from 'vite'
+
+type NormalizedOutputOptions = Rollup.NormalizedOutputOptions
+type OutputBundle = Rollup.OutputBundle
+type OutputChunk = Rollup.OutputChunk
 
 // Why: v1.4.129-rc.1 shipped a dead terminal daemon because a shared main
 // chunk gained `require("electron")` (an import edge added in #7642), and the
