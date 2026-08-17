@@ -4,6 +4,7 @@ import { useVirtualizer } from '@tanstack/react-virtual'
 import { useAppStore } from '@/store'
 import { useActiveWorktree, useRepoById } from '@/store/selectors'
 import { basename, dirname } from '@/lib/path'
+import { branchName } from '@/lib/git-utils'
 import { useRuntimeFileListForWorktree } from '@/components/quick-open-file-list'
 import { folderRelativePathToIncludeGlob } from './file-search-include-pattern'
 import { ScrollArea } from '@/components/ui/scroll-area'
@@ -50,11 +51,16 @@ import {
 import type { TreeNode } from './file-explorer-types'
 import { useFileExplorerSelection } from './useFileExplorerSelection'
 import { useFileExplorerVisibleRowProjection } from './useFileExplorerVisibleRowProjection'
+import { toast } from 'sonner'
 import { translate } from '@/i18n/i18n'
 import { CLOSE_ALL_CONTEXT_MENUS_EVENT } from '@/components/tab-bar/SortableTab'
 import type { RightSidebarExplorerView } from '../../../../shared/types'
 import { getRuntimeEnvironmentIdForWorktree } from '@/lib/worktree-runtime-owner'
 import { createNewTerminalTab } from '@/components/terminal/terminal-tab-create'
+import { EnvSnippetSyncSection } from './env-snippet-sync-section'
+import { detectRepoIssueProvider } from './repo-issue-provider'
+import { syncFileToSnippet } from './env-snippet-sync-actions'
+import { getSyncedSnippetPaths, subscribeSyncedSnippets } from './env-snippet-sync-store'
 
 function FileExplorerFiles(): React.JSX.Element {
   const explorerView = useAppStore((s) => s.rightSidebarExplorerView)
@@ -123,6 +129,27 @@ function FileExplorerFiles(): React.JSX.Element {
     [activeRepo?.connectionId, activeRuntimeEnvironmentId, activeWorktreeId, worktreePath]
   )
   const isFilesViewActive = explorerView === 'files'
+  const explorerBranch = branchName(activeWorktree?.branch ?? '')
+  const [syncedSnippetPaths, setSyncedSnippetPaths] = useState<ReadonlySet<string>>(() =>
+    worktreePath ? getSyncedSnippetPaths(worktreePath, explorerBranch) : new Set<string>()
+  )
+  useEffect(() => {
+    if (!worktreePath) {
+      setSyncedSnippetPaths(new Set<string>())
+      return
+    }
+    const update = (): void => {
+      const paths = getSyncedSnippetPaths(worktreePath, explorerBranch)
+      setSyncedSnippetPaths(paths)
+    }
+    update()
+    const unsubscribe = subscribeSyncedSnippets(() => {
+      if (worktreePath) {
+        setSyncedSnippetPaths(getSyncedSnippetPaths(worktreePath, explorerBranch))
+      }
+    })
+    return unsubscribe
+  }, [worktreePath, explorerBranch])
   const visibleFilesWorktreePath = getVisibleFileExplorerWorktreePath({
     explorerView,
     rightSidebarOpen,
@@ -599,6 +626,23 @@ function FileExplorerFiles(): React.JSX.Element {
     [activeWorktreeId]
   )
 
+  const handleSyncEnvToSnippet = useCallback(
+    (node: TreeNode) => {
+      if (!activeRepo || detectRepoIssueProvider(activeRepo) !== 'gitlab' || !worktreePath) {
+        return
+      }
+      void syncFileToSnippet(
+        { repo: activeRepo, worktreePath, connectionId: activeRepo.connectionId ?? null },
+        node.path,
+        node.relativePath,
+        branchName(activeWorktree?.branch ?? '')
+      ).catch((err) => {
+        toast.error(err instanceof Error ? err.message : String(err))
+      })
+    },
+    [activeRepo, activeWorktree, worktreePath]
+  )
+
   if (!worktreePath) {
     return (
       <div className="flex h-full items-center justify-center text-[11px] text-muted-foreground px-4 text-center">
@@ -767,6 +811,8 @@ function FileExplorerFiles(): React.JSX.Element {
                 onAddFolderAsProject={handleAddFolderAsProject}
                 canAddFolderAsProject={(node) => canShowAddAsProjectAction(node, activeRepo)}
                 onOpenInTerminal={handleOpenInTerminal}
+                onSyncEnvToSnippet={handleSyncEnvToSnippet}
+                syncedSnippetPaths={syncedSnippetPaths}
                 onRequestDelete={handleContextMenuDelete}
                 onCollapseFolderSubtree={handleCollapseFolderSubtree}
                 onFindInFolder={handleFindInFolder}
@@ -802,6 +848,16 @@ function FileExplorerFiles(): React.JSX.Element {
             )}
           </div>
         </div>
+
+        {worktreePath && activeRepo ? (
+          <EnvSnippetSyncSection
+            worktreePath={worktreePath}
+            activeWorktreeId={activeWorktreeId}
+            connectionId={activeRepo.connectionId ?? null}
+            repo={activeRepo}
+            isVisible={isFilesViewActive}
+          />
+        ) : null}
       </div>
 
       <FileExplorerBackgroundMenu

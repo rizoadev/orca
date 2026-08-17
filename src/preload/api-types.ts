@@ -27,6 +27,7 @@ import type {
 } from '../shared/local-log-tail-types'
 import type { ReadClipboardTextOptions } from '../shared/clipboard-text'
 import type { AppIdentity } from '../shared/app-identity'
+import type { GitRemoteIdentity } from '../shared/git-remote-identity'
 import type {
   WriteTerminalRenderDesyncEvidenceArgs,
   WriteTerminalRenderDesyncEvidenceResult
@@ -526,6 +527,18 @@ import type {
   PiModelOption,
   PiSessionInfo
 } from '../shared/pi-issue-chat-types'
+import type {
+  AsanaConnectionStatus,
+  AsanaConnectArgs,
+  AsanaProject,
+  AsanaSection,
+  AsanaTask,
+  AsanaTaskFilter,
+  AsanaCreateTaskArgs,
+  AsanaTaskUpdate,
+  AsanaMutationResult,
+  AsanaCreateTaskResult
+} from '../shared/asana-types'
 import type {
   StrandsIssueChatStartArgs,
   StrandsIssueChatSendArgs,
@@ -1141,6 +1154,10 @@ export type PreloadApi = {
       kind: 'git' | 'folder'
     }) => Promise<{ repo: Repo } | { error: string }>
     isGitAvailable: () => Promise<boolean>
+    detectRemoteIdentity: (args: {
+      path: string
+      connectionId?: string | null
+    }) => Promise<GitRemoteIdentity | null>
     getDefaultCreateProjectParent: () => Promise<string>
     onCloneProgress: (callback: (data: { phase: string; percent: number }) => void) => () => void
     getGitUsername: (args: { repoId: string }) => Promise<string>
@@ -2160,32 +2177,21 @@ export type PreloadApi = {
     teamMembers: (args: { teamId: string; workspaceId?: string }) => Promise<LinearMember[]>
   }
   asana: {
-    getStatus: () => Promise<import('../shared/asana-types').AsanaConnectionStatus>
-    connect: (
-      args: import('../shared/asana-types').AsanaConnectArgs
-    ) => Promise<import('../shared/asana-types').AsanaConnectionStatus>
-    disconnect: () => Promise<import('../shared/asana-types').AsanaConnectionStatus>
-    selectWorkspace: (
-      workspaceGid: string | null
-    ) => Promise<import('../shared/asana-types').AsanaConnectionStatus>
-    listProjects: (
-      workspaceGid?: string
-    ) => Promise<import('../shared/asana-types').AsanaProject[]>
-    listSections: (projectGid: string) => Promise<import('../shared/asana-types').AsanaSection[]>
+    getStatus: () => Promise<AsanaConnectionStatus>
+    connect: (args: AsanaConnectArgs) => Promise<AsanaConnectionStatus>
+    disconnect: () => Promise<AsanaConnectionStatus>
+    selectWorkspace: (workspaceGid: string | null) => Promise<AsanaConnectionStatus>
+    listProjects: (workspaceGid?: string) => Promise<AsanaProject[]>
+    listSections: (projectGid: string) => Promise<AsanaSection[]>
     listTasks: (args?: {
       projectGid?: string
       workspaceGid?: string
-      filter?: import('../shared/asana-types').AsanaTaskFilter
+      filter?: AsanaTaskFilter
       limit?: number
-    }) => Promise<import('../shared/asana-types').AsanaTask[]>
-    getTask: (taskGid: string) => Promise<import('../shared/asana-types').AsanaTask>
-    createTask: (
-      args: import('../shared/asana-types').AsanaCreateTaskArgs
-    ) => Promise<import('../shared/asana-types').AsanaCreateTaskResult>
-    updateTask: (args: {
-      taskGid: string
-      update: import('../shared/asana-types').AsanaTaskUpdate
-    }) => Promise<import('../shared/asana-types').AsanaMutationResult>
+    }) => Promise<AsanaTask[]>
+    getTask: (taskGid: string) => Promise<AsanaTask>
+    createTask: (args: AsanaCreateTaskArgs) => Promise<AsanaCreateTaskResult>
+    updateTask: (args: { taskGid: string; update: AsanaTaskUpdate }) => Promise<AsanaMutationResult>
   }
   jira: {
     connect: (args: {
@@ -2625,7 +2631,12 @@ export type PreloadApi = {
     detach: (sessionId: string) => Promise<void>
     listSessions: (args: { sessionId: string; cwd: string }) => Promise<PiSessionInfo[]>
     newSession: (args: PiIssueChatStartArgs) => Promise<PiIssueChatSessionSnapshot>
-    switchSession: (args: { sessionId: string; cwd: string; issueContext: string; sessionPath: string }) => Promise<PiIssueChatSessionSnapshot>
+    switchSession: (args: {
+      sessionId: string
+      cwd: string
+      issueContext: string
+      sessionPath: string
+    }) => Promise<PiIssueChatSessionSnapshot>
     deleteSession: (args: { sessionId: string; sessionPath: string }) => Promise<void>
     onEvent: (callback: (event: PiIssueChatEvent) => void) => () => void
   }
