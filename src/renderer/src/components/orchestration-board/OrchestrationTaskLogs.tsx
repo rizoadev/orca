@@ -2,15 +2,11 @@ import { useMemo } from 'react'
 import { Laptop } from 'lucide-react'
 import { useAppStore } from '@/store'
 import { translate } from '@/i18n/i18n'
+import { parsePaneKey } from '../../../../shared/stable-pane-id'
 import { AgentTerminalPreview } from '@/components/dashboard-popout/AgentTerminalPreview'
 import type { OrchestrationBoardTask } from './orchestration-board-model'
 import { collectOrchestrationTaskRunningAgents } from './orchestration-task-running-agents'
 import type { OrchestrationBoardTaskThread } from './OrchestrationBoardTaskDialog'
-
-function paneKeyToTabId(paneKey: string): string {
-  const sep = paneKey.indexOf(':')
-  return sep === -1 ? paneKey : paneKey.slice(0, sep)
-}
 
 export function OrchestrationTaskLogs({
   task,
@@ -24,6 +20,7 @@ export function OrchestrationTaskLogs({
     (s) => s.runtimeAgentOrchestrationByPaneKey
   )
   const ptyIdsByTabId = useAppStore((s) => s.ptyIdsByTabId)
+  const terminalLayoutsByTabId = useAppStore((s) => s.terminalLayoutsByTabId)
 
   const runningAgents = useMemo(
     () =>
@@ -55,14 +52,21 @@ export function OrchestrationTaskLogs({
       return null
     }
     for (const agent of runningAgents) {
-      const tabId = paneKeyToTabId(agent.paneKey)
-      const pty = ptyIdsByTabId[tabId]?.[0]
-      if (pty) {
-        return pty
+      const parsed = parsePaneKey(agent.paneKey)
+      if (!parsed) {
+        continue
+      }
+      const { tabId, leafId } = parsed
+      // Why: layout entries survive restarts but their PTYs may not; only
+      // advertise a pty the preview can serialize — ptyIdsByTabId is liveness
+      // truth, matching the dashboard snapshot resolver.
+      const layoutPtyId = terminalLayoutsByTabId[tabId]?.ptyIdsByLeafId?.[leafId]
+      if (layoutPtyId && (ptyIdsByTabId[tabId] ?? []).includes(layoutPtyId)) {
+        return layoutPtyId
       }
     }
     return null
-  }, [ptyIdsByTabId, runningAgents])
+  }, [ptyIdsByTabId, runningAgents, terminalLayoutsByTabId])
 
   if (!ptyId) {
     return (
