@@ -9,7 +9,7 @@ import { detectRepoIssueProvider } from './repo-issue-provider'
 import { getRepoIssueSourceContext } from './issues-panel-rows'
 import { toast } from 'sonner'
 import { translate } from '@/i18n/i18n'
-import { basename, joinPath } from '@/lib/path'
+import { basename } from '@/lib/path'
 import type { Repo, GitLabSnippet } from '../../../../shared/types'
 import { cn } from '@/lib/utils'
 import {
@@ -18,12 +18,13 @@ import {
   relativePathFromSnippetTitle,
   snippetMatchesBranch
 } from './env-snippet-sync-encoding'
-import {
-  syncFileToSnippet,
-  restoreFileFromSnippet,
-  deleteSnippetFromGitLab
-} from './env-snippet-sync-actions'
+import { useEnvSnippetSyncActions } from './use-env-snippet-sync-actions'
 import { EnvSnippetSyncList, type SyncRow, type SyncStatus } from './env-snippet-sync-list'
+import {
+  EnvSnippetSyncExtras,
+  isRepoNotAttachedError,
+  type SnippetPreview
+} from './env-snippet-sync-extras'
 import { publishSyncedSnippets, clearSyncedSnippets } from './env-snippet-sync-store'
 
 export function EnvSnippetSyncSection({
@@ -46,6 +47,9 @@ export function EnvSnippetSyncSection({
   const [open, setOpen] = useState(false)
   const [snippets, setSnippets] = useState<GitLabSnippet[]>([])
   const [loadingSnippets, setLoadingSnippets] = useState(false)
+  const [loadError, setLoadError] = useState<string | null>(null)
+  const [attaching, setAttaching] = useState(false)
+  const [preview, setPreview] = useState<SnippetPreview | null>(null)
   const [syncStatusByPath, setSyncStatusByPath] = useState<Record<string, SyncStatus>>({})
   const mountedRef = useRef(true)
   const isGitLab = provider === 'gitlab' || liveIsGitLab
@@ -108,6 +112,12 @@ export function EnvSnippetSyncSection({
       if (!mountedRef.current) {
         return
       }
+      if (result.error) {
+        setLoadError(result.error.message ?? String(result.error))
+        setSnippets([])
+        return
+      }
+      setLoadError(null)
       const envSnippets = (result.items as GitLabSnippet[]).filter((s) => {
         const parsed = parseSnippetTitle(s.title)
         return parsed !== null && snippetMatchesBranch(parsed.branch, branch)
@@ -119,6 +129,7 @@ export function EnvSnippetSyncSection({
         return
       }
       const message = err instanceof Error ? err.message : String(err)
+      setLoadError(message)
       toast.error(message)
     } finally {
       if (mountedRef.current) {
@@ -134,16 +145,25 @@ export function EnvSnippetSyncSection({
     }
   }, [])
 
+  // Why: depend on primitive keys, not on the loadSnippets function identity.
+  // repo is a freshly-built object on many store writes (git-status refresh,
+  // repos:changed echoes), so listing loadSnippets here would refetch the
+  // GitLab API on every such re-render instead of only when the repo/worktree
+  // actually changes.
+  const loadSnippetsRef = useRef(loadSnippets)
+  loadSnippetsRef.current = loadSnippets
+
   useEffect(() => {
     if ((!open && !isVisible) || !isGitLab) {
       return
     }
-    void loadSnippets()
-  }, [open, isVisible, isGitLab, loadSnippets])
+    void loadSnippetsRef.current()
+  }, [open, isVisible, isGitLab, branch, repo.id, worktreePath])
 
   // Reset snippets when repo/worktree changes.
   useEffect(() => {
     setSnippets([])
+    setLoadError(null)
     clearSyncedSnippets(worktreePath, branch)
   }, [repo.id, worktreePath, branch])
 
@@ -164,76 +184,20 @@ export function EnvSnippetSyncSection({
     setSyncStatusByPath((prev) => ({ ...prev, [relativePath]: status }))
   }, [])
 
-  const handleUpload = useCallback(
-    async (relativePath: string) => {
-      if (!isGitLab) {
-        return
-      }
-      setPathStatus(relativePath, 'uploading')
-      try {
-        await syncFileToSnippet(
-          { repo, worktreePath, connectionId },
-          joinPath(worktreePath, relativePath),
-          relativePath,
-          branch
-        )
-        void loadSnippets()
-      } catch (err) {
-        const message = err instanceof Error ? err.message : String(err)
-        toast.error(message)
-      } finally {
-        setPathStatus(relativePath, 'idle')
-      }
-    },
-    [branch, connectionId, isGitLab, loadSnippets, repo, setPathStatus, worktreePath]
-  )
-
-  const handleDownload = useCallback(
-    async (snippet: GitLabSnippet) => {
-      if (!isGitLab) {
-        return
-      }
-      const relativePath = relativePathFromSnippetTitle(snippet.title)
-      if (relativePath === null) {
-        return
-      }
-      setPathStatus(relativePath, 'downloading')
-      try {
-        await restoreFileFromSnippet({ repo, worktreePath, connectionId }, relativePath, snippet)
-      } catch (err) {
-        const message = err instanceof Error ? err.message : String(err)
-        toast.error(message)
-      } finally {
-        setPathStatus(relativePath, 'idle')
-      }
-    },
-    [connectionId, isGitLab, repo, setPathStatus, worktreePath]
-  )
-
-  const handleDelete = useCallback(
-    async (snippet: GitLabSnippet) => {
-      if (!isGitLab) {
-        return
-      }
-      const relativePath = relativePathFromSnippetTitle(snippet.title)
-      if (relativePath === null) {
-        return
-      }
-      setPathStatus(relativePath, 'deleting')
-      try {
-        await deleteSnippetFromGitLab({ repo, worktreePath, connectionId }, snippet)
-        setSnippets((current) => current.filter((s) => s.id !== snippet.id))
-        // Reflect the removal in the Explorer marker immediately via reload.
-        void loadSnippets()
-      } catch (err) {
-        const message = err instanceof Error ? err.message : String(err)
-        toast.error(message)
-      } finally {
-        setPathStatus(relativePath, 'idle')
-      }
-    },
-    [connectionId, isGitLab, loadSnippets, repo, worktreePath, setPathStatus]
-  )
+  const { handleUpload, handleDownload, handleDelete, handlePreview, handleAttach } =
+    useEnvSnippetSyncActions({
+      repo,
+      worktreePath,
+      connectionId,
+      branch,
+      isGitLab,
+      setPathStatus,
+      loadSnippets,
+      setSnippets,
+      setPreview,
+      setAttaching,
+      setLoadError
+    })
 
   const syncedCount = envFiles.filter((f) => {
     return (snippetLookup.get(f)?.length ?? 0) > 0
@@ -346,13 +310,54 @@ export function EnvSnippetSyncSection({
                 syncStatusByPath={syncStatusByPath}
                 onUpload={(rel) => void handleUpload(rel)}
                 onRestore={(snippet) => void handleDownload(snippet)}
+                onPreview={(snippet) => void handlePreview(snippet)}
                 onDelete={(snippet) => void handleDelete(snippet)}
                 onOpen={(url) => void window.api.shell.openUrl(url)}
               />
             )}
+            {isGitLab && isRepoNotAttachedError(loadError) ? (
+              <div className="flex flex-col items-center gap-1.5 px-3 py-3">
+                <p className="text-center text-[11px] text-muted-foreground">
+                  {translate(
+                    'auto.components.right.sidebar.EnvSnippetSyncSection.attachHint',
+                    'Attach this project as a GitLab repo to sync snippets.'
+                  )}
+                </p>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-7"
+                  disabled={attaching}
+                  onClick={() => void handleAttach()}
+                >
+                  {attaching ? (
+                    <LoaderCircle className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <KeyRound className="h-3.5 w-3.5" />
+                  )}
+                  {translate(
+                    'auto.components.right.sidebar.EnvSnippetSyncSection.attach',
+                    'Attach GitLab repo'
+                  )}
+                </Button>
+              </div>
+            ) : null}
           </div>
         </CollapsibleContent>
       </Collapsible>
+      <EnvSnippetSyncExtras
+        showAttach={isGitLab && isRepoNotAttachedError(loadError)}
+        attaching={attaching}
+        onAttach={() => void handleAttach()}
+        preview={preview}
+        onClosePreview={() => setPreview(null)}
+        connectionId={connectionId}
+        repo={repo}
+        worktreePath={worktreePath}
+        branch={branch}
+        onSynced={() => void loadSnippets()}
+      />
     </div>
   )
 }

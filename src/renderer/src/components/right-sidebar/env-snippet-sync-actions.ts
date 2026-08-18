@@ -48,11 +48,21 @@ export async function syncFileToSnippet(
   relativePath: string,
   branch: string | null
 ): Promise<void> {
-  const { repo, connectionId } = context
   const readResult = await window.api.fs.readFile({
     filePath: absolutePath,
-    connectionId: connectionId ?? undefined
+    connectionId: context.connectionId ?? undefined
   })
+  await syncContentToSnippet(context, relativePath, branch, readResult.content)
+}
+
+/** Upsert a snippet (branch + path keyed) from an in-memory content string. */
+export async function syncContentToSnippet(
+  context: EnvSnippetSyncContext,
+  relativePath: string,
+  branch: string | null,
+  content: string
+): Promise<void> {
+  const { repo } = context
   const title = snippetTitle(branch ?? '', relativePath)
   // Why: upsert by the exact combined title (branch + path) so re-uploading the
   // same file never creates a duplicate snippet on GitLab. Looked up against the
@@ -66,7 +76,7 @@ export async function syncFileToSnippet(
         updates: {
           title,
           fileName: encodeSnippetFileName(relativePath),
-          content: readResult.content,
+          content,
           description: 'Synced file via Orca',
           visibility: SNIPPET_VISIBILITY
         }
@@ -75,13 +85,14 @@ export async function syncFileToSnippet(
         ...sourceArgs(repo),
         title,
         fileName: encodeSnippetFileName(relativePath),
-        content: readResult.content,
+        content,
         description: 'Synced file via Orca',
         visibility: SNIPPET_VISIBILITY
       })
   if (!result.ok) {
     throw new Error(result.error)
   }
+
   // Why: clean up any older duplicates that share the same title so past
   // duplicate-race uploads converge back to a single snippet per branch+path.
   for (const dup of staleDuplicates) {
@@ -166,4 +177,25 @@ export async function deleteSnippetFromGitLab(
       { value0: snippet.title }
     )
   )
+}
+
+export async function fetchSnippetContent(
+  context: EnvSnippetSyncContext,
+  snippet: GitLabSnippet
+): Promise<string> {
+  const detailResult = await window.api.gl.getProjectSnippet({
+    ...sourceArgs(context.repo),
+    snippetId: snippet.id
+  })
+  if (!detailResult.ok) {
+    throw new Error(detailResult.error)
+  }
+  return detailResult.snippet.content
+}
+
+export async function attachLocalRepo(path: string): Promise<void> {
+  const result = await window.api.repos.add({ path, kind: 'git' })
+  if ('error' in result) {
+    throw new Error(result.error)
+  }
 }

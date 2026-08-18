@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { render, screen, cleanup } from '@testing-library/react'
+import { render, screen, cleanup, act } from '@testing-library/react'
 import type { Repo } from '../../../../shared/types'
 import { EnvSnippetSyncSection } from './env-snippet-sync-section'
 
@@ -112,5 +112,42 @@ describe('EnvSnippetSyncSection', () => {
       />
     )
     expect(screen.getByText('.env Snippets')).toBeTruthy()
+  })
+
+  it('does not refetch GitLab snippets when only the repo object identity changes', async () => {
+    const listSnippets = vi.fn().mockResolvedValue({ items: [], error: null })
+    setWindowApi({ gl: { listProjectSnippets: listSnippets } })
+    const { rerender } = render(
+      <EnvSnippetSyncSection
+        worktreePath="/tmp/project"
+        activeWorktreeId="worktree-1"
+        connectionId={null}
+        repo={gitlabRepo}
+        isVisible
+      />
+    )
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 10))
+    })
+    const afterMount = listSnippets.mock.calls.length
+
+    // Why: repo is a fresh object on every store write (git-status refresh,
+    // repos:changed echoes). A dependency on that identity would refetch the
+    // GitLab API once per re-render instead of only on real repo/worktree change.
+    for (let i = 0; i < 5; i++) {
+      rerender(
+        <EnvSnippetSyncSection
+          worktreePath="/tmp/project"
+          activeWorktreeId="worktree-1"
+          connectionId={null}
+          repo={{ ...gitlabRepo }}
+          isVisible
+        />
+      )
+      await act(async () => {
+        await new Promise((r) => setTimeout(r, 10))
+      })
+    }
+    expect(listSnippets.mock.calls.length).toBe(afterMount)
   })
 })

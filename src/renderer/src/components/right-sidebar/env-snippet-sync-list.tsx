@@ -3,6 +3,7 @@ import {
   CloudDownload,
   CheckCircle2,
   Circle,
+  Eye,
   ExternalLink,
   LoaderCircle,
   Trash2
@@ -25,6 +26,7 @@ export function EnvSnippetSyncList({
   syncStatusByPath,
   onUpload,
   onRestore,
+  onPreview,
   onDelete,
   onOpen
 }: {
@@ -32,6 +34,7 @@ export function EnvSnippetSyncList({
   syncStatusByPath: Record<string, SyncStatus>
   onUpload: (relativePath: string) => void
   onRestore: (snippet: GitLabSnippet) => void
+  onPreview: (snippet: GitLabSnippet) => void
   onDelete: (snippet: GitLabSnippet) => void
   onOpen: (url: string) => void
 }): React.JSX.Element {
@@ -103,6 +106,22 @@ export function EnvSnippetSyncList({
                   />
                 )}
               </Button>
+              {snippet ? (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="h-6 w-6"
+                  disabled={busy}
+                  onClick={() => onPreview(snippet)}
+                  title={translate(
+                    'auto.components.right.sidebar.EnvSnippetSyncSection.preview',
+                    'Preview diff vs local'
+                  )}
+                >
+                  <Eye className="h-3 w-3 text-muted-foreground" />
+                </Button>
+              ) : null}
               {snippetWebUrl ? (
                 <Button
                   type="button"
