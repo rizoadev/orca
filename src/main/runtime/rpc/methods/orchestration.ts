@@ -650,6 +650,12 @@ export const ORCHESTRATION_METHODS: RpcMethod[] = [
           throw new Error('Invalid --deps: must be a JSON array of task IDs')
         }
       }
+      // Why: a subtask must wait for its parent, so without explicit deps we
+      // default to depending on the parent — the child auto-executes once the
+      // parent completes (promoteReadyTasks).
+      if (!deps && params.parent) {
+        deps = [params.parent]
+      }
 
       // Why: Multica-style coalesce — fold follow-up specs into a pending/ready task with the same key.
       if (params.coalesceKey) {
