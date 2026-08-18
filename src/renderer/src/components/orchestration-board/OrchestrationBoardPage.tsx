@@ -7,6 +7,7 @@ import { OrchestrationBoardWorkspace } from './OrchestrationBoardWorkspace'
 import { OrchestrationBoardHeader } from './OrchestrationBoardHeader'
 import { OrchestrationProductGoalDialog } from './OrchestrationProductGoalDialog'
 import { OrchestrationBoardDetailPane } from './OrchestrationBoardDetailPane'
+import type { OrchestrationBoardDetailLayout } from './OrchestrationBoardTaskDialog'
 import { OrchestrationBoardCreateDialog } from './OrchestrationBoardCreateDialog'
 import { useOrchestrationBoardLoad, ALL_REPOS } from './use-orchestration-board-load'
 import { useOrchestrationBoardDetail } from './use-orchestration-board-detail'
@@ -14,6 +15,9 @@ import { useOrchestrationBoardActions } from './use-orchestration-board-actions'
 
 export default function OrchestrationBoardPage(): React.JSX.Element {
   const closeOrchestrationBoardPage = useAppStore((s) => s.closeOrchestrationBoardPage)
+  const setActiveView = useAppStore((s) => s.setActiveView)
+  const openOrchestrationTaskDetails = useAppStore((s) => s.openOrchestrationTaskDetails)
+  const activeWorktreeId = useAppStore((s) => s.activeWorktreeId)
   const repoMap = useRepoMap()
 
   const {
@@ -58,6 +62,27 @@ export default function OrchestrationBoardPage(): React.JSX.Element {
   const showMainDetail =
     showDetail && (detail.detailLayout === 'split' || detail.detailLayout === 'full')
   const showModalDetail = showDetail && detail.detailLayout === 'modal'
+
+  // Why: the modal's "Open in main window" asks for a real dock into the project
+  // main tab strip, not just an internal layout switch. Reuse the same store
+  // action the task-detail tab host uses so it lands in the editor main box.
+  const handleModalLayoutChange = (layout: OrchestrationBoardDetailLayout): void => {
+    const active = detail.activeTask
+    if (layout !== 'modal' && active) {
+      const worktreeId = active.worktree_id || activeWorktreeId
+      if (worktreeId) {
+        openOrchestrationTaskDetails(worktreeId, { task: active })
+        detail.closeTask()
+        // Why: dock replaces the board with the project main box. openOrchestrationTaskDetails
+        // already sets the active worktree, so landing on the 'terminal' view shows the
+        // editor main box with the new task-detail tab (works even if the board was opened
+        // from a non-editor view).
+        setActiveView('terminal')
+        return
+      }
+    }
+    detail.setDetailLayout(layout)
+  }
 
   const handleStartProductSubmit = async (goal: string): Promise<void> => {
     if (!goal.trim()) {
@@ -123,6 +148,13 @@ export default function OrchestrationBoardPage(): React.JSX.Element {
   }
 
   const activeTask = detail.activeTask
+
+  const activeParentTask = useMemo(() => {
+    if (!activeTask?.parent_id) {
+      return null
+    }
+    return tasks.find((t) => t.id === activeTask.parent_id) ?? null
+  }, [activeTask, tasks])
 
   const activeSubtasks = useMemo(() => {
     if (!activeTask) {
@@ -265,6 +297,8 @@ export default function OrchestrationBoardPage(): React.JSX.Element {
               onAddSubtask={(title) => {
                 void handleAddSubtask(title)
               }}
+              parentTask={activeParentTask}
+              onOpenParent={activeParentTask ? () => detail.openTask(activeParentTask) : undefined}
             />
           </div>
         ) : null}
@@ -312,7 +346,7 @@ export default function OrchestrationBoardPage(): React.JSX.Element {
           mentionOptions={detail.mentionOptions}
           layout="modal"
           autopilotBusy={actions.autopilotBusy}
-          onLayoutChange={detail.setDetailLayout}
+          onLayoutChange={handleModalLayoutChange}
           onClose={detail.closeTask}
           onCommentDraftChange={detail.setCommentDraft}
           onPostComment={(parentId) => {
@@ -352,6 +386,8 @@ export default function OrchestrationBoardPage(): React.JSX.Element {
           onAddSubtask={(title) => {
             void handleAddSubtask(title)
           }}
+          parentTask={activeParentTask}
+          onOpenParent={activeParentTask ? () => detail.openTask(activeParentTask) : undefined}
         />
       ) : null}
     </div>

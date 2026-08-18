@@ -1,6 +1,3 @@
-import { ListTree } from 'lucide-react'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { translate } from '@/i18n/i18n'
 import {
   OrchestrationBoardTaskDialog,
   type OrchestrationBoardDetailLayout,
@@ -8,7 +5,6 @@ import {
   type OrchestrationBoardTaskThread
 } from './OrchestrationBoardTaskDialog'
 import type { OrchestrationBoardTask } from './orchestration-board-model'
-import { OrchestrationSubtasksPanel } from './OrchestrationSubtasksPanel'
 
 const EMPTY_SUBTASKS: OrchestrationBoardTask[] = []
 
@@ -40,7 +36,9 @@ export function OrchestrationBoardDetailPane({
   onOpenStageTask,
   subtasks = EMPTY_SUBTASKS,
   onOpenTask,
-  onAddSubtask
+  onAddSubtask,
+  parentTask,
+  onOpenParent
 }: {
   task: OrchestrationBoardTask
   thread: OrchestrationBoardTaskThread | null
@@ -70,62 +68,43 @@ export function OrchestrationBoardDetailPane({
   subtasks?: OrchestrationBoardTask[]
   onOpenTask?: (task: OrchestrationBoardTask) => void
   onAddSubtask?: (title: string) => void
+  parentTask?: OrchestrationBoardTask | null
+  onOpenParent?: () => void
 }): React.JSX.Element {
+  // Why: the task dialog owns its own tabs (Thread / Spec / Subtasks) so the
+  // board detail is just a thin passthrough — no extra "Details" wrapper tab.
   return (
-    <Tabs defaultValue="details" className="flex h-full min-h-0 flex-col">
-      <div className="shrink-0 border-b border-border/60 px-4 pt-2">
-        <TabsList className="h-9 w-full justify-start gap-1 bg-transparent p-0">
-          <TabsTrigger value="details" className="px-3">
-            {translate('auto.components.orchestration.board.detailTab', 'Details')}
-          </TabsTrigger>
-          <TabsTrigger value="subtasks" className="gap-1.5 px-3">
-            <ListTree className="size-3.5" />
-            {translate('auto.components.orchestration.board.subtasksTab', 'Subtasks')}
-            {subtasks.length > 0 ? (
-              <span className="tabular-nums text-muted-foreground">{subtasks.length}</span>
-            ) : null}
-          </TabsTrigger>
-        </TabsList>
-      </div>
-      <TabsContent value="details" className="mt-0 min-h-0 flex-1 data-[state=inactive]:hidden">
-        <OrchestrationBoardTaskDialog
-          task={task}
-          thread={thread}
-          threadLoading={threadLoading}
-          commentDraft={commentDraft}
-          commentSubmitting={commentSubmitting}
-          selectedSquadId={selectedSquadId}
-          squadsEmpty={squadsEmpty}
-          assigning={assigning}
-          actionBusy={actionBusy}
-          repoLabel={repoLabel}
-          mentionOptions={mentionOptions}
-          layout={layout === 'full' ? 'full' : layout === 'modal' ? 'modal' : 'split'}
-          onLayoutChange={onLayoutChange}
-          onClose={onClose}
-          onCommentDraftChange={onCommentDraftChange}
-          onPostComment={onPostComment}
-          onReply={(comment) => onReply({ id: comment.id, author: comment.author })}
-          onRefreshThread={onRefreshThread}
-          onAssign={onAssign}
-          onRetry={onRetry}
-          onToggleAutopilot={onToggleAutopilot}
-          onStop={onStop}
-          onDelete={onDelete}
-          onOpenStageTask={onOpenStageTask}
-          autopilotBusy={autopilotBusy}
-        />
-      </TabsContent>
-      <TabsContent value="subtasks" className="mt-0 min-h-0 flex-1 data-[state=inactive]:hidden">
-        {onOpenTask && onAddSubtask ? (
-          <OrchestrationSubtasksPanel
-            tasks={subtasks}
-            rootTask={task}
-            onOpenTask={onOpenTask}
-            onAddSubtask={onAddSubtask}
-          />
-        ) : null}
-      </TabsContent>
-    </Tabs>
+    <OrchestrationBoardTaskDialog
+      task={task}
+      thread={thread}
+      threadLoading={threadLoading}
+      commentDraft={commentDraft}
+      commentSubmitting={commentSubmitting}
+      selectedSquadId={selectedSquadId}
+      squadsEmpty={squadsEmpty}
+      assigning={assigning}
+      actionBusy={actionBusy}
+      repoLabel={repoLabel}
+      mentionOptions={mentionOptions}
+      layout={layout === 'full' ? 'full' : layout === 'modal' ? 'modal' : 'split'}
+      onLayoutChange={onLayoutChange}
+      onClose={onClose}
+      onCommentDraftChange={onCommentDraftChange}
+      onPostComment={onPostComment}
+      onReply={(comment) => onReply({ id: comment.id, author: comment.author })}
+      onRefreshThread={onRefreshThread}
+      onAssign={onAssign}
+      onRetry={onRetry}
+      onToggleAutopilot={onToggleAutopilot}
+      onStop={onStop}
+      onDelete={onDelete}
+      onOpenStageTask={onOpenStageTask}
+      autopilotBusy={autopilotBusy}
+      subtasks={subtasks}
+      onOpenTask={onOpenTask}
+      onAddSubtask={onAddSubtask}
+      parentTask={parentTask}
+      onOpenParent={onOpenParent}
+    />
   )
 }
