@@ -13,10 +13,9 @@ import {
   buildRoleTaskSpec,
   type ProductPipelineRole
 } from '../../../shared/product-pipeline'
+import { withRootAutopilotFlag } from '../../../shared/orchestration-autopilot'
 
-export {
-  advanceProductPipelineAfterTaskComplete
-} from './product-pipeline-advance'
+export { advanceProductPipelineAfterTaskComplete } from './product-pipeline-advance'
 export {
   setProductPipelineAutopilot,
   isProductPipelineAutopilotEnabled,
@@ -69,7 +68,12 @@ export function createProductPipelineTasks(
     pipelineRole: 'implementer',
     pipelineAttempt: 1,
     status: 'completed',
-    result: JSON.stringify({ kind: 'product_pipeline_root', goal: args.productGoal.trim() })
+    // Why: autopilot is on by default so the manager loop keeps advancing
+    // residual TODOs without an operator; the toggle in task detail can turn it off.
+    result: withRootAutopilotFlag(
+      JSON.stringify({ kind: 'product_pipeline_root', goal: args.productGoal.trim() }),
+      true
+    )
   })
 
   const plan = buildProductPipelinePlan()
