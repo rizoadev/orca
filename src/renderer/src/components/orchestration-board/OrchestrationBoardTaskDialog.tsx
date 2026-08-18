@@ -1,7 +1,6 @@
 import React, { useMemo } from 'react'
 import {
   Bot,
-  CornerUpLeft,
   Expand,
   ListTree,
   LoaderCircle,
@@ -11,6 +10,7 @@ import {
   RefreshCw,
   Shrink,
   Users,
+  Workflow,
   X
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -19,6 +19,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { cn } from '@/lib/utils'
 import { translate } from '@/i18n/i18n'
 import { useAppStore } from '@/store'
+import { OrchestrationTaskBreadcrumb } from './OrchestrationTaskBreadcrumb'
 import {
   orchestrationStatusTone,
   taskBoardLabel,
@@ -43,6 +44,8 @@ export type OrchestrationBoardTaskThread = {
   inCharge: OrchestrationBoardInCharge
   autopilot?: boolean
   pipelineId?: string | null
+  /** Parent chain from pipeline root to the direct parent (excludes self). */
+  ancestors?: OrchestrationBoardTask[]
 }
 
 export type OrchestrationBoardDetailLayout = 'split' | 'full' | 'modal' | 'embedded'
@@ -87,7 +90,7 @@ export function OrchestrationBoardTaskDialog({
   onOpenTask,
   onAddSubtask,
   parentTask,
-  onOpenParent
+  onOpenBoard
 }: {
   task: OrchestrationBoardTask
   thread: OrchestrationBoardTaskThread | null
@@ -119,6 +122,8 @@ export function OrchestrationBoardTaskDialog({
   onAddSubtask?: (title: string) => void
   parentTask?: OrchestrationBoardTask | null
   onOpenParent?: () => void
+  /** Open this task in the full orchestration board page. */
+  onOpenBoard?: () => void
 }): React.JSX.Element {
   const isModal = layout === 'modal'
   const isFull = layout === 'full'
@@ -172,22 +177,12 @@ export function OrchestrationBoardTaskDialog({
     >
       <header className="flex shrink-0 items-start gap-3 border-b border-border/60 px-4 py-3 sm:px-5">
         <div className="min-w-0 flex-1">
-          {(parentTask || task.parent_id) && onOpenParent ? (
-            <button
-              type="button"
-              onClick={onOpenParent}
-              className="mb-1 inline-flex max-w-full items-center gap-1 truncate text-[11px] text-muted-foreground transition-colors hover:text-foreground"
-              title={translate(
-                'auto.components.orchestration.board.openParent',
-                'Open parent task'
-              )}
-            >
-              <CornerUpLeft className="size-3 shrink-0" />
-              <span className="truncate">
-                {parentTask ? taskBoardLabel(parentTask) : task.parent_id}
-              </span>
-            </button>
-          ) : null}
+          <OrchestrationTaskBreadcrumb
+            ancestors={thread?.ancestors}
+            task={task}
+            parentTask={parentTask}
+            onOpenTask={onOpenTask}
+          />
           <div className="flex flex-wrap items-center gap-2">
             <h2 className="truncate text-base font-semibold tracking-tight sm:text-[17px]">
               {taskBoardLabel(task)}
@@ -265,6 +260,21 @@ export function OrchestrationBoardTaskDialog({
               )}
             </Button>
           ) : null}
+          {onOpenBoard ? (
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="size-8"
+              title={translate(
+                'auto.components.orchestration.board.openBoard',
+                'Open in orchestration board'
+              )}
+              onClick={onOpenBoard}
+            >
+              <Workflow className="size-4" />
+            </Button>
+          ) : null}
           <Button
             type="button"
             variant="ghost"
@@ -289,13 +299,13 @@ export function OrchestrationBoardTaskDialog({
         className={cn(
           'grid min-h-0 flex-1',
           isFull || isModal || isEmbedded
-            ? 'grid-cols-1 lg:grid-cols-[minmax(280px,340px)_minmax(0,1fr)]'
-            : 'grid-cols-1'
+            ? 'grid-cols-1 grid-rows-[minmax(0,1fr)] lg:grid-cols-[minmax(280px,340px)_minmax(0,1fr)]'
+            : 'grid-cols-1 grid-rows-[minmax(0,1fr)]'
         )}
       >
         <aside
           className={cn(
-            'flex min-h-0 flex-col border-b border-border/60',
+            'flex min-h-0 flex-col overflow-y-auto',
             (isFull || isModal || isEmbedded) && 'lg:border-b-0 lg:border-r'
           )}
         >
@@ -345,7 +355,7 @@ export function OrchestrationBoardTaskDialog({
 
             <TabsContent
               value="thread"
-              className="mt-0 min-h-0 flex-1 data-[state=inactive]:hidden"
+              className="mt-0 flex min-h-0 flex-1 flex-col data-[state=inactive]:hidden"
             >
               <OrchestrationTaskThreadPane
                 comments={thread?.comments ?? []}
@@ -359,13 +369,16 @@ export function OrchestrationBoardTaskDialog({
               />
             </TabsContent>
 
-            <TabsContent value="spec" className="mt-0 min-h-0 flex-1 data-[state=inactive]:hidden">
+            <TabsContent
+              value="spec"
+              className="mt-0 flex min-h-0 flex-1 flex-col data-[state=inactive]:hidden"
+            >
               <OrchestrationTaskSpecPane task={task} />
             </TabsContent>
 
             <TabsContent
               value="subtasks"
-              className="mt-0 min-h-0 flex-1 data-[state=inactive]:hidden"
+              className="mt-0 flex min-h-0 flex-1 flex-col data-[state=inactive]:hidden"
             >
               {onOpenTask && onAddSubtask ? (
                 <OrchestrationSubtasksPanel

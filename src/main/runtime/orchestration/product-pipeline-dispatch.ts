@@ -6,20 +6,11 @@
 import type { OrchestrationDb } from './db'
 import type { TaskRow } from './types'
 import { buildDispatchPreamble } from './preamble'
-import {
-  buildSquadLeaderBriefing,
-  findAgentSquad,
-  normalizeAgentSquads
-} from '../../../shared/agent-squads'
-import { defaultRoleBindings, type PipelineRoleBinding } from './product-pipeline-engine'
+import { defaultRoleBindings } from './product-pipeline-engine'
+import { resolveAgentForRole } from './resolve-pipeline-role-agent'
 import type { ProductPipelineRole } from '../../../shared/product-pipeline'
-import {
-  DEFAULT_AGENT_FAILOVER_CHAIN,
-  pickFailoverAgent
-} from '../../../shared/orchestration-blocker-policy'
 import type { RuntimeTerminalWaitCondition } from '../../../shared/runtime-types'
 import type { TuiAgent } from '../../../shared/types'
-import { isTuiAgent } from '../../../shared/tui-agent-config'
 
 export type ProductDispatchRuntime = {
   getClientSettings: () => { agentSquads?: unknown; defaultTuiAgent?: string | null }
@@ -28,7 +19,7 @@ export type ProductDispatchRuntime = {
   ) => Promise<{ terminals: { handle: string; title: string | null }[] }>
   launchAgentTerminal: (
     worktreeSelector: string,
-    opts: { agent: TuiAgent; prompt: string; title?: string }
+    opts: { agent: TuiAgent; prompt: string; title?: string; cli?: string }
   ) => Promise<{ handle: string }>
   waitForTerminal: (
     handle: string,
@@ -43,39 +34,6 @@ export type ProductDispatchRuntime = {
   getTerminalOrchestrationCliCommand: (handle: string) => 'orca' | 'orca-ide'
   sendTerminalAgentPrompt: (handle: string, prompt: string) => Promise<unknown>
   getAgentStatusForHandle: (handle: string) => string | null
-}
-
-function resolveAgentForRole(
-  role: ProductPipelineRole,
-  runtime: ProductDispatchRuntime,
-  bindings: PipelineRoleBinding[] = defaultRoleBindings(),
-  /** 1-based attempt — used for model/agent failover chain. */
-  attempt = 1
-): { agent: TuiAgent; squadId: string; briefing?: string; preferredAgent: string } {
-  const binding =
-    bindings.find((b) => b.role === role) ??
-    defaultRoleBindings().find((b) => b.role === 'implementer') ??
-    defaultRoleBindings()[0]!
-  const settings = runtime.getClientSettings()
-  const squads = normalizeAgentSquads(settings.agentSquads)
-  const squad = findAgentSquad(squads, binding.squadId)
-  const defaultAgent = settings.defaultTuiAgent?.trim() || binding.defaultAgent
-  const preferred = squad?.leader.agent || defaultAgent
-  // Build chain: preferred → squad members → global failover defaults.
-  const memberAgents = (squad?.members ?? []).map((m) => m.agent)
-  const chain = [
-    preferred,
-    ...memberAgents,
-    ...DEFAULT_AGENT_FAILOVER_CHAIN
-  ].filter((name, index, arr) => name && arr.indexOf(name) === index)
-  const agentName = pickFailoverAgent(preferred, attempt, chain)
-  const agent = (isTuiAgent(agentName) ? agentName : 'pi') as TuiAgent
-  return {
-    agent,
-    preferredAgent: preferred,
-    squadId: binding.squadId,
-    briefing: squad ? buildSquadLeaderBriefing(squad) : undefined
-  }
 }
 
 export async function dispatchPipelineStageTask(
@@ -108,6 +66,26 @@ export async function dispatchPipelineStageTask(
   const waitTimeoutMs = options.waitTimeoutMs ?? 90_000
   const coordinatorHandle = options.coordinatorHandle ?? 'orchestrator'
 
+  // Why: productStart lets the operator pick a manager squad; remember it on
+  // the root result and prefer it here for the manage stage dispatch.
+  let roleBindings = defaultRoleBindings()
+  if (role === 'manager' && task.pipeline_id) {
+    const root = db.getTask(task.pipeline_id)
+    let managerSquadId: string | undefined
+    try {
+      managerSquadId = root?.result
+        ? (JSON.parse(root.result) as { managerSquadId?: string }).managerSquadId
+        : undefined
+    } catch {
+      /* keep default binding */
+    }
+    if (managerSquadId) {
+      roleBindings = roleBindings.map((b) =>
+        b.role === 'manager' ? { ...b, squadId: managerSquadId } : b
+      )
+    }
+  }
+
   // Try preferred agent, then failover chain on spawn/ready failure (self-heal).
   const maxAgentTries = Math.min(3, Math.max(1, attempt + 1))
   let lastError: string | null = null
@@ -115,10 +93,10 @@ export async function dispatchPipelineStageTask(
     const resolved = resolveAgentForRole(
       role,
       runtime,
-      defaultRoleBindings(),
+      roleBindings,
       tryIndex === 1 ? attempt : attempt + tryIndex - 1
     )
-    const { agent, briefing, preferredAgent } = resolved
+    const { agent, briefing, preferredAgent, cli, memberSystemPrompt } = resolved
     try {
       const { terminals } = await runtime.listTerminals(worktreeSelector)
       let targetHandle: string | undefined
@@ -142,7 +120,8 @@ export async function dispatchPipelineStageTask(
         const created = await runtime.launchAgentTerminal(worktreeSelector, {
           agent,
           prompt: '',
-          title: `${role}: ${task.display_name || task.task_title || task.id}`.slice(0, 60)
+          title: `${role}: ${task.display_name || task.task_title || task.id}`.slice(0, 60),
+          ...(cli ? { cli } : {})
         })
         targetHandle = created.handle
         spawned = true
@@ -190,7 +169,7 @@ export async function dispatchPipelineStageTask(
       const preamble = buildDispatchPreamble({
         taskId: task.id,
         dispatchId: ctx.id,
-        taskSpec: task.spec,
+        taskSpec: memberSystemPrompt ? `${memberSystemPrompt.trim()}\n\n${task.spec}` : task.spec,
         coordinatorHandle,
         workerHandle: targetHandle,
         devMode: options.devMode,
@@ -266,7 +245,9 @@ export async function dispatchAllReadyPipelineStages(
 > {
   const ready = db
     .listTasksByPipeline(pipelineId)
-    .filter((task) => task.status === 'ready' && task.pipeline_stage && task.pipeline_stage !== 'done')
+    .filter(
+      (task) => task.status === 'ready' && task.pipeline_stage && task.pipeline_stage !== 'done'
+    )
   // Stable order: manage → research → implement → test → review
   const order = ['manage', 'research', 'implement', 'test', 'review']
   ready.sort((a, b) => {

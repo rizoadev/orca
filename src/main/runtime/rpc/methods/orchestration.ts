@@ -9,6 +9,7 @@ import {
   requiredString
 } from '../schemas'
 import type { MessageType, MessagePriority, TaskStatus } from '../../orchestration/db'
+import type { TaskRow } from '../../orchestration/types'
 import { buildDispatchPreamble } from '../../orchestration/preamble'
 import {
   buildSquadLeaderBriefing,
@@ -349,7 +350,9 @@ const ProductStartParams = z.object({
   autoDispatch: OptionalBoolean,
   waitTimeoutMs: OptionalFiniteNumber,
   devMode: OptionalBoolean,
-  priority: TaskPrioritySchema.optional()
+  priority: TaskPrioritySchema.optional(),
+  // Why: optional manager squad — the pipeline leader/breakdown squad to use.
+  squad: OptionalString
 })
 
 const ProductTickParams = z.object({
@@ -1055,6 +1058,24 @@ export const ORCHESTRATION_METHODS: RpcMethod[] = [
       const active = agents.find((a) => a.status === 'dispatched') ?? agents[0] ?? null
       const pipelineRoot = task.pipeline_id != null ? db.getTask(task.pipeline_id) : undefined
       const autopilot = isProductPipelineAutopilotEnabled(pipelineRoot)
+      // Why: breadcrumb chain from root → parent (exclude self), so the task
+      // detail header can show where this task sits in the pipeline tree.
+      const ancestors: TaskRow[] = []
+      const seen = new Set<string>()
+      let cursor: TaskRow | undefined = task
+      while (cursor) {
+        const parentId = cursor.parent_id
+        if (!parentId || seen.has(parentId)) {
+          break
+        }
+        seen.add(parentId)
+        const parent = db.getTask(parentId)
+        if (!parent) {
+          break
+        }
+        ancestors.unshift(parent)
+        cursor = parent
+      }
       return {
         task,
         comments,
@@ -1062,6 +1083,7 @@ export const ORCHESTRATION_METHODS: RpcMethod[] = [
         roster,
         autopilot,
         pipelineId: task.pipeline_id,
+        ancestors,
         inCharge: active
           ? {
               handle: active.handle,
@@ -1642,6 +1664,24 @@ export const ORCHESTRATION_METHODS: RpcMethod[] = [
         hostId: 'local',
         priority: params.priority ?? 'high'
       })
+
+      // Why: remember the chosen manager squad on the root so the manage stage
+      // dispatch can prefer it over the default manager squad binding.
+      if (params.squad?.trim()) {
+        const root = db.getTask(pipeline.root.id)
+        if (root) {
+          try {
+            const parsed = JSON.parse(root.result ?? '{}') as Record<string, unknown>
+            parsed.managerSquadId = params.squad.trim()
+            db.setTaskPipelineMeta(root.id, {
+              result: JSON.stringify(parsed),
+              status: root.status
+            })
+          } catch {
+            // keep default squad binding on malformed root result
+          }
+        }
+      }
 
       let dispatches: {
         taskId: string

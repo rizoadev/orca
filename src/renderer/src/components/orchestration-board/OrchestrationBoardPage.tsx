@@ -1,7 +1,7 @@
 import React, { useCallback, useMemo } from 'react'
 import { toast } from 'sonner'
 import { useAppStore } from '@/store'
-import { useRepoMap } from '@/store/selectors'
+import { useRepoMap, useAllWorktrees } from '@/store/selectors'
 import { callRuntimeRpc } from '@/runtime/runtime-rpc-client'
 import { OrchestrationBoardWorkspace } from './OrchestrationBoardWorkspace'
 import { OrchestrationBoardHeader } from './OrchestrationBoardHeader'
@@ -18,6 +18,7 @@ export default function OrchestrationBoardPage(): React.JSX.Element {
   const setActiveView = useAppStore((s) => s.setActiveView)
   const openOrchestrationTaskDetails = useAppStore((s) => s.openOrchestrationTaskDetails)
   const activeWorktreeId = useAppStore((s) => s.activeWorktreeId)
+  const allWorktrees = useAllWorktrees()
   const repoMap = useRepoMap()
 
   const {
@@ -68,23 +69,44 @@ export default function OrchestrationBoardPage(): React.JSX.Element {
   // action the task-detail tab host uses so it lands in the editor main box.
   const handleModalLayoutChange = (layout: OrchestrationBoardDetailLayout): void => {
     const active = detail.activeTask
+    console.log('[dock] handleModalLayoutChange', layout, active?.id, active?.worktree_id)
     if (layout !== 'modal' && active) {
-      const worktreeId = active.worktree_id || activeWorktreeId
+      // Why: dock needs a worktree that the store actually knows (setActiveWorktree
+      // fails silently for unknown ids). Prefer the task's own worktree when it is
+      // a known one, else the active worktree, else any known worktree.
+      const knownIds = new Set(allWorktrees.map((w) => w.id))
+      const worktreeId =
+        (active.worktree_id && knownIds.has(active.worktree_id) ? active.worktree_id : null) ||
+        (activeWorktreeId && knownIds.has(activeWorktreeId) ? activeWorktreeId : null) ||
+        allWorktrees[0]?.id ||
+        null
+      console.log('[dock] worktreeId', worktreeId, 'activeWorktreeId', activeWorktreeId)
       if (worktreeId) {
-        openOrchestrationTaskDetails(worktreeId, { task: active })
+        try {
+          openOrchestrationTaskDetails(worktreeId, { task: active })
+          console.log('[dock] openOrchestrationTaskDetails ok')
+        } catch (err) {
+          console.error('[dock] openOrchestrationTaskDetails error', err)
+        }
         detail.closeTask()
         // Why: dock replaces the board with the project main box. openOrchestrationTaskDetails
-        // already sets the active worktree, so landing on the 'terminal' view shows the
-        // editor main box with the new task-detail tab (works even if the board was opened
-        // from a non-editor view).
-        setActiveView('terminal')
+        // sets the active worktree + editor tab; close the board to clear orchestration
+        // focus state, then force the terminal/worktree view so the main box (with the
+        // new task-detail tab next to the terminal) is what the user sees.
+        try {
+          closeOrchestrationBoardPage()
+          setActiveView('terminal')
+          console.log('[dock] after setActiveView terminal')
+        } catch (err) {
+          console.error('[dock] close/setActiveView error', err)
+        }
         return
       }
     }
     detail.setDetailLayout(layout)
   }
 
-  const handleStartProductSubmit = async (goal: string): Promise<void> => {
+  const handleStartProductSubmit = async (goal: string, squadId: string | null): Promise<void> => {
     if (!goal.trim()) {
       return
     }
@@ -105,7 +127,8 @@ export default function OrchestrationBoardPage(): React.JSX.Element {
           createIssue: true,
           ensureSquads: true,
           autoDispatch: true,
-          waitTimeoutMs: 90_000
+          waitTimeoutMs: 90_000,
+          ...(squadId ? { squad: squadId } : {})
         },
         { timeoutMs: 180_000, skipCompatibilityCheck: true }
       )
@@ -308,8 +331,9 @@ export default function OrchestrationBoardPage(): React.JSX.Element {
         open={productGoalOpen}
         onOpenChange={setProductGoalOpen}
         starting={productStarting}
-        onSubmit={(goal) => {
-          void handleStartProductSubmit(goal)
+        squads={detail.squads}
+        onSubmit={(goal, squadId) => {
+          void handleStartProductSubmit(goal, squadId)
         }}
       />
 
