@@ -559,7 +559,10 @@ export const ORCHESTRATION_HANDLERS: Record<string, CommandHandler> = {
         repoId: getOptionalStringFlag(flags, 'repo'),
         projectId: getOptionalStringFlag(flags, 'project'),
         worktreeId: getOptionalStringFlag(flags, 'worktree'),
-        hostId: getOptionalStringFlag(flags, 'host')
+        hostId: getOptionalStringFlag(flags, 'host'),
+        pipelineId: getOptionalStringFlag(flags, 'pipeline'),
+        pipelineStage: getOptionalStringFlag(flags, 'pipeline-stage'),
+        pipelineRole: getOptionalStringFlag(flags, 'pipeline-role')
       }
     )
     printResult(result, json, (r) => `Created ${r.task.id} [${r.task.status}]`)
@@ -644,13 +647,13 @@ export const ORCHESTRATION_HANDLERS: Record<string, CommandHandler> = {
   },
 
   'orchestration task-stop': async ({ flags, client, json }) => {
-    const result = await client.call<{ task: { id: string; status: string }; stoppedIds: string[] }>(
-      'orchestration.taskStop',
-      {
-        id: getRequiredStringFlag(flags, 'id'),
-        reason: getOptionalStringFlag(flags, 'reason')
-      }
-    )
+    const result = await client.call<{
+      task: { id: string; status: string }
+      stoppedIds: string[]
+    }>('orchestration.taskStop', {
+      id: getRequiredStringFlag(flags, 'id'),
+      reason: getOptionalStringFlag(flags, 'reason')
+    })
     printResult(
       result,
       json,
@@ -662,7 +665,11 @@ export const ORCHESTRATION_HANDLERS: Record<string, CommandHandler> = {
     const result = await client.call<{ deletedIds: string[] }>('orchestration.taskDelete', {
       id: getRequiredStringFlag(flags, 'id')
     })
-    printResult(result, json, (r) => `Deleted ${r.deletedIds.length} task(s): ${r.deletedIds.join(', ')}`)
+    printResult(
+      result,
+      json,
+      (r) => `Deleted ${r.deletedIds.length} task(s): ${r.deletedIds.join(', ')}`
+    )
   },
 
   'orchestration task-retry': async ({ flags, client, json }) => {
@@ -811,7 +818,9 @@ export const ORCHESTRATION_HANDLERS: Record<string, CommandHandler> = {
         `dispatched=${r.dispatches.length}`
       ]
       for (const d of r.dispatches) {
-        lines.push(`  ${d.role} → ${d.to || '(failed)'} task=${d.taskId}${d.spawned ? ' [spawned]' : ''}`)
+        lines.push(
+          `  ${d.role} → ${d.to || '(failed)'} task=${d.taskId}${d.spawned ? ' [spawned]' : ''}`
+        )
       }
       return lines.filter(Boolean).join('\n')
     })
@@ -856,7 +865,11 @@ export const ORCHESTRATION_HANDLERS: Record<string, CommandHandler> = {
         devMode: isDevCliInvocation()
       }
     )
-    printResult(result, json, (r) => `Watching ${r.pipelineId} (supervisor=${r.supervisor.running})`)
+    printResult(
+      result,
+      json,
+      (r) => `Watching ${r.pipelineId} (supervisor=${r.supervisor.running})`
+    )
   },
 
   'orchestration product-unwatch': async ({ flags, client, json }) => {

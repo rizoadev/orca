@@ -69,8 +69,7 @@ async function resolveTaskScopeFromCallerTerminal(
     const terminal = await runtime.showTerminal(callerTerminalHandle)
     const worktreeId = explicit.worktreeId ?? terminal.worktreeId
     const repoId =
-      explicit.repoId ??
-      (worktreeId ? getRepoIdFromWorktreeId(worktreeId) || undefined : undefined)
+      explicit.repoId ?? (worktreeId ? getRepoIdFromWorktreeId(worktreeId) || undefined : undefined)
     let hostId = explicit.hostId
     if (!hostId && worktreeId) {
       try {
@@ -222,7 +221,12 @@ const TaskCreateParams = z.object({
   repoId: OptionalString,
   projectId: OptionalString,
   worktreeId: OptionalString,
-  hostId: OptionalString
+  hostId: OptionalString,
+  // Why: let any caller (manager agent / UI) create a pipeline-aware stage so
+  // the supervisor discovers and delegates it as an orchestration stage.
+  pipelineId: OptionalString,
+  pipelineStage: OptionalString,
+  pipelineRole: OptionalString
 })
 
 const TaskListParams = z.object({
@@ -690,7 +694,10 @@ export const ORCHESTRATION_METHODS: RpcMethod[] = [
         repoId: scope.repoId,
         projectId: params.projectId,
         worktreeId: scope.worktreeId,
-        hostId: scope.hostId
+        hostId: scope.hostId,
+        pipelineId: params.pipelineId,
+        pipelineStage: params.pipelineStage,
+        pipelineRole: params.pipelineRole
       })
       return { task }
     }
@@ -865,10 +872,7 @@ export const ORCHESTRATION_METHODS: RpcMethod[] = [
       }
 
       const squads = normalizeAgentSquads(runtime.getClientSettings().agentSquads)
-      const squadId =
-        params.squad?.trim() ||
-        squads[0]?.id ||
-        null
+      const squadId = params.squad?.trim() || squads[0]?.id || null
       if (!squadId) {
         return {
           task: retried.task,
@@ -1043,8 +1047,7 @@ export const ORCHESTRATION_METHODS: RpcMethod[] = [
             ? db.listPipelineRoster(pipelineId)
             : []
       const active = agents.find((a) => a.status === 'dispatched') ?? agents[0] ?? null
-      const pipelineRoot =
-        task.pipeline_id != null ? db.getTask(task.pipeline_id) : undefined
+      const pipelineRoot = task.pipeline_id != null ? db.getTask(task.pipeline_id) : undefined
       const autopilot = isProductPipelineAutopilotEnabled(pipelineRoot)
       return {
         task,
@@ -1241,8 +1244,7 @@ export const ORCHESTRATION_METHODS: RpcMethod[] = [
       const waitTimeoutMs = params.waitTimeoutMs ?? 90_000
 
       const worktreeSelector =
-        params.worktree?.trim() ||
-        (task.worktree_id ? `id:${task.worktree_id}` : undefined)
+        params.worktree?.trim() || (task.worktree_id ? `id:${task.worktree_id}` : undefined)
       if (!worktreeSelector) {
         throw new Error(
           'Task has no worktree scope. Set --worktree on assign, or create the task with a worktree bound.'
