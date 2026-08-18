@@ -14,6 +14,7 @@ import { callRuntimeRpc } from '@/runtime/runtime-rpc-client'
 import { installWindowVisibilityInterval } from '@/lib/window-visibility-interval'
 import type { OrchestrationBoardTask } from '@/components/orchestration-board/orchestration-board-model'
 import { collectRunningAgentsByTaskId } from '@/components/orchestration-board/orchestration-task-running-agents'
+import { OrchestrationSidebarTaskTree } from './OrchestrationSidebarTaskTree'
 
 const LOCAL_RUNTIME_TARGET = { kind: 'local' as const }
 const POLL_MS = 5_000
@@ -32,6 +33,7 @@ export default function OrchestrationPanel({
   const activeWorktree = useActiveWorktree()
   const activeRepo = useRepoById(activeWorktree?.repoId ?? null)
   const openOrchestrationBoardPage = useAppStore((s) => s.openOrchestrationBoardPage)
+  const openOrchestrationTaskDetails = useAppStore((s) => s.openOrchestrationTaskDetails)
   const agentStatusByPaneKey = useAppStore((s) => s.agentStatusByPaneKey)
   const runtimeAgentOrchestrationByPaneKey = useAppStore(
     (s) => s.runtimeAgentOrchestrationByPaneKey
@@ -131,6 +133,21 @@ export default function OrchestrationPanel({
   const openBoard = useCallback(() => {
     openOrchestrationBoardPage()
   }, [openOrchestrationBoardPage])
+
+  // Why: clicking a task defaults to docking its detail into the main box next
+  // to the terminal (the right sidebar stays put), instead of jumping to the
+  // full board. "Open board" remains for the dense three-view workspace.
+  const openTaskInMainBox = useCallback(
+    (task: OrchestrationBoardTask) => {
+      const targetWorktree = task.worktree_id || worktreeId
+      if (!targetWorktree) {
+        openBoard()
+        return
+      }
+      openOrchestrationTaskDetails(targetWorktree, { task })
+    },
+    [openBoard, openOrchestrationTaskDetails, worktreeId]
+  )
 
   if (!repoId && !worktreeId) {
     return (
@@ -252,33 +269,7 @@ export default function OrchestrationPanel({
           </div>
         ) : (
           <div className="space-y-1">
-            {tasks.slice(0, 30).map((task) => (
-              <button
-                key={task.id}
-                type="button"
-                onClick={openBoard}
-                className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left transition-colors hover:bg-accent/50"
-              >
-                <span
-                  className={cn(
-                    'size-1.5 shrink-0 rounded-full',
-                    task.status === 'completed'
-                      ? 'bg-emerald-500'
-                      : task.status === 'failed'
-                        ? 'bg-destructive'
-                        : task.status === 'dispatched'
-                          ? 'bg-amber-500'
-                          : 'bg-muted-foreground/40'
-                  )}
-                />
-                <span className="line-clamp-1 min-w-0 flex-1 text-[12px] text-foreground/90">
-                  {task.display_name?.trim() || task.task_title?.trim() || task.spec || task.id}
-                </span>
-                <span className="shrink-0 text-[10px] capitalize text-muted-foreground">
-                  {task.status}
-                </span>
-              </button>
-            ))}
+            <OrchestrationSidebarTaskTree tasks={tasks} onOpenTask={openTaskInMainBox} />
             {tasks.length > 30 ? (
               <button
                 type="button"
