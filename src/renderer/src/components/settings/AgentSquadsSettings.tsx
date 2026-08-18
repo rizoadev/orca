@@ -4,6 +4,7 @@ import type { GlobalSettings, TuiAgent } from '../../../../shared/types'
 import {
   normalizeAgentSquads,
   type AgentSquad,
+  type AgentSquadMember,
   type AgentSquadRouting
 } from '../../../../shared/agent-squads'
 import { getAgentCatalog } from '@/lib/agent-catalog'
@@ -108,6 +109,18 @@ export function AgentSquadsSettings({
       return
     }
     updateSquad(squad.id, { members: [...squad.members, { agent }] })
+  }
+
+  const updateMember = (
+    squad: AgentSquad,
+    agent: TuiAgent,
+    patch: Partial<AgentSquadMember>
+  ): void => {
+    updateSquad(squad.id, {
+      members: squad.members.map((member) =>
+        member.agent === agent ? { ...member, ...patch } : member
+      )
+    })
   }
 
   return (
@@ -225,6 +238,71 @@ export function AgentSquadsSettings({
                     )
                   })}
                 </div>
+
+                {/* Why: per-member config — role, preferred CLI, and a custom system prompt. */}
+                <ul className="space-y-2 pt-1">
+                  {squad.members.map((member) => (
+                    <li
+                      key={`${member.agent}${member.profile ?? ''}`}
+                      className="space-y-1.5 rounded-md border border-border/50 bg-background/40 p-2"
+                    >
+                      <div className="flex items-center gap-2">
+                        <span className="w-28 truncate text-[11px] font-medium text-foreground">
+                          {member.agent}
+                          {member.agent === squad.leader.agent ? ' ★' : ''}
+                        </span>
+                        <Input
+                          value={member.role ?? ''}
+                          onChange={(event) =>
+                            updateMember(squad, member.agent, { role: event.target.value })
+                          }
+                          placeholder={translate(
+                            'auto.components.settings.AgentSquadsSettings.rolePlaceholder',
+                            'role (e.g. coder, tester, researcher)'
+                          )}
+                          aria-label={translate(
+                            'auto.components.settings.AgentSquadsSettings.roleAria',
+                            'Member role'
+                          )}
+                          className="h-7 flex-1 text-[11px]"
+                        />
+                        <Input
+                          value={member.cli ?? ''}
+                          onChange={(event) =>
+                            updateMember(squad, member.agent, { cli: event.target.value })
+                          }
+                          placeholder={translate(
+                            'auto.components.settings.AgentSquadsSettings.cliPlaceholder',
+                            'cli binary'
+                          )}
+                          aria-label={translate(
+                            'auto.components.settings.AgentSquadsSettings.cliAria',
+                            'Preferred CLI'
+                          )}
+                          className="h-7 w-28 text-[11px]"
+                        />
+                      </div>
+                      <textarea
+                        value={member.systemPrompt ?? ''}
+                        onChange={(event) =>
+                          updateMember(squad, member.agent, {
+                            systemPrompt: event.target.value
+                          })
+                        }
+                        placeholder={translate(
+                          'auto.components.settings.AgentSquadsSettings.systemPromptPlaceholder',
+                          'Custom system prompt for this member'
+                        )}
+                        aria-label={translate(
+                          'auto.components.settings.AgentSquadsSettings.systemPromptAria',
+                          'Member system prompt'
+                        )}
+                        rows={2}
+                        className="w-full resize-y rounded-md border border-input bg-background px-2 py-1 text-[11px] text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                      />
+                    </li>
+                  ))}
+                </ul>
               </div>
             </li>
           ))}

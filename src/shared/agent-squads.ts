@@ -7,6 +7,12 @@ export type AgentSquadMember = {
   agent: TuiAgent
   /** Optional profile/label for multi-account agents. */
   profile?: string
+  /** Role within the squad, e.g. 'coder' | 'tester' | 'researcher'. */
+  role?: string
+  /** Custom system prompt for this member/role. */
+  systemPrompt?: string
+  /** Preferred CLI (agent command) for this member. */
+  cli?: string
 }
 
 export type AgentSquadRouting = 'leader_decide' | 'idle_first' | 'round_robin'
@@ -29,6 +35,25 @@ export type ResolveSquadWorkersResult =
   | { ok: false; reason: string }
 
 const SQUAD_ID_RE = /^[a-z0-9][a-z0-9_-]{0,63}$/i
+
+// Why: normalized member shape shared by leader and members so both carry the
+// same per-agent config (role / systemPrompt / cli).
+function normalizeSquadMember(member: Partial<AgentSquadMember>): AgentSquadMember {
+  const next: AgentSquadMember = { agent: member.agent as TuiAgent }
+  if (member.profile) {
+    next.profile = member.profile
+  }
+  if (member.role) {
+    next.role = member.role
+  }
+  if (member.systemPrompt) {
+    next.systemPrompt = member.systemPrompt
+  }
+  if (member.cli) {
+    next.cli = member.cli
+  }
+  return next
+}
 
 export function isValidAgentSquadId(id: string): boolean {
   return SQUAD_ID_RE.test(id.trim())
@@ -62,11 +87,8 @@ export function normalizeAgentSquad(raw: unknown): AgentSquad | null {
   return {
     id: value.id.trim(),
     name: value.name.trim(),
-    leader: {
-      agent: value.leader.agent as TuiAgent,
-      ...(value.leader.profile ? { profile: value.leader.profile } : {})
-    },
-    members,
+    leader: normalizeSquadMember(value.leader),
+    members: members.map(normalizeSquadMember),
     routing,
     ...(typeof value.maxConcurrent === 'number' && value.maxConcurrent > 0
       ? { maxConcurrent: Math.floor(value.maxConcurrent) }
@@ -132,12 +154,25 @@ export function resolveSquadWorkers(
 /** Briefing injected into a squad-leader launch prompt. */
 export function buildSquadLeaderBriefing(squad: AgentSquad): string {
   const workers = resolveSquadWorkers([squad], squad.id)
+  const formatMember = (member: AgentSquadMember): string => {
+    const bits: string[] = []
+    if (member.role) {
+      bits.push(`role: ${member.role}`)
+    }
+    const profile = member.profile ? ` (${member.profile})` : ''
+    if (member.cli) {
+      bits.push(`cli: ${member.cli}`)
+    }
+    const config = bits.length > 0 ? ` [${bits.join(', ')}]` : ''
+    let line = `- ${member.agent}${profile}${config}`
+    if (member.systemPrompt) {
+      line += `\n    system prompt: ${member.systemPrompt}`
+    }
+    return line
+  }
   const workerLines =
     workers.ok && workers.workers.length > 0
-      ? workers.workers.map((member) => {
-          const profile = member.profile ? ` (${member.profile})` : ''
-          return `- ${member.agent}${profile}`
-        })
+      ? workers.workers.map(formatMember)
       : ['- (no dedicated workers; you may use @idle / agent-name groups)']
 
   return [

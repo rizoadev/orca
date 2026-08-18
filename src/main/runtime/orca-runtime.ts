@@ -17863,7 +17863,8 @@ export class OrcaRuntimeService {
   private buildStartupForAgent(
     repo: Repo,
     agent: TuiAgent,
-    prompt: string | undefined
+    prompt: string | undefined,
+    cli?: string
   ): { agent: TuiAgent; startup: WorktreeStartupLaunch; followup?: WorktreeStartupFollowup } {
     if (!this.store) {
       throw new Error('runtime_unavailable')
@@ -17884,7 +17885,9 @@ export class OrcaRuntimeService {
     const startupPlan = buildAgentStartupPlan({
       agent,
       prompt: prompt ?? '',
-      cmdOverrides: settings.agentCmdOverrides ?? {},
+      cmdOverrides: cli
+        ? { ...settings.agentCmdOverrides, [agent]: cli }
+        : (settings.agentCmdOverrides ?? {}),
       agentArgs: resolveTuiAgentLaunchArgs(agent, settings.agentDefaultArgs),
       agentEnv: resolveTuiAgentLaunchEnv(agent, settings.agentDefaultEnv),
       platform: agentLaunchPlatform,
@@ -22081,14 +22084,14 @@ export class OrcaRuntimeService {
 
   async launchAgentTerminal(
     worktreeSelector: string,
-    opts: { agent: TuiAgent; prompt: string; title?: string }
+    opts: { agent: TuiAgent; prompt: string; title?: string; cli?: string }
   ): Promise<RuntimeTerminalCreate> {
     const worktree = await this.resolveWorktreeSelector(worktreeSelector)
     const repo = this.store?.getRepo(worktree.repoId)
     if (!repo) {
       throw new Error('Repository for the selected workspace is no longer available.')
     }
-    const startup = this.buildStartupForAgent(repo, opts.agent, opts.prompt)
+    const startup = this.buildStartupForAgent(repo, opts.agent, opts.prompt, opts.cli)
     if (repo.connectionId) {
       await this.markRemoteWorkspaceTrustedForAgent(opts.agent, repo.connectionId, worktree.path)
     } else {
