@@ -1,3 +1,6 @@
+import { Laptop } from 'lucide-react'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { translate } from '@/i18n/i18n'
 import {
   OrchestrationBoardTaskDialog,
   type OrchestrationBoardDetailLayout,
@@ -5,6 +8,7 @@ import {
   type OrchestrationBoardTaskThread
 } from './OrchestrationBoardTaskDialog'
 import type { OrchestrationBoardTask } from './orchestration-board-model'
+import { OrchestrationTaskLogs } from './OrchestrationTaskLogs'
 
 export function OrchestrationBoardDetailPane({
   task,
@@ -60,32 +64,50 @@ export function OrchestrationBoardDetailPane({
   onOpenStageTask: (taskId: string) => void
 }): React.JSX.Element {
   return (
-    <OrchestrationBoardTaskDialog
-      task={task}
-      thread={thread}
-      threadLoading={threadLoading}
-      commentDraft={commentDraft}
-      commentSubmitting={commentSubmitting}
-      selectedSquadId={selectedSquadId}
-      squadsEmpty={squadsEmpty}
-      assigning={assigning}
-      actionBusy={actionBusy}
-      repoLabel={repoLabel}
-      mentionOptions={mentionOptions}
-      layout={layout === 'full' ? 'full' : layout === 'modal' ? 'modal' : 'split'}
-      onLayoutChange={onLayoutChange}
-      onClose={onClose}
-      onCommentDraftChange={onCommentDraftChange}
-      onPostComment={onPostComment}
-      onReply={(comment) => onReply({ id: comment.id, author: comment.author })}
-      onRefreshThread={onRefreshThread}
-      onAssign={onAssign}
-      onRetry={onRetry}
-      onToggleAutopilot={onToggleAutopilot}
-      onStop={onStop}
-      onDelete={onDelete}
-      onOpenStageTask={onOpenStageTask}
-      autopilotBusy={autopilotBusy}
-    />
+    <Tabs defaultValue="details" className="flex h-full min-h-0 flex-col">
+      <div className="shrink-0 border-b border-border/60 px-4 pt-2">
+        <TabsList className="h-9 w-full justify-start gap-1 bg-transparent p-0">
+          <TabsTrigger value="details" className="px-3">
+            {translate('auto.components.orchestration.board.detailTab', 'Details')}
+          </TabsTrigger>
+          <TabsTrigger value="logs" className="gap-1.5 px-3">
+            <Laptop className="size-3.5" />
+            {translate('auto.components.orchestration.board.logsTab', 'Logs')}
+          </TabsTrigger>
+        </TabsList>
+      </div>
+      <TabsContent value="details" className="mt-0 min-h-0 flex-1 data-[state=inactive]:hidden">
+        <OrchestrationBoardTaskDialog
+          task={task}
+          thread={thread}
+          threadLoading={threadLoading}
+          commentDraft={commentDraft}
+          commentSubmitting={commentSubmitting}
+          selectedSquadId={selectedSquadId}
+          squadsEmpty={squadsEmpty}
+          assigning={assigning}
+          actionBusy={actionBusy}
+          repoLabel={repoLabel}
+          mentionOptions={mentionOptions}
+          layout={layout === 'full' ? 'full' : layout === 'modal' ? 'modal' : 'split'}
+          onLayoutChange={onLayoutChange}
+          onClose={onClose}
+          onCommentDraftChange={onCommentDraftChange}
+          onPostComment={onPostComment}
+          onReply={(comment) => onReply({ id: comment.id, author: comment.author })}
+          onRefreshThread={onRefreshThread}
+          onAssign={onAssign}
+          onRetry={onRetry}
+          onToggleAutopilot={onToggleAutopilot}
+          onStop={onStop}
+          onDelete={onDelete}
+          onOpenStageTask={onOpenStageTask}
+          autopilotBusy={autopilotBusy}
+        />
+      </TabsContent>
+      <TabsContent value="logs" className="mt-0 min-h-0 flex-1 data-[state=inactive]:hidden">
+        <OrchestrationTaskLogs task={task} thread={thread} />
+      </TabsContent>
+    </Tabs>
   )
 }
