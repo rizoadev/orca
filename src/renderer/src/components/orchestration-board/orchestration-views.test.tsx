@@ -5,6 +5,7 @@ import { render, screen, cleanup, fireEvent } from '@testing-library/react'
 import type { OrchestrationBoardTask } from './orchestration-board-model'
 import { OrchestrationTableView } from './OrchestrationTableView'
 import { OrchestrationGanttView } from './OrchestrationGanttView'
+import { OrchestrationBoardWorkspace } from './OrchestrationBoardWorkspace'
 
 const { toastErrorMock, toastSuccessMock } = vi.hoisted(() => ({
   toastErrorMock: vi.fn(),
@@ -107,5 +108,26 @@ describe('OrchestrationGanttView', () => {
   it('renders empty state', () => {
     render(<OrchestrationGanttView tasks={[]} onSelectTask={() => {}} />)
     expect(screen.getByText(/No pipelines to show yet/i)).toBeTruthy()
+  })
+})
+
+describe('OrchestrationBoardWorkspace', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    cleanup()
+  })
+
+  it('switches between table and gantt views', () => {
+    render(
+      <OrchestrationBoardWorkspace
+        tasks={[makeTask({ id: 'root', display_name: 'Root task' })]}
+        onSelectTask={() => {}}
+      />
+    )
+    expect(screen.getByText('Root task')).toBeTruthy()
+    fireEvent.click(screen.getByText('Gantt'))
+    expect(screen.getByText('implement')).toBeTruthy()
+    fireEvent.click(screen.getByText('Kanban'))
+    expect(screen.getByText('Ready')).toBeTruthy()
   })
 })

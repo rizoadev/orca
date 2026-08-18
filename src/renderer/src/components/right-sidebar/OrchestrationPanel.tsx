@@ -1,18 +1,10 @@
 /**
- * Right-sidebar orchestration workspace for the active project/repo.
- * Three views (hierarchical table, gantt timeline, kanban) over the same
- * task list; task detail opens in the shared detail host.
+ * Right-sidebar orchestration companion for the active project/repo.
+ * The dense three-view workspace lives in the full board (main box); this
+ * panel keeps a compact live summary and hands off to that board.
  */
-import React, { Suspense, useCallback, useEffect, useMemo, useState } from 'react'
-import {
-  ExternalLink,
-  GanttChartSquare,
-  Kanban,
-  LoaderCircle,
-  RefreshCw,
-  Table2,
-  Workflow
-} from 'lucide-react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import { ExternalLink, LoaderCircle, RefreshCw, Workflow } from 'lucide-react'
 import { useAppStore } from '@/store'
 import { useActiveWorktree, useRepoById } from '@/store/selectors'
 import { Button } from '@/components/ui/button'
@@ -20,38 +12,17 @@ import { cn } from '@/lib/utils'
 import { translate } from '@/i18n/i18n'
 import { callRuntimeRpc } from '@/runtime/runtime-rpc-client'
 import { installWindowVisibilityInterval } from '@/lib/window-visibility-interval'
-import {
-  groupTasksByColumn,
-  ORCHESTRATION_BOARD_COLUMNS,
-  type OrchestrationBoardTask
-} from '@/components/orchestration-board/orchestration-board-model'
-import { OrchestrationBoardColumn } from '@/components/orchestration-board/OrchestrationBoardColumn'
-import { OrchestrationTableView } from '@/components/orchestration-board/OrchestrationTableView'
-import { OrchestrationGanttView } from '@/components/orchestration-board/OrchestrationGanttView'
+import type { OrchestrationBoardTask } from '@/components/orchestration-board/orchestration-board-model'
 import { collectRunningAgentsByTaskId } from '@/components/orchestration-board/orchestration-task-running-agents'
 
 const LOCAL_RUNTIME_TARGET = { kind: 'local' as const }
 const POLL_MS = 5_000
-
-// Why: keep list panel mountable even if detail host chunk fails to load.
-const OrchestrationTaskDetailHost = React.lazy(async () => {
-  const mod = await import('@/components/orchestration-board/OrchestrationTaskDetailHost')
-  return { default: mod.OrchestrationTaskDetailHost }
-})
 
 type TaskListResult = {
   tasks: OrchestrationBoardTask[]
   count: number
   truncated?: boolean
 }
-
-type ViewKind = 'table' | 'gantt' | 'kanban'
-
-const VIEW_OPTIONS: { id: ViewKind; label: string; icon: typeof Table2 }[] = [
-  { id: 'table', label: 'Table', icon: Table2 },
-  { id: 'gantt', label: 'Gantt', icon: GanttChartSquare },
-  { id: 'kanban', label: 'Kanban', icon: Kanban }
-]
 
 export default function OrchestrationPanel({
   isVisible
@@ -61,8 +32,6 @@ export default function OrchestrationPanel({
   const activeWorktree = useActiveWorktree()
   const activeRepo = useRepoById(activeWorktree?.repoId ?? null)
   const openOrchestrationBoardPage = useAppStore((s) => s.openOrchestrationBoardPage)
-  const openOrchestrationTaskDetails = useAppStore((s) => s.openOrchestrationTaskDetails)
-  const setActiveWorktree = useAppStore((s) => s.setActiveWorktree)
   const agentStatusByPaneKey = useAppStore((s) => s.agentStatusByPaneKey)
   const runtimeAgentOrchestrationByPaneKey = useAppStore(
     (s) => s.runtimeAgentOrchestrationByPaneKey
@@ -76,79 +45,51 @@ export default function OrchestrationPanel({
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [scope, setScope] = useState<'repo' | 'worktree'>('repo')
-  const [view, setView] = useState<ViewKind>('table')
-  const [selectedTask, setSelectedTask] = useState<OrchestrationBoardTask | null>(null)
-  const loadGenRef = React.useRef(0)
 
-  const load = useCallback(
-    async (opts?: { showSpinner?: boolean }) => {
-      if (!repoId && !worktreeId) {
-        setTasks([])
-        setError(null)
-        setLoading(false)
-        return
-      }
-      const generation = ++loadGenRef.current
-      if (opts?.showSpinner) {
-        setLoading(true)
-      }
-      try {
-        const listParams =
-          scope === 'worktree' && worktreeId
-            ? { worktreeId }
-            : repoId
-              ? { repoId }
-              : worktreeId
-                ? { worktreeId }
-                : {}
-        const result = await callRuntimeRpc<TaskListResult>(
-          LOCAL_RUNTIME_TARGET,
-          'orchestration.taskList',
-          listParams,
-          { timeoutMs: 15_000, skipCompatibilityCheck: true }
-        )
-        if (generation !== loadGenRef.current) {
-          return
-        }
-        setTasks(result.tasks ?? [])
-        setError(null)
-      } catch (err) {
-        if (generation !== loadGenRef.current) {
-          return
-        }
-        setError(err instanceof Error ? err.message : String(err))
-      } finally {
-        if (generation === loadGenRef.current) {
-          setLoading(false)
-        }
-      }
-    },
-    [repoId, scope, worktreeId]
-  )
+  const load = useCallback(async () => {
+    if (!repoId && !worktreeId) {
+      setTasks([])
+      setError(null)
+      setLoading(false)
+      return
+    }
+    setLoading(true)
+    try {
+      const listParams =
+        scope === 'worktree' && worktreeId
+          ? { worktreeId }
+          : repoId
+            ? { repoId }
+            : worktreeId
+              ? { worktreeId }
+              : {}
+      const result = await callRuntimeRpc<TaskListResult>(
+        LOCAL_RUNTIME_TARGET,
+        'orchestration.taskList',
+        listParams,
+        { timeoutMs: 15_000, skipCompatibilityCheck: true }
+      )
+      setTasks(result.tasks ?? [])
+      setError(null)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setLoading(false)
+    }
+  }, [repoId, scope, worktreeId])
 
   useEffect(() => {
     if (!isVisible) {
       return
     }
-    void load({ showSpinner: true })
+    void load()
     return installWindowVisibilityInterval({
       run: () => {
-        void load({ showSpinner: false })
+        void load()
       },
       intervalMs: POLL_MS
     })
   }, [isVisible, load])
-
-  // Keep selected task fresh after poll without putting selectedTask in load deps.
-  useEffect(() => {
-    if (!selectedTask) {
-      return
-    }
-    const fresh = tasks.find((t) => t.id === selectedTask.id)
-    if (fresh && fresh !== selectedTask) {
-      setSelectedTask(fresh)
-    }
-  }, [selectedTask, tasks])
 
   const counts = useMemo(() => {
     let active = 0
@@ -187,27 +128,9 @@ export default function OrchestrationPanel({
     return n
   }, [runningByTaskId])
 
-  const columns = useMemo(() => groupTasksByColumn(tasks), [tasks])
-
-  const openTask = useCallback(
-    (task: OrchestrationBoardTask) => {
-      const targetWorktreeId = task.worktree_id || worktreeId
-      if (targetWorktreeId && openOrchestrationTaskDetails) {
-        try {
-          if (targetWorktreeId !== worktreeId) {
-            setActiveWorktree?.(targetWorktreeId)
-          }
-          openOrchestrationTaskDetails(targetWorktreeId, { task })
-          setSelectedTask(null)
-          return
-        } catch (err) {
-          console.error('[OrchestrationPanel] open main task tab failed', err)
-        }
-      }
-      setSelectedTask(task)
-    },
-    [openOrchestrationTaskDetails, setActiveWorktree, worktreeId]
-  )
+  const openBoard = useCallback(() => {
+    openOrchestrationBoardPage()
+  }, [openOrchestrationBoardPage])
 
   if (!repoId && !worktreeId) {
     return (
@@ -237,7 +160,7 @@ export default function OrchestrationPanel({
           size="icon-xs"
           title={translate('auto.components.right.sidebar.orchestration.refresh', 'Refresh')}
           onClick={() => {
-            void load({ showSpinner: true })
+            void load()
           }}
         >
           {loading ? (
@@ -254,7 +177,7 @@ export default function OrchestrationPanel({
             'auto.components.right.sidebar.orchestration.openBoard',
             'Open full board'
           )}
-          onClick={() => openOrchestrationBoardPage()}
+          onClick={openBoard}
         >
           <ExternalLink className="size-3.5" />
         </Button>
@@ -303,70 +226,75 @@ export default function OrchestrationPanel({
         </span>
       </div>
 
-      <div className="flex shrink-0 items-center gap-1 border-b border-border/40 px-3 py-1.5">
-        {VIEW_OPTIONS.map((option) => {
-          const Icon = option.icon
-          return (
-            <button
-              key={option.id}
-              type="button"
-              onClick={() => setView(option.id)}
-              className={cn(
-                'inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-medium transition-colors',
-                view === option.id
-                  ? 'bg-foreground text-background'
-                  : 'text-muted-foreground hover:bg-accent hover:text-foreground'
-              )}
-            >
-              <Icon className="size-3.5" />
-              {option.label}
-            </button>
-          )
-        })}
-      </div>
-
       {error ? (
         <div className="border-b border-destructive/30 bg-destructive/5 px-3 py-2 text-[11px] text-destructive">
           {error}
         </div>
       ) : null}
 
-      <div className="min-h-0 flex-1 overflow-hidden">
+      <div className="min-h-0 flex-1 overflow-y-auto p-3 scrollbar-sleek">
         {loading && tasks.length === 0 ? (
-          <div className="flex items-center justify-center gap-2 px-3 py-10 text-xs text-muted-foreground">
+          <div className="flex items-center justify-center gap-2 py-8 text-xs text-muted-foreground">
             <LoaderCircle className="size-3.5 animate-spin" />
-            {translate('auto.components.right.sidebar.orchestration.loading', 'Loading tasks…')}
+            {translate('auto.components.right.sidebar.orchestration.loading', 'Loading…')}
           </div>
-        ) : view === 'table' ? (
-          <OrchestrationTableView tasks={tasks} onSelectTask={openTask} />
-        ) : view === 'gantt' ? (
-          <OrchestrationGanttView tasks={tasks} onSelectTask={openTask} />
+        ) : tasks.length === 0 ? (
+          <div className="flex flex-col items-center gap-2 py-8 text-center">
+            <p className="text-xs text-muted-foreground">
+              {translate(
+                'auto.components.right.sidebar.orchestration.empty',
+                'No orchestration tasks yet.'
+              )}
+            </p>
+            <Button type="button" size="sm" variant="outline" className="h-7" onClick={openBoard}>
+              {translate('auto.components.right.sidebar.orchestration.openBoardCta', 'Open board')}
+            </Button>
+          </div>
         ) : (
-          <div className="flex min-h-0 flex-1 gap-3 overflow-x-auto p-3 scrollbar-sleek">
-            {ORCHESTRATION_BOARD_COLUMNS.map((column) => (
-              <OrchestrationBoardColumn
-                key={column.id}
-                id={column.id}
-                title={column.title}
-                tasks={columns[column.id]}
-                onSelectTask={openTask}
-              />
+          <div className="space-y-1">
+            {tasks.slice(0, 30).map((task) => (
+              <button
+                key={task.id}
+                type="button"
+                onClick={openBoard}
+                className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left transition-colors hover:bg-accent/50"
+              >
+                <span
+                  className={cn(
+                    'size-1.5 shrink-0 rounded-full',
+                    task.status === 'completed'
+                      ? 'bg-emerald-500'
+                      : task.status === 'failed'
+                        ? 'bg-destructive'
+                        : task.status === 'dispatched'
+                          ? 'bg-amber-500'
+                          : 'bg-muted-foreground/40'
+                  )}
+                />
+                <span className="line-clamp-1 min-w-0 flex-1 text-[12px] text-foreground/90">
+                  {task.display_name?.trim() || task.task_title?.trim() || task.spec || task.id}
+                </span>
+                <span className="shrink-0 text-[10px] capitalize text-muted-foreground">
+                  {task.status}
+                </span>
+              </button>
             ))}
+            {tasks.length > 30 ? (
+              <button
+                type="button"
+                onClick={openBoard}
+                className="w-full px-2 py-1 text-center text-[11px] text-muted-foreground transition-colors hover:text-foreground"
+              >
+                {translate(
+                  'auto.components.right.sidebar.orchestration.more',
+                  '{n} more — open board',
+                  { n: tasks.length - 30 }
+                )}
+              </button>
+            ) : null}
           </div>
         )}
       </div>
-
-      {selectedTask ? (
-        <Suspense fallback={null}>
-          <OrchestrationTaskDetailHost
-            task={selectedTask}
-            onClose={() => setSelectedTask(null)}
-            onChanged={() => {
-              void load({ showSpinner: false })
-            }}
-          />
-        </Suspense>
-      ) : null}
     </div>
   )
 }
