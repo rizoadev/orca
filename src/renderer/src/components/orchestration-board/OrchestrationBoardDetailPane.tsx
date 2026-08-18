@@ -1,4 +1,4 @@
-import { Laptop } from 'lucide-react'
+import { ListTree, Laptop } from 'lucide-react'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { translate } from '@/i18n/i18n'
 import {
@@ -9,6 +9,9 @@ import {
 } from './OrchestrationBoardTaskDialog'
 import type { OrchestrationBoardTask } from './orchestration-board-model'
 import { OrchestrationTaskLogs } from './OrchestrationTaskLogs'
+import { OrchestrationSubtasksPanel } from './OrchestrationSubtasksPanel'
+
+const EMPTY_SUBTASKS: OrchestrationBoardTask[] = []
 
 export function OrchestrationBoardDetailPane({
   task,
@@ -35,7 +38,10 @@ export function OrchestrationBoardDetailPane({
   onToggleAutopilot,
   onStop,
   onDelete,
-  onOpenStageTask
+  onOpenStageTask,
+  subtasks = EMPTY_SUBTASKS,
+  onOpenTask,
+  onAddSubtask
 }: {
   task: OrchestrationBoardTask
   thread: OrchestrationBoardTaskThread | null
@@ -62,6 +68,9 @@ export function OrchestrationBoardDetailPane({
   onStop: () => void
   onDelete: () => void
   onOpenStageTask: (taskId: string) => void
+  subtasks?: OrchestrationBoardTask[]
+  onOpenTask?: (task: OrchestrationBoardTask) => void
+  onAddSubtask?: (title: string) => void
 }): React.JSX.Element {
   return (
     <Tabs defaultValue="details" className="flex h-full min-h-0 flex-col">
@@ -73,6 +82,13 @@ export function OrchestrationBoardDetailPane({
           <TabsTrigger value="logs" className="gap-1.5 px-3">
             <Laptop className="size-3.5" />
             {translate('auto.components.orchestration.board.logsTab', 'Logs')}
+          </TabsTrigger>
+          <TabsTrigger value="subtasks" className="gap-1.5 px-3">
+            <ListTree className="size-3.5" />
+            {translate('auto.components.orchestration.board.subtasksTab', 'Subtasks')}
+            {subtasks.length > 0 ? (
+              <span className="tabular-nums text-muted-foreground">{subtasks.length}</span>
+            ) : null}
           </TabsTrigger>
         </TabsList>
       </div>
@@ -107,6 +123,16 @@ export function OrchestrationBoardDetailPane({
       </TabsContent>
       <TabsContent value="logs" className="mt-0 min-h-0 flex-1 data-[state=inactive]:hidden">
         <OrchestrationTaskLogs task={task} thread={thread} />
+      </TabsContent>
+      <TabsContent value="subtasks" className="mt-0 min-h-0 flex-1 data-[state=inactive]:hidden">
+        {onOpenTask && onAddSubtask ? (
+          <OrchestrationSubtasksPanel
+            tasks={subtasks}
+            rootTask={task}
+            onOpenTask={onOpenTask}
+            onAddSubtask={onAddSubtask}
+          />
+        ) : null}
       </TabsContent>
     </Tabs>
   )

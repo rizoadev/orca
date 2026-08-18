@@ -6,6 +6,7 @@ import type { OrchestrationBoardTask } from './orchestration-board-model'
 import { OrchestrationTableView } from './OrchestrationTableView'
 import { OrchestrationGanttView } from './OrchestrationGanttView'
 import { OrchestrationBoardWorkspace } from './OrchestrationBoardWorkspace'
+import { OrchestrationSubtasksPanel } from './OrchestrationSubtasksPanel'
 
 const { toastErrorMock, toastSuccessMock } = vi.hoisted(() => ({
   toastErrorMock: vi.fn(),
@@ -129,5 +130,41 @@ describe('OrchestrationBoardWorkspace', () => {
     expect(screen.getByText('implement')).toBeTruthy()
     fireEvent.click(screen.getByText('Kanban'))
     expect(screen.getByText('Ready')).toBeTruthy()
+  })
+})
+
+describe('OrchestrationSubtasksPanel', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    cleanup()
+  })
+
+  it('renders child subtasks under a root', () => {
+    render(
+      <OrchestrationSubtasksPanel
+        rootTask={makeTask({ id: 'root', display_name: 'Root task' })}
+        tasks={[makeTask({ id: 'child', parent_id: 'root', display_name: 'Child task' })]}
+        onOpenTask={() => {}}
+        onAddSubtask={() => {}}
+      />
+    )
+    expect(screen.getByText('Child task')).toBeTruthy()
+  })
+
+  it('calls onAddSubtask with the typed title', () => {
+    const onAdd = vi.fn()
+    render(
+      <OrchestrationSubtasksPanel
+        rootTask={makeTask({ id: 'root', display_name: 'Root task' })}
+        tasks={[]}
+        onOpenTask={() => {}}
+        onAddSubtask={onAdd}
+      />
+    )
+    fireEvent.click(screen.getByText('Add subtask'))
+    const input = screen.getByPlaceholderText('Subtask title…')
+    fireEvent.change(input, { target: { value: 'Research gate' } })
+    fireEvent.click(screen.getByText('Create'))
+    expect(onAdd).toHaveBeenCalledWith('Research gate')
   })
 })

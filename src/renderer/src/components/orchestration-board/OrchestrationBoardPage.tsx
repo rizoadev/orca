@@ -1,4 +1,5 @@
-import React, { useMemo } from 'react'
+import React, { useCallback, useMemo } from 'react'
+import { toast } from 'sonner'
 import { useAppStore } from '@/store'
 import { useRepoMap } from '@/store/selectors'
 import { callRuntimeRpc } from '@/runtime/runtime-rpc-client'
@@ -123,6 +124,46 @@ export default function OrchestrationBoardPage(): React.JSX.Element {
 
   const activeTask = detail.activeTask
 
+  const activeSubtasks = useMemo(() => {
+    if (!activeTask) {
+      return []
+    }
+    return tasks.filter((t) => t.parent_id === activeTask.id)
+  }, [activeTask, tasks])
+
+  const handleAddSubtask = useCallback(
+    async (title: string) => {
+      if (!activeTask) {
+        return
+      }
+      const trimmed = title.trim()
+      if (!trimmed) {
+        return
+      }
+      try {
+        await callRuntimeRpc(
+          { kind: 'local' as const },
+          'orchestration.taskCreate',
+          {
+            spec: trimmed,
+            taskTitle: trimmed,
+            displayName: trimmed,
+            parent: activeTask.id,
+            ...(activeTask.repo_id ? { repoId: activeTask.repo_id } : {}),
+            ...(activeTask.worktree_id ? { worktreeId: activeTask.worktree_id } : {}),
+            priority: 'medium',
+            hostId: 'local'
+          },
+          { timeoutMs: 15_000, skipCompatibilityCheck: true }
+        )
+        await load({ showSpinner: false })
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : String(err))
+      }
+    },
+    [activeTask, load]
+  )
+
   return (
     <div className="flex h-full min-h-0 flex-col bg-background">
       <OrchestrationBoardHeader
@@ -219,6 +260,11 @@ export default function OrchestrationBoardPage(): React.JSX.Element {
               onOpenStageTask={(taskId) => {
                 void detail.handleOpenStageTask(taskId)
               }}
+              subtasks={activeSubtasks}
+              onOpenTask={detail.openTask}
+              onAddSubtask={(title) => {
+                void handleAddSubtask(title)
+              }}
             />
           </div>
         ) : null}
@@ -300,6 +346,11 @@ export default function OrchestrationBoardPage(): React.JSX.Element {
           }}
           onOpenStageTask={(taskId) => {
             void detail.handleOpenStageTask(taskId)
+          }}
+          subtasks={activeSubtasks}
+          onOpenTask={detail.openTask}
+          onAddSubtask={(title) => {
+            void handleAddSubtask(title)
           }}
         />
       ) : null}

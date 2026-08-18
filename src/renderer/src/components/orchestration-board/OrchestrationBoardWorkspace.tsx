@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { GanttChartSquare, Kanban, Table2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { translate } from '@/i18n/i18n'
@@ -36,6 +36,18 @@ export function OrchestrationBoardWorkspace({
 }): React.JSX.Element {
   const [view, setView] = useState<OrchestrationWorkspaceView>(defaultView)
   const columns = groupTasksByColumn(tasks)
+
+  const subtaskCounts = useMemo(() => {
+    const counts: Record<string, number> = {}
+    for (const task of tasks) {
+      if (task.parent_id && counts[task.parent_id] !== undefined) {
+        counts[task.parent_id] += 1
+      } else if (task.parent_id) {
+        counts[task.parent_id] = 1
+      }
+    }
+    return counts
+  }, [tasks])
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -77,6 +89,7 @@ export function OrchestrationBoardWorkspace({
                 id={column.id}
                 title={column.title}
                 tasks={columns[column.id]}
+                subtaskCounts={subtaskCounts}
                 onSelectTask={onSelectTask}
               />
             ))}
