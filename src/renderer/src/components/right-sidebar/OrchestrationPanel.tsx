@@ -1,9 +1,18 @@
 /**
- * Right-sidebar orchestration queue for the active project/repo.
- * Scoped list only — task detail docks into the project main tab strip.
+ * Right-sidebar orchestration workspace for the active project/repo.
+ * Three views (hierarchical table, gantt timeline, kanban) over the same
+ * task list; task detail opens in the shared detail host.
  */
 import React, { Suspense, useCallback, useEffect, useMemo, useState } from 'react'
-import { ExternalLink, LoaderCircle, RefreshCw, Workflow } from 'lucide-react'
+import {
+  ExternalLink,
+  GanttChartSquare,
+  Kanban,
+  LoaderCircle,
+  RefreshCw,
+  Table2,
+  Workflow
+} from 'lucide-react'
 import { useAppStore } from '@/store'
 import { useActiveWorktree, useRepoById } from '@/store/selectors'
 import { Button } from '@/components/ui/button'
@@ -11,9 +20,15 @@ import { cn } from '@/lib/utils'
 import { translate } from '@/i18n/i18n'
 import { callRuntimeRpc } from '@/runtime/runtime-rpc-client'
 import { installWindowVisibilityInterval } from '@/lib/window-visibility-interval'
-import type { OrchestrationBoardTask } from '@/components/orchestration-board/orchestration-board-model'
+import {
+  groupTasksByColumn,
+  ORCHESTRATION_BOARD_COLUMNS,
+  type OrchestrationBoardTask
+} from '@/components/orchestration-board/orchestration-board-model'
+import { OrchestrationBoardColumn } from '@/components/orchestration-board/OrchestrationBoardColumn'
+import { OrchestrationTableView } from '@/components/orchestration-board/OrchestrationTableView'
+import { OrchestrationGanttView } from '@/components/orchestration-board/OrchestrationGanttView'
 import { collectRunningAgentsByTaskId } from '@/components/orchestration-board/orchestration-task-running-agents'
-import { OrchestrationPanelTaskRow } from './orchestration-panel-task-row'
 
 const LOCAL_RUNTIME_TARGET = { kind: 'local' as const }
 const POLL_MS = 5_000
@@ -29,6 +44,14 @@ type TaskListResult = {
   count: number
   truncated?: boolean
 }
+
+type ViewKind = 'table' | 'gantt' | 'kanban'
+
+const VIEW_OPTIONS: { id: ViewKind; label: string; icon: typeof Table2 }[] = [
+  { id: 'table', label: 'Table', icon: Table2 },
+  { id: 'gantt', label: 'Gantt', icon: GanttChartSquare },
+  { id: 'kanban', label: 'Kanban', icon: Kanban }
+]
 
 export default function OrchestrationPanel({
   isVisible
@@ -53,6 +76,7 @@ export default function OrchestrationPanel({
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [scope, setScope] = useState<'repo' | 'worktree'>('repo')
+  const [view, setView] = useState<ViewKind>('table')
   const [selectedTask, setSelectedTask] = useState<OrchestrationBoardTask | null>(null)
   const loadGenRef = React.useRef(0)
 
@@ -115,7 +139,7 @@ export default function OrchestrationPanel({
     })
   }, [isVisible, load])
 
-  // Keep selected drawer task fresh after poll without putting selectedTask in load deps.
+  // Keep selected task fresh after poll without putting selectedTask in load deps.
   useEffect(() => {
     if (!selectedTask) {
       return
@@ -125,27 +149,6 @@ export default function OrchestrationPanel({
       setSelectedTask(fresh)
     }
   }, [selectedTask, tasks])
-
-  const sorted = useMemo(() => {
-    const rank = (status: string): number => {
-      switch (status) {
-        case 'dispatched':
-          return 0
-        case 'ready':
-        case 'pending':
-          return 1
-        case 'blocked':
-          return 2
-        case 'failed':
-          return 3
-        case 'completed':
-          return 4
-        default:
-          return 5
-      }
-    }
-    return [...tasks].sort((a, b) => rank(a.status) - rank(b.status))
-  }, [tasks])
 
   const counts = useMemo(() => {
     let active = 0
@@ -165,7 +168,6 @@ export default function OrchestrationPanel({
 
   const runningByTaskId = useMemo(() => {
     try {
-      // Why: store maps can be undefined during early hydration / slice swaps.
       return collectRunningAgentsByTaskId({
         tasks: Array.isArray(tasks) ? tasks : [],
         agentStatusByPaneKey: agentStatusByPaneKey ?? {},
@@ -185,12 +187,13 @@ export default function OrchestrationPanel({
     return n
   }, [runningByTaskId])
 
-  const openTaskFromList = useCallback(
+  const columns = useMemo(() => groupTasksByColumn(tasks), [tasks])
+
+  const openTask = useCallback(
     (task: OrchestrationBoardTask) => {
       const targetWorktreeId = task.worktree_id || worktreeId
       if (targetWorktreeId && openOrchestrationTaskDetails) {
         try {
-          // Align left-sidebar project + File Explorer with the task worktree being viewed.
           if (targetWorktreeId !== worktreeId) {
             setActiveWorktree?.(targetWorktreeId)
           }
@@ -300,52 +303,57 @@ export default function OrchestrationPanel({
         </span>
       </div>
 
+      <div className="flex shrink-0 items-center gap-1 border-b border-border/40 px-3 py-1.5">
+        {VIEW_OPTIONS.map((option) => {
+          const Icon = option.icon
+          return (
+            <button
+              key={option.id}
+              type="button"
+              onClick={() => setView(option.id)}
+              className={cn(
+                'inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-medium transition-colors',
+                view === option.id
+                  ? 'bg-foreground text-background'
+                  : 'text-muted-foreground hover:bg-accent hover:text-foreground'
+              )}
+            >
+              <Icon className="size-3.5" />
+              {option.label}
+            </button>
+          )
+        })}
+      </div>
+
       {error ? (
         <div className="border-b border-destructive/30 bg-destructive/5 px-3 py-2 text-[11px] text-destructive">
           {error}
         </div>
       ) : null}
 
-      <div className="min-h-0 flex-1 overflow-y-auto scrollbar-sleek">
-        {loading && sorted.length === 0 ? (
+      <div className="min-h-0 flex-1 overflow-hidden">
+        {loading && tasks.length === 0 ? (
           <div className="flex items-center justify-center gap-2 px-3 py-10 text-xs text-muted-foreground">
             <LoaderCircle className="size-3.5 animate-spin" />
             {translate('auto.components.right.sidebar.orchestration.loading', 'Loading tasks…')}
           </div>
-        ) : null}
-        {!loading && sorted.length === 0 ? (
-          <div className="flex flex-col items-center justify-center gap-2 px-4 py-12 text-center">
-            <p className="text-xs text-muted-foreground">
-              {translate(
-                'auto.components.right.sidebar.orchestration.empty',
-                'No orchestration tasks for this project yet.'
-              )}
-            </p>
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              className="h-7 text-xs"
-              onClick={() => openOrchestrationBoardPage()}
-            >
-              {translate(
-                'auto.components.right.sidebar.orchestration.openBoardCta',
-                'Open board'
-              )}
-            </Button>
+        ) : view === 'table' ? (
+          <OrchestrationTableView tasks={tasks} onSelectTask={openTask} />
+        ) : view === 'gantt' ? (
+          <OrchestrationGanttView tasks={tasks} onSelectTask={openTask} />
+        ) : (
+          <div className="flex min-h-0 flex-1 gap-3 overflow-x-auto p-3 scrollbar-sleek">
+            {ORCHESTRATION_BOARD_COLUMNS.map((column) => (
+              <OrchestrationBoardColumn
+                key={column.id}
+                id={column.id}
+                title={column.title}
+                tasks={columns[column.id]}
+                onSelectTask={openTask}
+              />
+            ))}
           </div>
-        ) : null}
-        <div className="divide-y divide-border/40">
-          {sorted.map((task) => (
-            <OrchestrationPanelTaskRow
-              key={task.id}
-              task={task}
-              selected={selectedTask?.id === task.id}
-              agents={runningByTaskId[task.id] ?? []}
-              onClick={() => openTaskFromList(task)}
-            />
-          ))}
-        </div>
+        )}
       </div>
 
       {selectedTask ? (
