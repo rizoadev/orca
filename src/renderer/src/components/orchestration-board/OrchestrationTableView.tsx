@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { ChevronDown, ChevronRight, CornerDownRight, MessageSquare } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { translate } from '@/i18n/i18n'
@@ -179,13 +179,28 @@ export function OrchestrationTableView({
 }): React.JSX.Element {
   const forest = useMemo(() => buildOrchestrationTaskForest(tasks), [tasks])
   const total = useMemo(() => countOrchestrationTreeNodes(forest), [forest])
-  const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => {
-    const ids = new Set<string>()
-    for (const root of forest) {
-      ids.add(root.task.id)
-    }
-    return ids
-  })
+  const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => new Set())
+
+  // Why: the list starts empty while polling; auto-expand roots as they
+  // arrive so children are visible without the user manually expanding every
+  // collapsed row after the first load.
+  useEffect(() => {
+    const rootIds = new Set(forest.map((node) => node.task.id))
+    setExpanded((prev) => {
+      if (rootIds.size === 0) {
+        return prev
+      }
+      let changed = false
+      const next = new Set(prev)
+      for (const id of rootIds) {
+        if (!next.has(id)) {
+          next.add(id)
+          changed = true
+        }
+      }
+      return changed ? next : prev
+    })
+  }, [forest])
 
   const toggle = (id: string): void => {
     setExpanded((prev) => {
