@@ -2,7 +2,8 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { OrchestrationDb } from './db'
 import {
   advanceProductPipelineAfterTaskComplete,
-  createProductPipelineTasks
+  createProductPipelineTasks,
+  createProductPlanTasks
 } from './product-pipeline-engine'
 
 describe('product-pipeline-engine', () => {
@@ -25,15 +26,25 @@ describe('product-pipeline-engine', () => {
     expect(root.status).toBe('completed')
     expect(root.pipeline_stage).toBe('running')
     expect(stages).toHaveLength(4)
-    expect(stages.map((s) => s.pipeline_stage)).toEqual([
-      'research',
-      'implement',
-      'test',
-      'review'
-    ])
+    expect(stages.map((s) => s.pipeline_stage)).toEqual(['research', 'implement', 'test', 'review'])
     expect(stages[0]?.status).toBe('ready')
     expect(stages[1]?.status).toBe('pending')
     expect(JSON.parse(stages[1]!.deps)).toEqual([stages[0]!.id])
+  })
+
+  it('sets plan-only root pipeline_id to itself so productWatch accepts it', () => {
+    db = new OrchestrationDb(':memory:')
+    const { root, research } = createProductPlanTasks(db, {
+      productGoal: 'Add OTP email mockup dashboard page',
+      repoId: 'repo-1',
+      hostId: 'local',
+      priority: 'high'
+    })
+
+    expect(root.pipeline_id).toBe(root.id)
+    expect(root.status).toBe('ready')
+    expect(research.pipeline_id).toBe(root.id)
+    expect(research.status).toBe('ready')
   })
 
   it('rewrites implement+test on tester FAIL', () => {

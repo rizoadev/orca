@@ -154,6 +154,16 @@ export function createProductPlanTasks(
     pipelineAttempt: 1
   })
 
+  // Why: root's pipeline_id must point at itself, otherwise productWatch /
+  // productTick reject it with "Unknown product pipeline". The full-pipeline
+  // variant sets this in a follow-up meta update; plan-only must too.
+  db.setTaskPipelineMeta(root.id, {
+    pipelineId: root.id,
+    pipelineStage: 'running',
+    pipelineRole: 'implementer',
+    pipelineAttempt: 1
+  })
+
   const researchSpec = buildRoleTaskSpec({
     role: 'researcher',
     productGoal: args.productGoal,

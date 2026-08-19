@@ -68,10 +68,12 @@ export function parseSubtaskBreakdown(text: string | null | undefined): SubTaskB
       })
       continue
     }
-    // Fallback: a plain bullet without role delimiters becomes an implement item.
-    const bullet = line.replace(/^(?:\[\d+\]|[-*]|\d+[.)])\s*/, '').trim()
-    if (bullet && bullet.length > 2) {
-      items.push({ title: bullet, role: 'implement', description: '' })
+    // Fallback: only lines that start with a real bullet marker become items.
+    // Prose, role-only words and verdict lines must never leak into the list.
+    const bullet = line.match(/^(?:\[\d+\]|[-*]|\d+[.)])\s+(.+)$/)
+    const bulletText = bullet?.[1]?.trim()
+    if (bulletText && bulletText.length > 2) {
+      items.push({ title: bulletText, role: 'implement', description: '' })
     }
   }
   return items
