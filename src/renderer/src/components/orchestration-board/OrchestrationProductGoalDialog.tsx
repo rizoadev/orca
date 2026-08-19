@@ -219,11 +219,11 @@ export function OrchestrationProductGoalDialog({
               : phase === 'planning'
                 ? translate(
                     'auto.components.orchestration.board.product.planning',
-                    'AI is researching and drafting subtasks…'
+                    'AI is drafting subtasks…'
                   )
                 : translate(
                     'auto.components.orchestration.board.product.review',
-                    'Review the draft subtasks, edit as needed, then create & assign.'
+                    'Review the draft subtasks, edit as needed, then start planning.'
                   )}
           </DialogDescription>
         </DialogHeader>
@@ -320,16 +320,15 @@ export function OrchestrationProductGoalDialog({
               ) : (
                 <Workflow className="mr-2 h-3.5 w-3.5" />
               )}
-              {translate('auto.components.orchestration.board.product.plan', 'Start planning')}
+              {translate('auto.components.orchestration.board.product.createDraft', 'Create draft')}
             </Button>
           ) : null}
           {phase === 'review' ? (
             <Button disabled={creating || checked.size === 0} onClick={() => void create()}>
               {creating ? <LoaderCircle className="mr-2 h-3.5 w-3.5 animate-spin" /> : null}
               {translate(
-                'auto.components.orchestration.board.product.createAssign',
-                'Create & assign ({n})',
-                { n: checked.size }
+                'auto.components.orchestration.board.product.startPlanning',
+                'Start planning'
               )}
             </Button>
           ) : null}
