@@ -17651,6 +17651,13 @@ export class OrcaRuntimeService {
     return worktree.path
   }
 
+  // Why: plan-only research needs a cwd before any worktree exists; the
+  // primary repo checkout path is the source of truth.
+  async resolveRepoPath(repoId: string): Promise<string> {
+    const repo = await this.showRepo(`id:${repoId}`)
+    return repo.path
+  }
+
   async scanWorkspacePorts(repoId?: string): Promise<WorkspacePortScanResult> {
     return scanWorkspacePortProbes(await this.getWorkspacePortProbes(repoId))
   }

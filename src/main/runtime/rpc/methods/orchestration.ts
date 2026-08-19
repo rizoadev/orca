@@ -1634,30 +1634,36 @@ export const ORCHESTRATION_METHODS: RpcMethod[] = [
         }
       }
 
-      if (!worktreeId) {
-        const branchSlug = (params.title || params.goal)
-          .toLowerCase()
-          .replace(/[^a-z0-9]+/g, '-')
-          .replace(/^-+|-+$/g, '')
-          .slice(0, 40)
-        const created = await runtime.createManagedWorktree({
-          repoSelector: params.repo,
-          name: branchSlug || `product-${Date.now().toString(36)}`,
-          baseBranch: params.baseBranch,
-          displayName: params.title?.trim() || params.goal.trim().slice(0, 80),
-          comment: `Product pipeline: ${params.goal.trim().slice(0, 200)}`,
-          linkedIssue: issueNumber,
-          activate: true
-        })
-        worktreeId = created.worktree?.id ?? null
-        worktreeCreated = true
+      // Why: plan-only should NOT create a worktree yet — the operator may
+      // discard the draft. A worktree is only created when the draft is
+      // submitted (create-plan), so the initial repo checkout is enough for
+      // the headless research cwd.
+      if (!params.planOnly) {
         if (!worktreeId) {
-          throw new Error('worktree.create returned without an id')
+          const branchSlug = (params.title || params.goal)
+            .toLowerCase()
+            .replace(/[^a-z0-9]+/g, '-')
+            .replace(/^-+|-+$/g, '')
+            .slice(0, 40)
+          const created = await runtime.createManagedWorktree({
+            repoSelector: params.repo,
+            name: branchSlug || `product-${Date.now().toString(36)}`,
+            baseBranch: params.baseBranch,
+            displayName: params.title?.trim() || params.goal.trim().slice(0, 80),
+            comment: `Product pipeline: ${params.goal.trim().slice(0, 200)}`,
+            linkedIssue: issueNumber,
+            activate: true
+          })
+          worktreeId = created.worktree?.id ?? null
+          worktreeCreated = true
+          if (!worktreeId) {
+            throw new Error('worktree.create returned without an id')
+          }
+        } else if (!worktreeId.includes('::')) {
+          // Allow path/name selectors: resolve via show
+          const shown = await runtime.showManagedWorktree(worktreeId)
+          worktreeId = shown.id
         }
-      } else if (!worktreeId.includes('::')) {
-        // Allow path/name selectors: resolve via show
-        const shown = await runtime.showManagedWorktree(worktreeId)
-        worktreeId = shown.id
       }
 
       // Why: plan-only starts root + research only; the UI shows the breakdown
@@ -1670,7 +1676,7 @@ export const ORCHESTRATION_METHODS: RpcMethod[] = [
                 productGoal: params.goal,
                 title: params.title,
                 repoId: repo.id,
-                worktreeId,
+                worktreeId: worktreeId ?? undefined,
                 hostId: 'local',
                 priority: params.priority ?? 'high'
               })
@@ -1680,7 +1686,7 @@ export const ORCHESTRATION_METHODS: RpcMethod[] = [
               productGoal: params.goal,
               title: params.title,
               repoId: repo.id,
-              worktreeId,
+              worktreeId: worktreeId ?? undefined,
               hostId: 'local',
               priority: params.priority ?? 'high'
             })

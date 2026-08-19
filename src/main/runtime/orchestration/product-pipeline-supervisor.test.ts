@@ -49,7 +49,8 @@ describe('product-pipeline-supervisor', () => {
       getTerminalOrchestrationCliCommand: vi.fn().mockReturnValue('orca' as const),
       sendTerminalAgentPrompt: vi.fn().mockResolvedValue(undefined),
       getAgentStatusForHandle: vi.fn().mockReturnValue('idle'),
-      resolveWorktreePath: vi.fn().mockResolvedValue('/tmp/wt')
+      resolveWorktreePath: vi.fn().mockResolvedValue('/tmp/wt'),
+      resolveRepoPath: vi.fn().mockResolvedValue('/repo')
     }
 
     watchProductPipeline(root.id, db, runtime, { pollIntervalMs: 60_000 })
@@ -81,7 +82,8 @@ describe('product-pipeline-supervisor', () => {
       getTerminalOrchestrationCliCommand: vi.fn().mockReturnValue('orca' as const),
       sendTerminalAgentPrompt: vi.fn().mockResolvedValue(undefined),
       getAgentStatusForHandle: vi.fn().mockReturnValue('idle'),
-      resolveWorktreePath: vi.fn().mockResolvedValue('/tmp/wt')
+      resolveWorktreePath: vi.fn().mockResolvedValue('/tmp/wt'),
+      resolveRepoPath: vi.fn().mockResolvedValue('/repo')
     }
 
     // research depends on manage; make it ready directly so dispatch targets it

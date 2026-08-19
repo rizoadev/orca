@@ -242,7 +242,7 @@ export function OrchestrationProductGoalDialog({
           </DialogDescription>
         </DialogHeader>
 
-        {phase === 'goal' ? (
+        {phase === 'goal' || phase === 'planning' ? (
           <div className="space-y-3 py-2">
             <div className="space-y-1.5">
               <Label htmlFor="product-goal">
@@ -250,12 +250,13 @@ export function OrchestrationProductGoalDialog({
               </Label>
               <Input
                 id="product-goal"
-                autoFocus
+                autoFocus={phase === 'goal'}
                 placeholder={translate(
                   'auto.components.orchestration.board.product.goalPlaceholder',
                   'e.g. Add JWT authentication to the API'
                 )}
                 value={goal}
+                disabled={phase === 'planning'}
                 onChange={(e) => setGoal(e.target.value)}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter' && goal.trim()) {
@@ -271,7 +272,11 @@ export function OrchestrationProductGoalDialog({
                   'Manager squad'
                 )}
               </Label>
-              <Select value={squadId || undefined} onValueChange={setSquadId} disabled={!hasSquads}>
+              <Select
+                value={squadId || undefined}
+                onValueChange={setSquadId}
+                disabled={!hasSquads || phase === 'planning'}
+              >
                 <SelectTrigger className="w-full text-xs">
                   <SelectValue
                     placeholder={translate(
@@ -289,18 +294,15 @@ export function OrchestrationProductGoalDialog({
                 </SelectContent>
               </Select>
             </div>
-          </div>
-        ) : null}
-
-        {phase === 'planning' ? (
-          <div className="flex flex-col items-center gap-3 py-10 text-center">
-            <LoaderCircle className="size-7 animate-spin text-muted-foreground" />
-            <p className="text-xs text-muted-foreground">
-              {translate(
-                'auto.components.orchestration.board.product.planningHint',
-                'Researcher agent is breaking the goal into subtasks. The checklist appears here shortly.'
-              )}
-            </p>
+            {phase === 'planning' ? (
+              <div className="flex items-center gap-2 rounded-md border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
+                <LoaderCircle className="size-4 shrink-0 animate-spin" />
+                {translate(
+                  'auto.components.orchestration.board.product.planningHint',
+                  'Researcher agent is breaking the goal into subtasks…'
+                )}
+              </div>
+            ) : null}
           </div>
         ) : null}
 

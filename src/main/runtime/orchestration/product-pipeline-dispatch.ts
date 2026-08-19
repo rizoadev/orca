@@ -36,6 +36,7 @@ export type ProductDispatchRuntime = {
   sendTerminalAgentPrompt: (handle: string, prompt: string) => Promise<unknown>
   getAgentStatusForHandle: (handle: string) => string | null
   resolveWorktreePath: (worktreeId: string) => Promise<string>
+  resolveRepoPath: (repoId: string) => Promise<string>
 }
 
 export async function dispatchPipelineStageTask(
@@ -73,7 +74,13 @@ export async function dispatchPipelineStageTask(
   // modal, not in a terminal tab.
   if (task.pipeline_stage === 'research') {
     try {
-      const cwd = await runtime.resolveWorktreePath(task.worktree_id)
+      // Why: plan-only runs before any worktree exists, so fall back to the
+      // primary repo checkout as the research cwd (research only reads).
+      const cwd = task.worktree_id
+        ? await runtime.resolveWorktreePath(task.worktree_id)
+        : task.repo_id
+          ? await runtime.resolveRepoPath(task.repo_id)
+          : process.cwd()
       const { result } = await runPiRpcDraftTask({
         cwd,
         spec: task.spec,

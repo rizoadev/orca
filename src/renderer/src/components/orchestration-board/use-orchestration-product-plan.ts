@@ -60,6 +60,31 @@ export function useOrchestrationProductPlan(): {
       pipelineId: string,
       repoId: string | null
     ): Promise<void> => {
+      // Why: plan-only never created a worktree; create one now that the draft
+      // is submitted so the real subtasks have a checkout to execute in.
+      let worktreeId: string | null = null
+      if (repoId) {
+        try {
+          const created = await callRuntimeRpc<{
+            worktree?: { id: string } | null
+          }>(
+            LOCAL_RUNTIME_TARGET,
+            'worktree.create',
+            {
+              repo: `id:${repoId}`,
+              name: `product-${Date.now().toString(36)}`,
+              displayName: 'Product pipeline',
+              comment: 'Created when the product plan draft was submitted.',
+              activate: false
+            },
+            { timeoutMs: 120_000, skipCompatibilityCheck: true }
+          )
+          worktreeId = created.worktree?.id ?? null
+        } catch {
+          // Non-fatal: subtasks are still created; they just won't auto-dispatch
+          // until a worktree is attached.
+        }
+      }
       for (const item of items) {
         await callRuntimeRpc(
           LOCAL_RUNTIME_TARGET,
@@ -71,6 +96,7 @@ export function useOrchestrationProductPlan(): {
             parent: pipelineId,
             priority: 'high',
             repoId: repoId ?? undefined,
+            ...(worktreeId ? { worktreeId } : {}),
             pipelineId,
             pipelineStage: item.role,
             pipelineRole: item.role
