@@ -159,6 +159,15 @@ export function createProductPlanTasks(
   // variant sets this in a follow-up meta update; plan-only must too.
   db.setTaskPipelineMeta(root.id, {
     pipelineId: root.id,
+    // Why: root status=completed is bookkeeping (it is a pipeline root, not a
+    // dispatchable stage); keeps it out of the ready-to-dispatch set.
+    status: 'completed',
+    // Why: autopilot is on by default so the supervisor keeps advancing the
+    // created subtasks without an operator; the toggle in task detail can turn it off.
+    result: withRootAutopilotFlag(
+      JSON.stringify({ kind: 'product_pipeline_root', goal: args.productGoal.trim() }),
+      true
+    ),
     pipelineStage: 'running',
     pipelineRole: 'implementer',
     pipelineAttempt: 1

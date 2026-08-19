@@ -32,6 +32,7 @@ import {
 } from '../../orchestration/query-retention'
 import { abbreviateOrchestrationTasks } from '../../../../shared/orchestration-task-summary'
 import { getRepoIdFromWorktreeId } from '../../../../shared/worktree-id'
+import { withRootAutopilotFlag } from '../../../../shared/orchestration-autopilot'
 import {
   createProductPipelineTasks,
   createProductPlanTasks,
@@ -1700,7 +1701,10 @@ export const ORCHESTRATION_METHODS: RpcMethod[] = [
             const parsed = JSON.parse(root.result ?? '{}') as Record<string, unknown>
             parsed.managerSquadId = params.squad.trim()
             db.setTaskPipelineMeta(root.id, {
-              result: JSON.stringify(parsed),
+              // Why: re-wrap with withRootAutopilotFlag — a bare
+              // JSON.stringify(parsed) here would drop autopilot:true and turn
+              // fully autopilot back off.
+              result: withRootAutopilotFlag(JSON.stringify(parsed), true),
               status: root.status
             })
           } catch {

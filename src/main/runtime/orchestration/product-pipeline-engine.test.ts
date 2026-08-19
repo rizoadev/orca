@@ -5,6 +5,7 @@ import {
   createProductPipelineTasks,
   createProductPlanTasks
 } from './product-pipeline-engine'
+import { parseRootAutopilotFlag } from '../../../shared/orchestration-autopilot'
 
 describe('product-pipeline-engine', () => {
   let db: OrchestrationDb | undefined
@@ -41,8 +42,10 @@ describe('product-pipeline-engine', () => {
       priority: 'high'
     })
 
-    expect(root.pipeline_id).toBe(root.id)
-    expect(root.status).toBe('ready')
+    const rootAfter = db.getTask(root.id)!
+    expect(rootAfter.pipeline_id).toBe(rootAfter.id)
+    expect(rootAfter.status).toBe('completed')
+    expect(parseRootAutopilotFlag(rootAfter.result)).toBe(true)
     expect(research.pipeline_id).toBe(root.id)
     expect(research.status).toBe('ready')
   })

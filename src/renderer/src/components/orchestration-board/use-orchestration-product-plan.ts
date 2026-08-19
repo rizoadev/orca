@@ -94,6 +94,9 @@ export function useOrchestrationProductPlan(): {
             taskTitle: item.title,
             displayName: item.title,
             parent: pipelineId,
+            // Why: don't let the default deps=[parent] strand these as pending
+            // behind the root; they must be ready so the supervisor runs them.
+            deps: '[]',
             priority: 'high',
             repoId: repoId ?? undefined,
             ...(worktreeId ? { worktreeId } : {}),
