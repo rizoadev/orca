@@ -76,6 +76,9 @@ export async function dispatchPipelineStageTask(
   // modal, not in a terminal tab.
   if (task.pipeline_stage === 'research') {
     try {
+      // Why: mark dispatched before the blocking RPC so the UI never shows a
+      // research task stuck at 'ready' while pi is actually drafting.
+      db.setTaskPipelineMeta(task.id, { status: 'dispatched' })
       // Why: plan-only runs before any worktree exists, so fall back to the
       // primary repo checkout as the research cwd (research only reads).
       const cwd = task.worktree_id
