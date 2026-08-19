@@ -301,6 +301,9 @@ export function OrchestrationProductGoalDialog({
               setChecked((prev) => new Set(prev).add(idx))
             }}
             onDelete={deleteItem}
+            onUpdate={(index, next) => {
+              setItems((prev) => prev.map((it, i) => (i === index ? next : it)))
+            }}
           />
         ) : null}
 
