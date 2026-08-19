@@ -51,10 +51,18 @@ function TreeRow({
 
   return (
     <>
-      <button
-        type="button"
+      <div
+        role="button"
+        tabIndex={0}
         onClick={() => onOpen(task)}
-        className="flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-left transition-colors hover:bg-accent/50"
+        onKeyDown={(event) => {
+          // Why: div role=button needs a keyboard affordance (row opens the task).
+          if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault()
+            onOpen(task)
+          }
+        }}
+        className="flex w-full cursor-pointer items-center gap-1.5 rounded-md px-2 py-1.5 text-left transition-colors hover:bg-accent/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
       >
         {hasChildren ? (
           <button
@@ -89,7 +97,7 @@ function TreeRow({
         <TaskStatusDot status={task.status} />
         <TaskLabel task={task} />
         <span className="shrink-0 text-[10px] capitalize text-muted-foreground">{task.status}</span>
-      </button>
+      </div>
       {hasChildren && isExpanded
         ? children.map((child) => (
             <TreeRow
