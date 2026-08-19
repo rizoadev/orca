@@ -22,4 +22,18 @@ describe('parseSubtaskBreakdown', () => {
     expect(parseSubtaskBreakdown(null)).toEqual([])
     expect(parseSubtaskBreakdown('')).toEqual([])
   })
+
+  it('ignores prose and verdict outside the SUBTASK BREAKDOWN block', () => {
+    const text =
+      '**Problem framing:** pipeline exists but never ran on GitLab CI.\n' +
+      '**SUBTASK BREAKDOWN:**\n' +
+      '[1] Replace CDP with playwright.launch — implement — shared runners have no localhost:9222\n' +
+      '[2] Configure CI secrets — devops — add CLOUDFLARE_API_TOKEN to GitLab variables\n' +
+      '**VERDICT: PASS**\n' +
+      'implement'
+    const items = parseSubtaskBreakdown(text)
+    expect(items).toHaveLength(2)
+    expect(items[0]!.title).toBe('Replace CDP with playwright.launch')
+    expect(items[1]!.title).toBe('Configure CI secrets')
+  })
 })

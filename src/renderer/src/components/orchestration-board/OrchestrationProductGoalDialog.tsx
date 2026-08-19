@@ -217,7 +217,7 @@ export function OrchestrationProductGoalDialog({
       }}
     >
       <DialogContent
-        className="max-w-lg"
+        className="max-w-2xl"
         // Why: the plan modal holds in-progress state (goal, checklist, live
         // run); an accidental outside click must not discard it.
         onInteractOutside={(event) => event.preventDefault()}

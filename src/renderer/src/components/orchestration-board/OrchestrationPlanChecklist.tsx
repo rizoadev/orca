@@ -136,7 +136,7 @@ function EditableRow({
   }
 
   return (
-    <div className="flex items-center gap-2 rounded-md border border-border/50 bg-muted/20 px-2 py-1.5">
+    <div className="flex items-start gap-2 rounded-md border border-border/50 bg-muted/20 px-2 py-1.5">
       <button
         type="button"
         onClick={onToggle}
@@ -149,11 +149,18 @@ function EditableRow({
         )}
       </button>
       <div className="min-w-0 flex-1">
-        <div className={cn('truncate text-[13px]', !checked && 'text-muted-foreground')}>
+        <div
+          className={cn(
+            'break-words text-[13px] whitespace-normal',
+            !checked && 'text-muted-foreground'
+          )}
+        >
           {item.title}
         </div>
         {item.description ? (
-          <div className="truncate text-[11px] text-muted-foreground">{item.description}</div>
+          <div className="break-words text-[11px] text-muted-foreground whitespace-normal">
+            {item.description}
+          </div>
         ) : null}
       </div>
       <span className="shrink-0 rounded-full bg-muted px-1.5 py-0.5 text-[10px] capitalize text-muted-foreground">
