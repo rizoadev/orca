@@ -9,12 +9,26 @@ import {
   watchProductPipeline
 } from './product-pipeline-supervisor'
 
+const { runPiRpcDraftTaskMock } = vi.hoisted(() => ({
+  runPiRpcDraftTaskMock: vi.fn().mockResolvedValue({
+    result:
+      '1: Add login form — implement — build a sign-in flow\n2: Write tests — test — cover auth',
+    modelId: 'pi-test',
+    provider: 'pi'
+  })
+}))
+
+vi.mock('./pi-rpc-task-runner', () => ({
+  runPiRpcDraftTask: runPiRpcDraftTaskMock
+}))
+
 describe('product-pipeline-supervisor', () => {
   let db: OrchestrationDb | undefined
 
   afterEach(() => {
     resetProductSupervisorForTests()
     db?.close()
+    vi.clearAllMocks()
   })
 
   it('registers pipelines for set-and-forget watching', () => {
@@ -34,7 +48,8 @@ describe('product-pipeline-supervisor', () => {
       getTerminalPaneKey: vi.fn().mockReturnValue('tab:leaf'),
       getTerminalOrchestrationCliCommand: vi.fn().mockReturnValue('orca' as const),
       sendTerminalAgentPrompt: vi.fn().mockResolvedValue(undefined),
-      getAgentStatusForHandle: vi.fn().mockReturnValue('idle')
+      getAgentStatusForHandle: vi.fn().mockReturnValue('idle'),
+      resolveWorktreePath: vi.fn().mockResolvedValue('/tmp/wt')
     }
 
     watchProductPipeline(root.id, db, runtime, { pollIntervalMs: 60_000 })
@@ -47,7 +62,7 @@ describe('product-pipeline-supervisor', () => {
     expect(getProductSupervisorSnapshot().running).toBe(false)
   })
 
-  it('dispatches ready research stage via pipeline dispatch helper', async () => {
+  it('dispatches research via headless pi RPC and marks it completed', async () => {
     db = new OrchestrationDb(':memory:')
     const { root } = createProductPipelineTasks(db, {
       productGoal: 'OTP email mockup',
@@ -65,13 +80,22 @@ describe('product-pipeline-supervisor', () => {
       getTerminalPaneKey: vi.fn().mockReturnValue('tab:leaf'),
       getTerminalOrchestrationCliCommand: vi.fn().mockReturnValue('orca' as const),
       sendTerminalAgentPrompt: vi.fn().mockResolvedValue(undefined),
-      getAgentStatusForHandle: vi.fn().mockReturnValue('idle')
+      getAgentStatusForHandle: vi.fn().mockReturnValue('idle'),
+      resolveWorktreePath: vi.fn().mockResolvedValue('/tmp/wt')
+    }
+
+    // research depends on manage; make it ready directly so dispatch targets it
+    const research = db.listTasksByPipeline(root.id).find((t) => t.pipeline_stage === 'research')
+    if (research) {
+      db.setTaskPipelineMeta(research.id, { status: 'ready' })
     }
 
     const results = await dispatchAllReadyPipelineStages(db, runtime, root.id)
-    expect(launchAgentTerminal).toHaveBeenCalled()
-    expect(results.some((r) => r.role === 'researcher' && r.to === 'term_spawned')).toBe(true)
-    const research = db.listTasksByPipeline(root.id).find((t) => t.pipeline_stage === 'research')
-    expect(research?.status).toBe('dispatched')
+    expect(runPiRpcDraftTaskMock).toHaveBeenCalled()
+    // research goes through pi RPC; manage still uses the terminal path
+    expect(results.some((r) => r.role === 'researcher' && r.to === 'pi-rpc')).toBe(true)
+    const after = db.listTasksByPipeline(root.id).find((t) => t.pipeline_stage === 'research')
+    expect(after?.status).toBe('completed')
+    expect(after?.result).toContain('Add login form')
   })
 })

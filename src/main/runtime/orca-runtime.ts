@@ -17637,6 +17637,20 @@ export class OrcaRuntimeService {
     return await this.resolveWorktreeSelector(worktreeSelector)
   }
 
+  // Why: resolves a worktree id to its filesystem path. Used by pipeline
+  // dispatch to get a cwd for headless pi RPC research tasks.
+  async resolveWorktreePath(worktreeId: string): Promise<string> {
+    const explicit = this.getValidatedExplicitWorktreeIdSelector(`id:${worktreeId}`)
+    if (explicit) {
+      const built = this.buildResolvedWorktreeFromId(explicit)
+      if (built?.path) {
+        return built.path
+      }
+    }
+    const worktree = await this.resolveWorktreeSelector(`id:${worktreeId}`)
+    return worktree.path
+  }
+
   async scanWorkspacePorts(repoId?: string): Promise<WorkspacePortScanResult> {
     return scanWorkspacePortProbes(await this.getWorkspacePortProbes(repoId))
   }

@@ -7,6 +7,7 @@ import type { OrchestrationDb } from './db'
 import type { TaskRow } from './types'
 import { buildDispatchPreamble } from './preamble'
 import { defaultRoleBindings } from './product-pipeline-engine'
+import { runPiRpcDraftTask } from './pi-rpc-task-runner'
 import { resolveAgentForRole } from './resolve-pipeline-role-agent'
 import type { ProductPipelineRole } from '../../../shared/product-pipeline'
 import type { RuntimeTerminalWaitCondition } from '../../../shared/runtime-types'
@@ -34,6 +35,7 @@ export type ProductDispatchRuntime = {
   getTerminalOrchestrationCliCommand: (handle: string) => 'orca' | 'orca-ide'
   sendTerminalAgentPrompt: (handle: string, prompt: string) => Promise<unknown>
   getAgentStatusForHandle: (handle: string) => string | null
+  resolveWorktreePath: (worktreeId: string) => Promise<string>
 }
 
 export async function dispatchPipelineStageTask(
@@ -65,6 +67,41 @@ export async function dispatchPipelineStageTask(
   const worktreeSelector = `id:${task.worktree_id}`
   const waitTimeoutMs = options.waitTimeoutMs ?? 90_000
   const coordinatorHandle = options.coordinatorHandle ?? 'orchestrator'
+
+  // Why: drafting runs headless via the in-process pi RPC session (JSON-style)
+  // instead of a TUI terminal — the operator watches progress in the plan
+  // modal, not in a terminal tab.
+  if (task.pipeline_stage === 'research') {
+    try {
+      const cwd = await runtime.resolveWorktreePath(task.worktree_id)
+      const { result } = await runPiRpcDraftTask({
+        cwd,
+        spec: task.spec,
+        sessionId: task.id
+      })
+      db.setTaskPipelineMeta(task.id, { status: 'completed', result })
+      return {
+        task: db.getTask(task.id)!,
+        dispatchId: `rpc:${task.id}`,
+        to: 'pi-rpc',
+        spawned: false,
+        injected: true,
+        role,
+        agent: 'pi-rpc'
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      db.addTaskComment({
+        taskId: task.id,
+        author: 'system',
+        kind: 'system',
+        role,
+        body: `Pi RPC research failed: ${message}`
+      })
+      db.setTaskPipelineMeta(task.id, { status: 'failed', result: message })
+      throw new Error(`Pi RPC research failed for task ${task.id}: ${message}`)
+    }
+  }
 
   // Why: productStart lets the operator pick a manager squad; remember it on
   // the root result and prefer it here for the manage stage dispatch.
