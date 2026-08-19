@@ -58,7 +58,8 @@ export function OrchestrationPlanRunning({
         clearTimeout(timer)
       }
     }
-  }, [onDone, pipelineId])
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- onDoneRef keeps latest callback without re-running the poll
+  }, [pipelineId])
 
   const activeCount = subtasks.filter(
     (t) => t.status !== 'completed' && t.status !== 'failed'
