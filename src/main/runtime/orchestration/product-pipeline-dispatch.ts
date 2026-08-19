@@ -305,26 +305,36 @@ export async function dispatchAllReadyPipelineStages(
     return (ai === -1 ? 99 : ai) - (bi === -1 ? 99 : bi)
   })
 
+  // Why: run stages one at a time — if any task is already dispatched, wait
+  // for it to finish (supervisor ticks every ~8s) instead of starting a
+  // parallel wave. Only the first ready task is started per call.
+  const active = db.listTasksByPipeline(pipelineId).some((t) => t.status === 'dispatched')
+  if (active) {
+    return []
+  }
+  const target = ready[0]
+  if (!target) {
+    return []
+  }
+
   const results: { taskId: string; to: string; role: string; spawned: boolean }[] = []
-  for (const task of ready) {
-    try {
-      const dispatched = await dispatchPipelineStageTask(db, runtime, task, options)
-      results.push({
-        taskId: task.id,
-        to: dispatched.to,
-        role: dispatched.role,
-        spawned: dispatched.spawned
-      })
-    } catch (err) {
-      // Continue other stages; caller sees partial results.
-      results.push({
-        taskId: task.id,
-        to: '',
-        role: task.pipeline_role || 'unknown',
-        spawned: false
-      })
-      void err
-    }
+  try {
+    const dispatched = await dispatchPipelineStageTask(db, runtime, target, options)
+    results.push({
+      taskId: target.id,
+      to: dispatched.to,
+      role: dispatched.role,
+      spawned: dispatched.spawned
+    })
+  } catch (err) {
+    // Continue other stages; caller sees partial results.
+    results.push({
+      taskId: target.id,
+      to: '',
+      role: target.pipeline_role || 'unknown',
+      spawned: false
+    })
+    void err
   }
   return results
 }
