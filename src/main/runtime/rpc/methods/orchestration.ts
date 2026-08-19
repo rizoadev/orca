@@ -1710,11 +1710,30 @@ export const ORCHESTRATION_METHODS: RpcMethod[] = [
         spawned: boolean
       }[] = []
       if (params.autoDispatch !== false) {
-        dispatches = await dispatchAllReadyPipelineStages(db, runtime, pipeline.root.id, {
-          waitTimeoutMs: params.waitTimeoutMs ?? 90_000,
-          devMode: params.devMode,
-          coordinatorHandle: 'orchestrator'
-        })
+        const dispatch = (): Promise<
+          {
+            taskId: string
+            to: string
+            role: string
+            spawned: boolean
+          }[]
+        > =>
+          dispatchAllReadyPipelineStages(db, runtime, pipeline.root.id, {
+            waitTimeoutMs: params.waitTimeoutMs ?? 90_000,
+            devMode: params.devMode,
+            coordinatorHandle: 'orchestrator'
+          })
+        if (params.planOnly === true) {
+          // Why: plan-only research runs as a headless pi RPC that blocks until
+          // the breakdown completes. Fire-and-forget so productStart returns
+          // { pipelineId, researchTaskId } right away and the modal polls the
+          // research task instead of hanging on the RPC.
+          void dispatch().catch((err) => {
+            void err
+          })
+        } else {
+          dispatches = await dispatch()
+        }
       }
 
       // Why: set-and-forget — supervisor keeps dispatching unlocked stages + recovering hung agents until done/failed.
