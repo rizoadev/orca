@@ -5,12 +5,7 @@
  * Not a single prompt inject — a DAG of role-scoped tasks with rework.
  */
 
-export type ProductPipelineRole =
-  | 'manager'
-  | 'researcher'
-  | 'implementer'
-  | 'tester'
-  | 'reviewer'
+export type ProductPipelineRole = 'manager' | 'researcher' | 'implementer' | 'tester' | 'reviewer'
 
 export type ProductPipelineStage =
   | 'manage'
@@ -203,14 +198,20 @@ export function buildRoleTaskSpec(args: {
         goal,
         feedback ? `\n=== MANAGER BRIEF ===\n${feedback}` : '',
         '',
-        '=== REQUIRED OUTPUT ===',
-        '1. Problem framing and acceptance criteria',
-        '2. Relevant files/areas in the codebase (paths)',
-        '3. Implementation plan for the implementer (ordered steps)',
-        '4. Risks / open questions',
-        '5. Real-world / data notes if relevant (APIs, competitors, constraints)',
+        '=== YOUR JOB ===',
+        'Do a SHORT research pass, then break the goal into concrete subtasks.',
+        'Each subtask is a small, shippable work item that a dedicated agent can do.',
         '',
-        'When done, worker_done --body must summarize findings in 3 sentences and include VERDICT: PASS if research is complete enough to code.'
+        '=== REQUIRED OUTPUT ===',
+        'End worker_done --body with a SUBTASK BREAKDOWN list, one item per line:',
+        '  [1] <title> — <role> — <1-line description>',
+        '  [2] <title> — <role> — <1-line description>',
+        '...',
+        'Use roles from: research, implement, test, review, docs, devops, security (or similar).',
+        'Prefer 3-8 subtasks. Keep each description concrete and actionable.',
+        '',
+        'Before the list, add 2-3 sentences: problem framing, key files/paths, risks.',
+        'Include VERDICT: PASS when the breakdown is complete enough to execute.'
       ]
         .filter(Boolean)
         .join('\n')
@@ -269,9 +270,7 @@ export function buildRoleTaskSpec(args: {
   }
 }
 
-export function defaultSquadSeed(
-  defaultTuiAgent?: string | null
-): {
+export function defaultSquadSeed(defaultTuiAgent?: string | null): {
   id: string
   name: string
   leader: { agent: string }
@@ -285,9 +284,7 @@ export function defaultSquadSeed(
     leader: { agent },
     // Manager prefers a stronger primary when available; workers keep default agent.
     members:
-      role.role === 'manager'
-        ? [{ agent }, { agent: 'claude' }, { agent: 'codex' }]
-        : [{ agent }],
+      role.role === 'manager' ? [{ agent }, { agent: 'claude' }, { agent: 'codex' }] : [{ agent }],
     routing: role.role === 'implementer' ? 'idle_first' : 'leader_decide'
   }))
 }
