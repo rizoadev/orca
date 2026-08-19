@@ -116,6 +116,69 @@ export function createProductPipelineTasks(
   }
 }
 
+/**
+ * Plan-only pipeline: root + a single research stage. The research agent
+ * produces a SUBTASK BREAKDOWN (commit 976d025c6) which the UI surfaces as a
+ * draft checklist before the operator creates the real subtasks.
+ */
+export function createProductPlanTasks(
+  db: OrchestrationDb,
+  args: {
+    productGoal: string
+    title?: string
+    repoId?: string
+    worktreeId?: string
+    hostId?: string
+    createdByTerminalHandle?: string
+    priority?: TaskPriority
+  }
+): { root: TaskRow; research: TaskRow } {
+  const title = args.title?.trim() || args.productGoal.trim().slice(0, 80)
+  const root = db.createTask({
+    spec: [
+      'PRODUCT PIPELINE ROOT',
+      '',
+      args.productGoal.trim(),
+      '',
+      'Plan-only: research generates a subtask breakdown; operator approves before creating real subtasks.'
+    ].join('\n'),
+    taskTitle: title,
+    displayName: title,
+    priority: args.priority ?? 'high',
+    repoId: args.repoId,
+    worktreeId: args.worktreeId,
+    hostId: args.hostId ?? 'local',
+    createdByTerminalHandle: args.createdByTerminalHandle,
+    pipelineStage: 'running',
+    pipelineRole: 'implementer',
+    pipelineAttempt: 1
+  })
+
+  const researchSpec = buildRoleTaskSpec({
+    role: 'researcher',
+    productGoal: args.productGoal,
+    stage: 'research',
+    attempt: 1
+  })
+  const research = db.createTask({
+    spec: researchSpec,
+    taskTitle: `Research: ${title}`.slice(0, 120),
+    displayName: `Research: ${title}`.slice(0, 120),
+    parentId: root.id,
+    priority: args.priority ?? 'high',
+    repoId: args.repoId,
+    worktreeId: args.worktreeId,
+    hostId: args.hostId ?? 'local',
+    createdByTerminalHandle: args.createdByTerminalHandle,
+    pipelineId: root.id,
+    pipelineStage: 'research',
+    pipelineRole: 'researcher',
+    pipelineAttempt: 1
+  })
+
+  return { root: db.getTask(root.id)!, research: db.getTask(research.id)! }
+}
+
 export function listReadyPipelineTasks(db: OrchestrationDb, pipelineId: string): TaskRow[] {
   return db.listTasksByPipeline(pipelineId).filter((task) => task.status === 'ready')
 }

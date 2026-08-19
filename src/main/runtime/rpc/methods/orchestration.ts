@@ -34,6 +34,7 @@ import { abbreviateOrchestrationTasks } from '../../../../shared/orchestration-t
 import { getRepoIdFromWorktreeId } from '../../../../shared/worktree-id'
 import {
   createProductPipelineTasks,
+  createProductPlanTasks,
   isProductPipelineAutopilotEnabled,
   setProductPipelineAutopilot
 } from '../../orchestration/product-pipeline-engine'
@@ -352,7 +353,10 @@ const ProductStartParams = z.object({
   devMode: OptionalBoolean,
   priority: TaskPrioritySchema.optional(),
   // Why: optional manager squad — the pipeline leader/breakdown squad to use.
-  squad: OptionalString
+  squad: OptionalString,
+  // Why: plan-only mode creates root + research only; the UI shows the
+  // breakdown checklist before real subtasks are created.
+  planOnly: OptionalBoolean
 })
 
 const ProductTickParams = z.object({
@@ -1656,14 +1660,30 @@ export const ORCHESTRATION_METHODS: RpcMethod[] = [
         worktreeId = shown.id
       }
 
-      const pipeline = createProductPipelineTasks(db, {
-        productGoal: params.goal,
-        title: params.title,
-        repoId: repo.id,
-        worktreeId,
-        hostId: 'local',
-        priority: params.priority ?? 'high'
-      })
+      // Why: plan-only starts root + research only; the UI shows the breakdown
+      // checklist before the operator creates the real subtasks. Both shapes
+      // expose { root, stages } so the rest of the handler is identical.
+      const pipeline =
+        params.planOnly === true
+          ? (() => {
+              const plan = createProductPlanTasks(db, {
+                productGoal: params.goal,
+                title: params.title,
+                repoId: repo.id,
+                worktreeId,
+                hostId: 'local',
+                priority: params.priority ?? 'high'
+              })
+              return { root: plan.root, stages: [plan.research] }
+            })()
+          : createProductPipelineTasks(db, {
+              productGoal: params.goal,
+              title: params.title,
+              repoId: repo.id,
+              worktreeId,
+              hostId: 'local',
+              priority: params.priority ?? 'high'
+            })
 
       // Why: remember the chosen manager squad on the root so the manage stage
       // dispatch can prefer it over the default manager squad binding.
