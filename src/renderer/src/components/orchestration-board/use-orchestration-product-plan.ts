@@ -1,0 +1,94 @@
+import { useCallback } from 'react'
+import { callRuntimeRpc } from '@/runtime/runtime-rpc-client'
+import type { SubTaskBreakdownItem } from '../../../../shared/subtask-breakdown'
+
+const LOCAL_RUNTIME_TARGET = { kind: 'local' as const }
+
+export type PlanStartResult = { pipelineId: string; researchTaskId: string }
+
+export function useOrchestrationProductPlan(): {
+  startPlan: (
+    goal: string,
+    squadId: string | null,
+    repoId: string | null
+  ) => Promise<PlanStartResult>
+  createPlan: (
+    items: SubTaskBreakdownItem[],
+    pipelineId: string,
+    repoId: string | null
+  ) => Promise<void>
+} {
+  const startPlan = useCallback(
+    async (
+      goal: string,
+      squadId: string | null,
+      repoId: string | null
+    ): Promise<PlanStartResult> => {
+      if (!repoId) {
+        throw new Error('Select a repo filter (or open a worktree) first.')
+      }
+      const result = await callRuntimeRpc<{
+        pipelineId: string
+        stages: { id: string; pipeline_stage?: string | null }[]
+      }>(
+        LOCAL_RUNTIME_TARGET,
+        'orchestration.productStart',
+        {
+          goal: goal.trim(),
+          repo: `id:${repoId}`,
+          createIssue: false,
+          ensureSquads: true,
+          autoDispatch: true,
+          waitTimeoutMs: 90_000,
+          planOnly: true,
+          ...(squadId ? { squad: squadId } : {})
+        },
+        { timeoutMs: 180_000, skipCompatibilityCheck: true }
+      )
+      const research = result.stages.find((s) => s.pipeline_stage === 'research')
+      if (!research) {
+        throw new Error('Plan research stage was not created.')
+      }
+      return { pipelineId: result.pipelineId, researchTaskId: research.id }
+    },
+    []
+  )
+
+  const createPlan = useCallback(
+    async (
+      items: SubTaskBreakdownItem[],
+      pipelineId: string,
+      repoId: string | null
+    ): Promise<void> => {
+      for (const item of items) {
+        await callRuntimeRpc(
+          LOCAL_RUNTIME_TARGET,
+          'orchestration.taskCreate',
+          {
+            spec: item.description ? `${item.title}\n\n${item.description}` : item.title,
+            taskTitle: item.title,
+            displayName: item.title,
+            parent: pipelineId,
+            priority: 'high',
+            repoId: repoId ?? undefined,
+            pipelineId,
+            pipelineStage: item.role,
+            pipelineRole: item.role
+          },
+          { timeoutMs: 15_000, skipCompatibilityCheck: true }
+        )
+      }
+      // Why: the plan-only pipeline isn't watched yet; watch it so the
+      // supervisor discovers and delegates the newly created ready subtasks.
+      await callRuntimeRpc(
+        LOCAL_RUNTIME_TARGET,
+        'orchestration.productWatch',
+        { pipeline: pipelineId },
+        { timeoutMs: 15_000, skipCompatibilityCheck: true }
+      )
+    },
+    []
+  )
+
+  return { startPlan, createPlan }
+}

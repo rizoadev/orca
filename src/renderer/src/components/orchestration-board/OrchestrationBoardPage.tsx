@@ -6,12 +6,14 @@ import { callRuntimeRpc } from '@/runtime/runtime-rpc-client'
 import { OrchestrationBoardWorkspace } from './OrchestrationBoardWorkspace'
 import { OrchestrationBoardHeader } from './OrchestrationBoardHeader'
 import { OrchestrationProductGoalDialog } from './OrchestrationProductGoalDialog'
+import type { SubTaskBreakdownItem } from '../../../../shared/subtask-breakdown'
 import { OrchestrationBoardDetailPane } from './OrchestrationBoardDetailPane'
 import type { OrchestrationBoardDetailLayout } from './OrchestrationBoardTaskDialog'
 import { OrchestrationBoardCreateDialog } from './OrchestrationBoardCreateDialog'
 import { useOrchestrationBoardLoad, ALL_REPOS } from './use-orchestration-board-load'
 import { useOrchestrationBoardDetail } from './use-orchestration-board-detail'
 import { useOrchestrationBoardActions } from './use-orchestration-board-actions'
+import { useOrchestrationProductPlan } from './use-orchestration-product-plan'
 
 export default function OrchestrationBoardPage(): React.JSX.Element {
   const closeOrchestrationBoardPage = useAppStore((s) => s.closeOrchestrationBoardPage)
@@ -43,11 +45,12 @@ export default function OrchestrationBoardPage(): React.JSX.Element {
     closeTask: detail.closeTask,
     thread: detail.thread
   })
+  const plan = useOrchestrationProductPlan()
 
   const [createOpen, setCreateOpen] = React.useState(false)
   const [createSubmitting, setCreateSubmitting] = React.useState(false)
   const [createError, setCreateError] = React.useState<string | null>(null)
-  const [productStarting, setProductStarting] = React.useState(false)
+  const [productStarting] = React.useState(false)
   const [productGoalOpen, setProductGoalOpen] = React.useState(false)
   const [assigningTaskId, setAssigningTaskId] = React.useState<string | null>(null)
   const [taskActionId, setTaskActionId] = React.useState<string | null>(null)
@@ -106,36 +109,19 @@ export default function OrchestrationBoardPage(): React.JSX.Element {
     detail.setDetailLayout(layout)
   }
 
-  const handleStartProductSubmit = async (goal: string, squadId: string | null): Promise<void> => {
-    if (!goal.trim()) {
-      return
-    }
-    setProductGoalOpen(false)
-    setProductStarting(true)
-    try {
-      const repoId = repoFilter !== ALL_REPOS ? repoFilter : null
-      if (!repoId) {
-        setProductStarting(false)
-        return
-      }
-      await callRuntimeRpc(
-        { kind: 'local' as const },
-        'orchestration.productStart',
-        {
-          goal: goal.trim(),
-          repo: `id:${repoId}`,
-          createIssue: true,
-          ensureSquads: true,
-          autoDispatch: true,
-          waitTimeoutMs: 90_000,
-          ...(squadId ? { squad: squadId } : {})
-        },
-        { timeoutMs: 180_000, skipCompatibilityCheck: true }
-      )
-      await load({ showSpinner: false })
-    } finally {
-      setProductStarting(false)
-    }
+  const handleStartPlan = async (
+    goal: string,
+    squadId: string | null
+  ): Promise<{ pipelineId: string; researchTaskId: string }> => {
+    return plan.startPlan(goal, squadId, repoFilter !== ALL_REPOS ? repoFilter : null)
+  }
+
+  const handleCreatePlan = async (
+    items: SubTaskBreakdownItem[],
+    pipelineId: string
+  ): Promise<void> => {
+    await plan.createPlan(items, pipelineId, repoFilter !== ALL_REPOS ? repoFilter : null)
+    await load({ showSpinner: false })
   }
 
   const handleCreate = async (draft: {
@@ -332,9 +318,8 @@ export default function OrchestrationBoardPage(): React.JSX.Element {
         onOpenChange={setProductGoalOpen}
         starting={productStarting}
         squads={detail.squads}
-        onSubmit={(goal, squadId) => {
-          void handleStartProductSubmit(goal, squadId)
-        }}
+        onStartPlan={(goal, squadId) => handleStartPlan(goal, squadId)}
+        onCreatePlan={(items, pipelineId) => handleCreatePlan(items, pipelineId)}
       />
 
       <OrchestrationBoardCreateDialog
