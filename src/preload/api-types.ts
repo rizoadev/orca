@@ -566,6 +566,13 @@ import type {
   HiveTriggerDeployArgs,
   HiveUpdateCredentialArgs
 } from '../shared/hive-types'
+import type {
+  DockerContainerActionRequest,
+  DockerContainerActionResult,
+  DockerHostId,
+  DockerInspectResult,
+  DockerListResult
+} from '../shared/docker-types'
 
 type GitLabRepoSelectorArgs = {
   repoPath: string
@@ -3570,6 +3577,18 @@ export type PreloadApi = {
     onReady: (callback: (data: SpeechLifecycleEvent) => void) => () => void
     onStopped: (callback: (data: SpeechLifecycleEvent) => void) => () => void
     onError: (callback: (data: SpeechErrorEvent) => void) => () => void
+  }
+  docker: {
+    listContainers: (args?: {
+      hostIds?: DockerHostId[]
+      includeStopped?: boolean
+      enrich?: boolean
+    }) => Promise<DockerListResult>
+    inspect: (args: DockerContainerActionRequest) => Promise<DockerInspectResult>
+    startContainer: (args: DockerContainerActionRequest) => Promise<DockerContainerActionResult>
+    stopContainer: (args: DockerContainerActionRequest) => Promise<DockerContainerActionResult>
+    restartContainer: (args: DockerContainerActionRequest) => Promise<DockerContainerActionResult>
+    removeContainer: (args: DockerContainerActionRequest) => Promise<DockerContainerActionResult>
   }
 }
 

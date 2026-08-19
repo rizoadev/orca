@@ -7,8 +7,10 @@ import { OrchestrationBoardWorkspace } from './OrchestrationBoardWorkspace'
 import { OrchestrationBoardHeader } from './OrchestrationBoardHeader'
 import { OrchestrationProductGoalDialog } from './OrchestrationProductGoalDialog'
 import type { SubTaskBreakdownItem } from '../../../../shared/subtask-breakdown'
+import type { OrchestrationBoardTask } from './orchestration-board-model'
 import { OrchestrationBoardDetailPane } from './OrchestrationBoardDetailPane'
 import type { OrchestrationBoardDetailLayout } from './OrchestrationBoardTaskDialog'
+import type { AgentSquad } from '../../../../shared/agent-squads'
 import { OrchestrationBoardCreateDialog } from './OrchestrationBoardCreateDialog'
 import { useOrchestrationBoardLoad, ALL_REPOS } from './use-orchestration-board-load'
 import { useOrchestrationBoardDetail } from './use-orchestration-board-detail'
@@ -45,6 +47,8 @@ export default function OrchestrationBoardPage(): React.JSX.Element {
     closeTask: detail.closeTask,
     thread: detail.thread
   })
+  const squads: AgentSquad[] = detail.squads ?? []
+  const selectedSquadId = detail.selectedSquadId ?? ''
   const plan = useOrchestrationProductPlan()
 
   const [createOpen, setCreateOpen] = React.useState(false)
@@ -130,11 +134,21 @@ export default function OrchestrationBoardPage(): React.JSX.Element {
     priority?: string
     repoId?: string | null
     worktreeId?: string | null
+    squadId?: string | null
   }): Promise<void> => {
     setCreateSubmitting(true)
     setCreateError(null)
     try {
-      await callRuntimeRpc(
+      const created = await callRuntimeRpc<
+        {
+          task: {
+            id: string
+            status: string
+            repo_id?: string | null
+            worktree_id?: string | null
+          } & Record<string, unknown>
+        }
+      >(
         { kind: 'local' as const },
         'orchestration.taskCreate',
         {
@@ -147,6 +161,40 @@ export default function OrchestrationBoardPage(): React.JSX.Element {
         },
         { timeoutMs: 15_000, skipCompatibilityCheck: true }
       )
+
+      const createdTask = created?.task
+      if (draft.squadId && createdTask?.id) {
+        try {
+          await callRuntimeRpc<
+            {
+              task: OrchestrationBoardTask | null
+              dispatch: { id: string; status: string } | null
+              to: string
+              injected: boolean
+              spawned: boolean
+              squad: { id: string; name: string; routing: string }
+            }
+          >(
+            { kind: 'local' as const },
+            'orchestration.taskAssignSquad',
+            {
+              task: createdTask.id,
+              squad: draft.squadId,
+              inject: true,
+              spawnIfMissing: true,
+              waitTimeoutMs: 45_000
+            },
+            { timeoutMs: 60_000, skipCompatibilityCheck: true }
+          )
+        } catch (assignErr) {
+          toast.error(
+            assignErr instanceof Error
+              ? assignErr.message
+              : String(assignErr)
+          )
+        }
+      }
+
       setCreateOpen(false)
       await load({ showSpinner: false })
     } catch (err) {
@@ -333,6 +381,8 @@ export default function OrchestrationBoardPage(): React.JSX.Element {
         scopeOptions={scopeOptions}
         defaultRepoId={repoFilter === ALL_REPOS ? null : repoFilter}
         defaultWorktreeId={createDefaultWorktreeId}
+        squads={squads.map((squad) => ({ id: squad.id, name: squad.name }))}
+        defaultSquadId={selectedSquadId || null}
         submitting={createSubmitting}
         error={createError}
         onSubmit={(draft) => {

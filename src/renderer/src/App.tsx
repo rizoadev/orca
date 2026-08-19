@@ -316,6 +316,7 @@ const AgentDashboardPage = lazy(() => import('./components/dashboard/AgentDashbo
 const OrchestrationBoardPage = lazy(
   () => import('./components/orchestration-board/OrchestrationBoardPage')
 )
+const DockerContainersPage = lazy(() => import('./components/docker/DockerContainersPage'))
 const WorkspaceSpacePage = lazy(() => import('./components/workspace-space/WorkspaceSpacePage'))
 const MobilePage = lazy(() => import('./components/mobile/MobilePage'))
 const QuickOpen = lazy(() => import('./components/QuickOpen'))
@@ -2255,6 +2256,7 @@ function App(): React.JSX.Element {
                               {activeView === 'orchestration-board' ? (
                                 <OrchestrationBoardPage />
                               ) : null}
+                              {activeView === 'docker' ? <DockerContainersPage /> : null}
                               {activeView === 'terminal' &&
                               creationLayoutActive &&
                               activePendingCreationId ? (

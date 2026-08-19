@@ -3239,6 +3239,7 @@ export type TopLevelView =
   | 'issues-board'
   | 'agent-dashboard'
   | 'orchestration-board'
+  | 'docker'
 
 export type PersistedUIState = {
   lastActiveRepoId: string | null

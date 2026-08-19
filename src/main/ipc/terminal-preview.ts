@@ -5,6 +5,7 @@ import type {
 } from '../../shared/terminal-preview'
 import type { OrcaRuntimeService } from '../runtime/orca-runtime'
 import { isDashboardPopoutRenderer } from '../window/dashboard-popout-window'
+import { isTrustedUIRenderer } from './ui'
 import {
   TERMINAL_PREVIEW_OUTPUT_BATCH_MAX_BYTES,
   TerminalPreviewOutputStream
@@ -16,6 +17,17 @@ export const TERMINAL_PREVIEW_MAX_ENTRIES_TOTAL = 256
 
 function isValidPtyId(value: unknown): value is string {
   return typeof value === 'string' && value.length > 0 && value.length <= PREVIEW_ID_MAX_LENGTH
+}
+
+// Why: the in-app Agent Dashboard (main window) and the pop-out dashboard share
+// the same live-terminal board. Both must be allowed to attach a preview;
+// other renderers (browser/utility windows, the mobile web surface) stay out.
+function canAttachTerminalPreview(sender: WebContents): boolean {
+  try {
+    return isDashboardPopoutRenderer(sender) || isTrustedUIRenderer(sender)
+  } catch {
+    return false
+  }
 }
 
 function canRetainPreviewEntry<T>(
@@ -104,7 +116,7 @@ export function registerTerminalPreviewHandlers(runtime: OrcaRuntimeService): vo
       event,
       args: { ptyId?: unknown; opts?: { scrollbackRows?: unknown } }
     ): Promise<TerminalPreviewConnectResult> => {
-      if (!isDashboardPopoutRenderer(event.sender) || !isValidPtyId(args?.ptyId)) {
+      if (!canAttachTerminalPreview(event.sender) || !isValidPtyId(args?.ptyId)) {
         return { snapshot: null, replay: [] }
       }
       const ptyId = args.ptyId
@@ -183,7 +195,7 @@ export function registerTerminalPreviewHandlers(runtime: OrcaRuntimeService): vo
     'terminalPreview:input',
     (event, args: { ptyId?: unknown; data?: unknown }): Promise<boolean> => {
       if (
-        !isDashboardPopoutRenderer(event.sender) ||
+        !canAttachTerminalPreview(event.sender) ||
         !isValidPtyId(args?.ptyId) ||
         typeof args.data !== 'string'
       ) {
@@ -197,7 +209,7 @@ export function registerTerminalPreviewHandlers(runtime: OrcaRuntimeService): vo
     'terminalPreview:ack',
     (event, args: { ptyId?: unknown; bytes?: unknown }): void => {
       if (
-        !isDashboardPopoutRenderer(event.sender) ||
+        !canAttachTerminalPreview(event.sender) ||
         !isValidPtyId(args?.ptyId) ||
         typeof args.bytes !== 'number' ||
         !Number.isFinite(args.bytes) ||
@@ -221,7 +233,7 @@ export function registerTerminalPreviewHandlers(runtime: OrcaRuntimeService): vo
       args: { ptyId?: unknown; cols?: unknown; rows?: unknown }
     ): Promise<{ cols: number; rows: number } | null> => {
       if (
-        !isDashboardPopoutRenderer(event.sender) ||
+        !canAttachTerminalPreview(event.sender) ||
         !isValidPtyId(args?.ptyId) ||
         typeof args.cols !== 'number' ||
         typeof args.rows !== 'number' ||
@@ -271,7 +283,7 @@ export function registerTerminalPreviewHandlers(runtime: OrcaRuntimeService): vo
   )
 
   ipcMain.handle('terminalPreview:unsubscribe', (event, args: { ptyId?: unknown }): void => {
-    if (!isDashboardPopoutRenderer(event.sender) || !isValidPtyId(args?.ptyId)) {
+    if (!canAttachTerminalPreview(event.sender) || !isValidPtyId(args?.ptyId)) {
       return
     }
     subscriptionsByContents.get(event.sender.id)?.get(args.ptyId)?.dispose()

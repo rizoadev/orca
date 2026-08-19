@@ -15,6 +15,7 @@ export function resolveZoomTarget(args: {
     | 'issues-board'
     | 'agent-dashboard'
     | 'orchestration-board'
+    | 'docker'
   activeTabType: 'terminal' | 'editor' | 'browser' | 'simulator'
   activeElement: unknown
 }): 'terminal' | 'editor' | 'simulator' | 'ui' {

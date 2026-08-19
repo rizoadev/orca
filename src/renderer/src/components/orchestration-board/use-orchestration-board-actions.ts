@@ -26,7 +26,7 @@ export function useOrchestrationBoardActions({
   handleRetryTask: (task: OrchestrationBoardTask) => Promise<void>
   handleStopTask: (task: OrchestrationBoardTask) => Promise<void>
   handleDeleteTask: (task: OrchestrationBoardTask) => Promise<void>
-  handleAssignSquad: (task: OrchestrationBoardTask) => Promise<void>
+  handleAssignSquad: (task: OrchestrationBoardTask, squadId?: string | null) => Promise<void>
   autopilotBusy: boolean
 } {
   const [autopilotBusy, setAutopilotBusy] = useState(false)
@@ -189,8 +189,9 @@ export function useOrchestrationBoardActions({
   )
 
   const handleAssignSquad = useCallback(
-    async (task: OrchestrationBoardTask) => {
-      if (!selectedSquadId) {
+    async (task: OrchestrationBoardTask, squadId?: string | null) => {
+      const targetSquadId = squadId ?? selectedSquadId
+      if (!targetSquadId) {
         toast.error(
           translate(
             'auto.components.orchestration.board.assign.noSquad',
@@ -226,7 +227,7 @@ export function useOrchestrationBoardActions({
           'orchestration.taskAssignSquad',
           {
             task: task.id,
-            squad: selectedSquadId,
+            squad: targetSquadId,
             inject: true,
             spawnIfMissing: true,
             waitTimeoutMs: 45_000

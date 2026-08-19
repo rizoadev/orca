@@ -14,6 +14,13 @@ import type {
   TerminalPreviewConnectResult,
   TerminalPreviewDataPayload
 } from '../shared/terminal-preview'
+import type {
+  DockerListRequest,
+  DockerListResult,
+  DockerContainerActionRequest,
+  DockerInspectResult,
+  DockerContainerActionResult
+} from '../shared/docker-types'
 import type { CliInstallStatus } from '../shared/cli-install-types'
 import type { AgentHookInstallStatus } from '../shared/agent-hook-types'
 import type { TerminalPaneSplitSource } from '../shared/feature-education-telemetry'
@@ -4769,6 +4776,21 @@ const api = {
       ipcRenderer.on('speech:error', listener)
       return () => ipcRenderer.removeListener('speech:error', listener)
     }
+  },
+
+  docker: {
+    listContainers: (args: DockerListRequest): Promise<DockerListResult> =>
+      ipcRenderer.invoke('docker:listContainers', args),
+    inspect: (args: DockerContainerActionRequest): Promise<DockerInspectResult> =>
+      ipcRenderer.invoke('docker:inspect', args),
+    startContainer: (args: DockerContainerActionRequest): Promise<DockerContainerActionResult> =>
+      ipcRenderer.invoke('docker:startContainer', args),
+    stopContainer: (args: DockerContainerActionRequest): Promise<DockerContainerActionResult> =>
+      ipcRenderer.invoke('docker:stopContainer', args),
+    restartContainer: (args: DockerContainerActionRequest): Promise<DockerContainerActionResult> =>
+      ipcRenderer.invoke('docker:restartContainer', args),
+    removeContainer: (args: DockerContainerActionRequest): Promise<DockerContainerActionResult> =>
+      ipcRenderer.invoke('docker:removeContainer', args)
   }
 }
 

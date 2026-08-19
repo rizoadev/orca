@@ -3,17 +3,25 @@
  * The dense three-view workspace lives in the full board (main box); this
  * panel keeps a compact live summary and hands off to that board.
  */
+import { toast } from 'sonner'
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { ExternalLink, LoaderCircle, RefreshCw, Workflow } from 'lucide-react'
+import { ExternalLink, LoaderCircle, Plus, RefreshCw, Workflow } from 'lucide-react'
 import { useAppStore } from '@/store'
 import { useActiveWorktree, useRepoById } from '@/store/selectors'
 import { Button } from '@/components/ui/button'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
 import { translate } from '@/i18n/i18n'
 import { callRuntimeRpc } from '@/runtime/runtime-rpc-client'
 import { installWindowVisibilityInterval } from '@/lib/window-visibility-interval'
-import type { OrchestrationBoardTask } from '@/components/orchestration-board/orchestration-board-model'
-import { collectRunningAgentsByTaskId } from '@/components/orchestration-board/orchestration-task-running-agents'
+import { OrchestrationBoardCreateDialog } from '../orchestration-board/OrchestrationBoardCreateDialog'
+import { OrchestrationProductGoalDialog } from '../orchestration-board/OrchestrationProductGoalDialog'
+import { useOrchestrationProductPlan } from '../orchestration-board/use-orchestration-product-plan'
+import { shortWorktreeLabel, type OrchestrationBoardTask } from '../orchestration-board/orchestration-board-model'
+import { collectRunningAgentsByTaskId } from '../orchestration-board/orchestration-task-running-agents'
+import { normalizeAgentSquads } from '../../../../shared/agent-squads'
+import type { AgentSquad } from '../../../../shared/agent-squads'
+import type { SubTaskBreakdownItem } from '../../../../shared/subtask-breakdown'
 import { OrchestrationSidebarTaskTree } from './OrchestrationSidebarTaskTree'
 
 const LOCAL_RUNTIME_TARGET = { kind: 'local' as const }
@@ -38,6 +46,7 @@ export default function OrchestrationPanel({
   const runtimeAgentOrchestrationByPaneKey = useAppStore(
     (s) => s.runtimeAgentOrchestrationByPaneKey
   )
+  const agentSquads = useAppStore((s) => s.settings?.agentSquads)
 
   const repoId = activeRepo?.id ?? activeWorktree?.repoId ?? null
   const worktreeId = activeWorktree?.id ?? null
@@ -47,6 +56,28 @@ export default function OrchestrationPanel({
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [scope, setScope] = useState<'repo' | 'worktree'>('repo')
+  const [createOpen, setCreateOpen] = useState(false)
+  const [productGoalOpen, setProductGoalOpen] = useState(false)
+  const [createSubmitting, setCreateSubmitting] = useState(false)
+  const [createError, setCreateError] = useState<string | null>(null)
+
+  const plan = useOrchestrationProductPlan()
+  const squads: AgentSquad[] = useMemo(() => normalizeAgentSquads(agentSquads ?? []), [agentSquads])
+
+  const scopeOptions = useMemo(() => {
+    if (!activeRepo || !activeWorktree) {
+      return []
+    }
+    return [
+      {
+        worktreeId: activeWorktree.id,
+        repoId: activeRepo.id,
+        repoLabel: activeRepo.displayName || activeRepo.path || activeRepo.id || 'Repo',
+        worktreeLabel:
+          activeWorktree.displayName?.trim() || shortWorktreeLabel(activeWorktree.id) || activeWorktree.id
+      }
+    ]
+  }, [activeRepo, activeWorktree])
 
   const load = useCallback(async () => {
     if (!repoId && !worktreeId) {
@@ -134,6 +165,91 @@ export default function OrchestrationPanel({
     openOrchestrationBoardPage()
   }, [openOrchestrationBoardPage])
 
+  const handleCreate = useCallback(
+    async (draft: {
+      spec: string
+      title?: string
+      priority?: string
+      repoId?: string | null
+      worktreeId?: string | null
+      squadId?: string | null
+    }) => {
+      setCreateSubmitting(true)
+      setCreateError(null)
+      try {
+        const created = await callRuntimeRpc<
+          {
+            task: {
+              id: string
+              status: string
+              repo_id?: string | null
+              worktree_id?: string | null
+            } & Record<string, unknown>
+          }
+        >(
+          LOCAL_RUNTIME_TARGET,
+          'orchestration.taskCreate',
+          {
+            spec: draft.spec,
+            ...(draft.title ? { taskTitle: draft.title, displayName: draft.title } : {}),
+            priority: draft.priority,
+            ...(draft.repoId ? { repoId: draft.repoId } : {}),
+            ...(draft.worktreeId ? { worktreeId: draft.worktreeId } : {}),
+            hostId: 'local'
+          },
+          { timeoutMs: 15_000, skipCompatibilityCheck: true }
+        )
+
+        if (draft.squadId && created?.task?.id) {
+          try {
+            await callRuntimeRpc(
+              LOCAL_RUNTIME_TARGET,
+              'orchestration.taskAssignSquad',
+              {
+                task: created.task.id,
+                squad: draft.squadId,
+                inject: true,
+                spawnIfMissing: true,
+                waitTimeoutMs: 45_000
+              },
+              { timeoutMs: 60_000, skipCompatibilityCheck: true }
+            )
+          } catch (assignErr) {
+            toast.error(
+              assignErr instanceof Error ? assignErr.message : String(assignErr)
+            )
+          }
+        }
+
+        setCreateOpen(false)
+        await load()
+      } catch (err) {
+        setCreateError(err instanceof Error ? err.message : String(err))
+      } finally {
+        setCreateSubmitting(false)
+      }
+    },
+    [load]
+  )
+
+  const handleStartPlan = useCallback(
+    async (goal: string, squadId: string | null) => {
+      if (!repoId) {
+        throw new Error('Open a project worktree first.')
+      }
+      return plan.startPlan(goal, squadId, repoId)
+    },
+    [plan, repoId]
+  )
+
+  const handleCreatePlan = useCallback(
+    async (items: SubTaskBreakdownItem[], pipelineId: string) => {
+      await plan.createPlan(items, pipelineId, repoId)
+      await load()
+    },
+    [load, plan, repoId]
+  )
+
   // Why: clicking a task defaults to docking its detail into the main box next
   // to the terminal (the right sidebar stays put), instead of jumping to the
   // full board. "Open board" remains for the dense three-view workspace.
@@ -171,33 +287,80 @@ export default function OrchestrationPanel({
           </div>
           <div className="truncate text-[10px] text-muted-foreground">{projectLabel}</div>
         </div>
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon-xs"
-          title={translate('auto.components.right.sidebar.orchestration.refresh', 'Refresh')}
-          onClick={() => {
-            void load()
-          }}
-        >
-          {loading ? (
-            <LoaderCircle className="size-3.5 animate-spin" />
-          ) : (
-            <RefreshCw className="size-3.5" />
-          )}
-        </Button>
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon-xs"
-          title={translate(
-            'auto.components.right.sidebar.orchestration.openBoard',
-            'Open full board'
-          )}
-          onClick={openBoard}
-        >
-          <ExternalLink className="size-3.5" />
-        </Button>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-xs"
+              onClick={() => {
+                setCreateError(null)
+                setCreateOpen(true)
+              }}
+            >
+              <Plus className="size-3.5" />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent side="bottom" sideOffset={6}>
+            {translate('auto.components.right.sidebar.orchestration.newTask', 'New task')}
+          </TooltipContent>
+        </Tooltip>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-xs"
+              onClick={() => setProductGoalOpen(true)}
+            >
+              <Workflow className="size-3.5" />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent side="bottom" sideOffset={6}>
+            {translate('auto.components.right.sidebar.orchestration.newGoal', 'New product goal')}
+          </TooltipContent>
+        </Tooltip>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-xs"
+              title={translate('auto.components.right.sidebar.orchestration.refresh', 'Refresh')}
+              onClick={() => {
+                void load()
+              }}
+            >
+              {loading ? (
+                <LoaderCircle className="size-3.5 animate-spin" />
+              ) : (
+                <RefreshCw className="size-3.5" />
+              )}
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent side="bottom" sideOffset={6}>
+            {translate('auto.components.right.sidebar.orchestration.refresh', 'Refresh')}
+          </TooltipContent>
+        </Tooltip>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-xs"
+              title={translate(
+                'auto.components.right.sidebar.orchestration.openBoard',
+                'Open full board'
+              )}
+              onClick={openBoard}
+            >
+              <ExternalLink className="size-3.5" />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent side="bottom" sideOffset={6}>
+            {translate('auto.components.right.sidebar.orchestration.openBoard', 'Open full board')}
+          </TooltipContent>
+        </Tooltip>
       </header>
 
       <div className="flex shrink-0 items-center gap-1 border-b border-border/40 px-3 py-1.5">
@@ -263,9 +426,29 @@ export default function OrchestrationPanel({
                 'No orchestration tasks yet.'
               )}
             </p>
-            <Button type="button" size="sm" variant="outline" className="h-7" onClick={openBoard}>
-              {translate('auto.components.right.sidebar.orchestration.openBoardCta', 'Open board')}
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                className="h-7"
+                onClick={() => {
+                  setCreateError(null)
+                  setCreateOpen(true)
+                }}
+              >
+                {translate('auto.components.right.sidebar.orchestration.newTask', 'New task')}
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                className="h-7"
+                onClick={() => setProductGoalOpen(true)}
+              >
+                {translate('auto.components.right.sidebar.orchestration.newGoal', 'New product goal')}
+              </Button>
+            </div>
           </div>
         ) : (
           <div className="space-y-1">
@@ -286,6 +469,33 @@ export default function OrchestrationPanel({
           </div>
         )}
       </div>
+
+      <OrchestrationBoardCreateDialog
+        open={createOpen}
+        onOpenChange={(next) => {
+          setCreateOpen(next)
+          if (!next) {
+            setCreateError(null)
+          }
+        }}
+        scopeOptions={scopeOptions}
+        defaultRepoId={repoId}
+        defaultWorktreeId={worktreeId}
+        squads={squads.map((squad) => ({ id: squad.id, name: squad.name }))}
+        defaultSquadId={null}
+        submitting={createSubmitting}
+        error={createError}
+        onSubmit={handleCreate}
+      />
+
+      <OrchestrationProductGoalDialog
+        open={productGoalOpen}
+        onOpenChange={setProductGoalOpen}
+        starting={false}
+        squads={squads}
+        onStartPlan={handleStartPlan}
+        onCreatePlan={handleCreatePlan}
+      />
     </div>
   )
 }

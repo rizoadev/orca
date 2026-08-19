@@ -60,7 +60,7 @@ export function OrchestrationTaskOverviewPane({
   autopilotBusy?: boolean
 }): React.JSX.Element {
   return (
-    <div className="min-h-0 flex-1 overflow-y-auto p-4 scrollbar-sleek sm:p-5">
+    <div className="min-h-0 flex-1 overflow-y-auto border-b border-[#111] p-4 scrollbar-sleek sm:p-5 lg:border-b-0 lg:border-r lg:border-[#111]">
       <section className="space-y-3">
         <h3 className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
           {translate('auto.components.orchestration.board.overview', 'Overview')}

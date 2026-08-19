@@ -614,6 +614,7 @@ export type UISlice = {
     | 'issues-board'
     | 'agent-dashboard'
     | 'orchestration-board'
+    | 'docker'
   previousViewBeforeSettings:
     | 'terminal'
     | 'tasks'
@@ -625,6 +626,7 @@ export type UISlice = {
     | 'issues-board'
     | 'agent-dashboard'
     | 'orchestration-board'
+    | 'docker'
   previousViewBeforeActivity:
     | 'terminal'
     | 'settings'
@@ -636,6 +638,7 @@ export type UISlice = {
     | 'issues-board'
     | 'agent-dashboard'
     | 'orchestration-board'
+    | 'docker'
   previousViewBeforeAutomations:
     | 'terminal'
     | 'settings'
@@ -647,6 +650,7 @@ export type UISlice = {
     | 'issues-board'
     | 'agent-dashboard'
     | 'orchestration-board'
+    | 'docker'
   previousViewBeforeSpace:
     | 'terminal'
     | 'settings'
@@ -658,6 +662,7 @@ export type UISlice = {
     | 'issues-board'
     | 'agent-dashboard'
     | 'orchestration-board'
+    | 'docker'
   previousViewBeforeSkills:
     | 'terminal'
     | 'settings'
@@ -669,6 +674,7 @@ export type UISlice = {
     | 'issues-board'
     | 'agent-dashboard'
     | 'orchestration-board'
+    | 'docker'
   previousViewBeforeMobile:
     | 'terminal'
     | 'settings'
@@ -680,6 +686,7 @@ export type UISlice = {
     | 'issues-board'
     | 'agent-dashboard'
     | 'orchestration-board'
+    | 'docker'
   previousViewBeforeIssuesBoard:
     | 'terminal'
     | 'settings'
@@ -692,6 +699,7 @@ export type UISlice = {
     | 'issues-board'
     | 'agent-dashboard'
     | 'orchestration-board'
+    | 'docker'
   previousViewBeforeAgentDashboard:
     | 'terminal'
     | 'settings'
@@ -704,7 +712,21 @@ export type UISlice = {
     | 'issues-board'
     | 'agent-dashboard'
     | 'orchestration-board'
+    | 'docker'
   previousViewBeforeOrchestrationBoard:
+    | 'terminal'
+    | 'settings'
+    | 'tasks'
+    | 'activity'
+    | 'automations'
+    | 'space'
+    | 'skills'
+    | 'mobile'
+    | 'issues-board'
+    | 'agent-dashboard'
+    | 'orchestration-board'
+    | 'docker'
+  previousViewBeforeDocker:
     | 'terminal'
     | 'settings'
     | 'tasks'
@@ -722,6 +744,8 @@ export type UISlice = {
   closeAgentDashboardPage: () => void
   openOrchestrationBoardPage: (opts?: { taskId?: string | null }) => void
   closeOrchestrationBoardPage: () => void
+  openDockerPage: () => void
+  closeDockerPage: () => void
   /** One-shot focus when opening the board from the right-sidebar list. */
   orchestrationBoardFocusTaskId: string | null
   consumeOrchestrationBoardFocusTaskId: () => string | null
@@ -1284,6 +1308,7 @@ export const createUISlice: StateCreator<AppState, [], [], UISlice> = (set, get)
   previousViewBeforeIssuesBoard: 'terminal',
   previousViewBeforeAgentDashboard: 'terminal',
   previousViewBeforeOrchestrationBoard: 'terminal',
+  previousViewBeforeDocker: 'terminal',
   setActiveView: (view) => set({ activeView: view }),
   taskPageData: {},
   taskResumeState: undefined,
@@ -1593,6 +1618,16 @@ export const createUISlice: StateCreator<AppState, [], [], UISlice> = (set, get)
     set((state) => ({
       activeView: state.previousViewBeforeOrchestrationBoard,
       orchestrationBoardFocusTaskId: null
+    })),
+  openDockerPage: () =>
+    set((state) => ({
+      activeView: 'docker',
+      previousViewBeforeDocker:
+        state.activeView === 'docker' ? state.previousViewBeforeDocker : (state.activeView as UISlice['previousViewBeforeDocker'])
+    })),
+  closeDockerPage: () =>
+    set((state) => ({
+      activeView: state.previousViewBeforeDocker
     })),
   setNewWorkspaceDraft: (draft) => set({ newWorkspaceDraft: draft }),
   clearNewWorkspaceDraft: () => set({ newWorkspaceDraft: null }),

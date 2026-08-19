@@ -28,6 +28,7 @@ export type OrchestrationBoardCreateDraft = {
   priority: OrchestrationBoardTaskPriority
   repoId: string | null
   worktreeId: string | null
+  squadId: string | null
 }
 
 export type OrchestrationBoardCreateScopeOption = {
@@ -46,6 +47,8 @@ export function OrchestrationBoardCreateDialog({
   scopeOptions,
   defaultRepoId,
   defaultWorktreeId,
+  squads,
+  defaultSquadId,
   submitting,
   error,
   onSubmit
@@ -55,6 +58,8 @@ export function OrchestrationBoardCreateDialog({
   scopeOptions: OrchestrationBoardCreateScopeOption[]
   defaultRepoId: string | null
   defaultWorktreeId: string | null
+  squads: { id: string; name: string }[]
+  defaultSquadId: string | null
   submitting: boolean
   error: string | null
   onSubmit: (draft: OrchestrationBoardCreateDraft) => void
@@ -63,6 +68,7 @@ export function OrchestrationBoardCreateDialog({
   const [title, setTitle] = useState('')
   const [priority, setPriority] = useState<OrchestrationBoardTaskPriority>('medium')
   const [worktreeId, setWorktreeId] = useState<string>(NONE)
+  const [squadId, setSquadId] = useState<string | null>(null)
 
   useEffect(() => {
     if (!open) {
@@ -72,7 +78,8 @@ export function OrchestrationBoardCreateDialog({
     setTitle('')
     setPriority('medium')
     setWorktreeId(defaultWorktreeId ?? NONE)
-  }, [open, defaultWorktreeId])
+    setSquadId(defaultSquadId ?? null)
+  }, [open, defaultWorktreeId, defaultSquadId])
 
   const selectedOption = useMemo(
     () => scopeOptions.find((option) => option.worktreeId === worktreeId) ?? null,
@@ -158,6 +165,41 @@ export function OrchestrationBoardCreateDialog({
 
           <div className="flex flex-col gap-1.5">
             <Label>
+              {translate('auto.components.orchestration.board.create.squad', 'Squad')}
+            </Label>
+            <Select
+              value={squadId ?? undefined}
+              onValueChange={(value) => setSquadId(value === '' ? null : value)}
+            >
+              <SelectTrigger className="h-9 w-full text-sm">
+                <SelectValue
+                  placeholder={translate(
+                    'auto.components.orchestration.board.create.noSquad',
+                    'No squad'
+                  )}
+                />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="">
+                  {translate('auto.components.orchestration.board.create.noSquad', 'No squad')}
+                </SelectItem>
+                {squads.map((squad) => (
+                  <SelectItem key={squad.id} value={squad.id}>
+                    {squad.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="text-[11px] text-muted-foreground">
+              {translate(
+                'auto.components.orchestration.board.create.squadHint',
+                'After creation, this task will be assigned to the selected squad and run.'
+              )}
+            </p>
+          </div>
+
+          <div className="flex flex-col gap-1.5">
+            <Label>
               {translate('auto.components.orchestration.board.create.worktree', 'Worktree scope')}
             </Label>
             <Select value={worktreeId} onValueChange={setWorktreeId}>
@@ -233,7 +275,8 @@ export function OrchestrationBoardCreateDialog({
                 title: title.trim(),
                 priority,
                 repoId: selectedOption?.repoId ?? null,
-                worktreeId: selectedOption?.worktreeId ?? null
+                worktreeId: selectedOption?.worktreeId ?? null,
+                squadId
               })
             }}
           >

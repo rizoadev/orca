@@ -171,7 +171,7 @@ export function OrchestrationBoardTaskDialog({
           ? 'h-[min(920px,calc(100vh-1rem))] w-full max-h-[calc(100vh-1rem)] rounded-xl border border-border shadow-2xl sm:h-[min(860px,90vh)] sm:max-w-[min(1120px,calc(100vw-2rem))]'
           : isEmbedded
             ? 'h-full w-full border-0 bg-background'
-            : 'h-full w-full border-l border-border/60'
+            : 'h-full w-full border border-border/60'
       )}
       onClick={isModal ? (event) => event.stopPropagation() : undefined}
     >
@@ -306,7 +306,7 @@ export function OrchestrationBoardTaskDialog({
         <aside
           className={cn(
             'flex min-h-0 flex-col overflow-y-auto',
-            (isFull || isModal || isEmbedded) && 'lg:border-b-0 lg:border-r'
+            (isFull || isModal || isEmbedded) && 'lg:border-b-0 lg:border-r lg:border-[#111]'
           )}
         >
           <OrchestrationTaskOverviewPane

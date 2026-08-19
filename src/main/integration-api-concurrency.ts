@@ -1,4 +1,4 @@
-export const INTEGRATION_API_MAX_WAITERS = 1024
+export const INTEGRATION_API_MAX_WAITERS = 4096
 
 export class IntegrationApiConcurrencyGate {
   private running = 0

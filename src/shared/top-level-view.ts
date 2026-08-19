@@ -13,7 +13,8 @@ const TOP_LEVEL_VIEW_LOOKUP: Record<TopLevelView, true> = {
   mobile: true,
   'issues-board': true,
   'agent-dashboard': true,
-  'orchestration-board': true
+  'orchestration-board': true,
+  docker: true
 }
 
 export function isTopLevelView(value: unknown): value is TopLevelView {
