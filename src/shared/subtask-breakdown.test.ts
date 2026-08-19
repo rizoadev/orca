@@ -36,4 +36,21 @@ describe('parseSubtaskBreakdown', () => {
     expect(items[0]!.title).toBe('Replace CDP with playwright.launch')
     expect(items[1]!.title).toBe('Configure CI secrets')
   })
+
+  it('parses a JSON array output, ignoring prose around it', () => {
+    const text =
+      '**Problem framing:** pipeline exists but never ran on GitLab CI.\n' +
+      '```json\n' +
+      '[{"title": "Replace CDP with playwright.launch", "role": "implement", "description": "shared runners have no localhost:9222"},{"title": "Configure CI secrets", "role": "devops", "description": "add tokens to GitLab variables"}]\n' +
+      '```\n' +
+      '**VERDICT: PASS**'
+    const items = parseSubtaskBreakdown(text)
+    expect(items).toHaveLength(2)
+    expect(items[0]).toEqual({
+      title: 'Replace CDP with playwright.launch',
+      role: 'implement',
+      description: 'shared runners have no localhost:9222'
+    })
+    expect(items[1]!.role).toBe('devops')
+  })
 })

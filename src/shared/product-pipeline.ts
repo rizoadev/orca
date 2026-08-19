@@ -203,14 +203,13 @@ export function buildRoleTaskSpec(args: {
         'Each subtask is a small, shippable work item that a dedicated agent can do.',
         '',
         '=== REQUIRED OUTPUT ===',
-        'End worker_done --body with a SUBTASK BREAKDOWN list, one item per line:',
-        '  [1] <title> — <role> — <1-line description>',
-        '  [2] <title> — <role> — <1-line description>',
-        '...',
-        'Use roles from: research, implement, test, review, docs, devops, security (or similar).',
+        'End worker_done --body with the subtask breakdown as a JSON array:',
+        '  [{"title": "<title>", "role": "implement", "description": "<1-line description>"}, ...]',
+        'Roles: research, implement, test, review, docs, devops, security.',
+        'Return ONLY the JSON array on its own, no prose around it.',
         'Prefer 3-8 subtasks. Keep each description concrete and actionable.',
         '',
-        'Before the list, add 2-3 sentences: problem framing, key files/paths, risks.',
+        'Before the JSON, add 2-3 sentences: problem framing, key files/paths, risks.',
         'Include VERDICT: PASS when the breakdown is complete enough to execute.'
       ]
         .filter(Boolean)

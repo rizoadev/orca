@@ -39,14 +39,19 @@ function collectBlockLines(text: string): string[] {
 }
 
 /**
- * Extract items from a research worker_done body. Accepts lines like:
- *   [1] Add auth — implement — wire JWT middleware
- *   - Write tests — test — cover login flow
- * Falls back to non-empty bullet lines when the role delimiter is missing.
+ * Extract items from a research worker_done body. Prefers a JSON array
+ * (new researcher output), then falls back to the SUBTASK BREAKDOWN list.
+ *   JSON:   [{"title": "Add auth", "role": "implement", "description": "..."}]
+ *   List:   [1] Add auth — implement — wire JWT middleware
+ *           - Write tests — test — cover login flow
  */
 export function parseSubtaskBreakdown(text: string | null | undefined): SubTaskBreakdownItem[] {
   if (!text) {
     return []
+  }
+  const jsonItems = parseJsonArray(text)
+  if (jsonItems.length > 0) {
+    return jsonItems
   }
   const items: SubTaskBreakdownItem[] = []
   for (const rawLine of collectBlockLines(text)) {
@@ -70,4 +75,47 @@ export function parseSubtaskBreakdown(text: string | null | undefined): SubTaskB
     }
   }
   return items
+}
+
+/** Try to extract a subtask JSON array from the text (fences or bare). */
+function parseJsonArray(text: string): SubTaskBreakdownItem[] {
+  // Why: the model may wrap JSON in ```json fences, or put prose around it —
+  // grab the first [ ... ] span and try to decode it.
+  const candidates: string[] = []
+  const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/i)
+  if (fenced?.[1]) {
+    candidates.push(fenced[1])
+  }
+  const bare = text.match(/\[[\s\S]*?\]/)
+  if (bare?.[0]) {
+    candidates.push(bare[0])
+  }
+  for (const candidate of candidates) {
+    try {
+      const parsed: unknown = JSON.parse(candidate)
+      if (Array.isArray(parsed)) {
+        const items = parsed
+          .filter(
+            (raw): raw is Record<string, unknown> =>
+              typeof raw === 'object' &&
+              raw !== null &&
+              typeof (raw as Record<string, unknown>).title === 'string'
+          )
+          .map((raw) => ({
+            title: String(raw.title).trim(),
+            role:
+              typeof raw.role === 'string' && raw.role.trim()
+                ? raw.role.trim().toLowerCase()
+                : 'implement',
+            description: typeof raw.description === 'string' ? raw.description.trim() : ''
+          }))
+        if (items.length > 0) {
+          return items
+        }
+      }
+    } catch {
+      // try the next candidate
+    }
+  }
+  return []
 }
