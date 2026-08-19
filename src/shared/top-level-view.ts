@@ -14,7 +14,6 @@ const TOP_LEVEL_VIEW_LOOKUP: Record<TopLevelView, true> = {
   'issues-board': true,
   'agent-dashboard': true,
   'orchestration-board': true,
-  notes: true,
   docker: true
 }
 

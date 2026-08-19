@@ -6,20 +6,12 @@
 import type { OrchestrationDb } from './db'
 import type { TaskRow } from './types'
 import { buildDispatchPreamble } from './preamble'
-import {
-  buildSquadLeaderBriefing,
-  findAgentSquad,
-  normalizeAgentSquads
-} from '../../../shared/agent-squads'
-import { defaultRoleBindings, type PipelineRoleBinding } from './product-pipeline-engine'
+import { defaultRoleBindings } from './product-pipeline-engine'
+import { runPiRpcDraftTask } from './pi-rpc-task-runner'
+import { resolveAgentForRole } from './resolve-pipeline-role-agent'
 import type { ProductPipelineRole } from '../../../shared/product-pipeline'
-import {
-  DEFAULT_AGENT_FAILOVER_CHAIN,
-  pickFailoverAgent
-} from '../../../shared/orchestration-blocker-policy'
 import type { RuntimeTerminalWaitCondition } from '../../../shared/runtime-types'
 import type { TuiAgent } from '../../../shared/types'
-import { isTuiAgent } from '../../../shared/tui-agent-config'
 
 export type ProductDispatchRuntime = {
   getClientSettings: () => { agentSquads?: unknown; defaultTuiAgent?: string | null }
@@ -28,7 +20,7 @@ export type ProductDispatchRuntime = {
   ) => Promise<{ terminals: { handle: string; title: string | null }[] }>
   launchAgentTerminal: (
     worktreeSelector: string,
-    opts: { agent: TuiAgent; prompt: string; title?: string }
+    opts: { agent: TuiAgent; prompt: string; title?: string; cli?: string }
   ) => Promise<{ handle: string }>
   waitForTerminal: (
     handle: string,
@@ -43,39 +35,8 @@ export type ProductDispatchRuntime = {
   getTerminalOrchestrationCliCommand: (handle: string) => 'orca' | 'orca-ide'
   sendTerminalAgentPrompt: (handle: string, prompt: string) => Promise<unknown>
   getAgentStatusForHandle: (handle: string) => string | null
-}
-
-function resolveAgentForRole(
-  role: ProductPipelineRole,
-  runtime: ProductDispatchRuntime,
-  bindings: PipelineRoleBinding[] = defaultRoleBindings(),
-  /** 1-based attempt — used for model/agent failover chain. */
-  attempt = 1
-): { agent: TuiAgent; squadId: string; briefing?: string; preferredAgent: string } {
-  const binding =
-    bindings.find((b) => b.role === role) ??
-    defaultRoleBindings().find((b) => b.role === 'implementer') ??
-    defaultRoleBindings()[0]!
-  const settings = runtime.getClientSettings()
-  const squads = normalizeAgentSquads(settings.agentSquads)
-  const squad = findAgentSquad(squads, binding.squadId)
-  const defaultAgent = settings.defaultTuiAgent?.trim() || binding.defaultAgent
-  const preferred = squad?.leader.agent || defaultAgent
-  // Build chain: preferred → squad members → global failover defaults.
-  const memberAgents = (squad?.members ?? []).map((m) => m.agent)
-  const chain = [
-    preferred,
-    ...memberAgents,
-    ...DEFAULT_AGENT_FAILOVER_CHAIN
-  ].filter((name, index, arr) => name && arr.indexOf(name) === index)
-  const agentName = pickFailoverAgent(preferred, attempt, chain)
-  const agent = (isTuiAgent(agentName) ? agentName : 'pi') as TuiAgent
-  return {
-    agent,
-    preferredAgent: preferred,
-    squadId: binding.squadId,
-    briefing: squad ? buildSquadLeaderBriefing(squad) : undefined
-  }
+  resolveWorktreePath: (worktreeId: string) => Promise<string>
+  resolveRepoPath: (repoId: string) => Promise<string>
 }
 
 export async function dispatchPipelineStageTask(
@@ -99,7 +60,9 @@ export async function dispatchPipelineStageTask(
   if (task.status !== 'ready') {
     throw new Error(`Task ${task.id} is ${task.status}; only ready stage tasks can be dispatched`)
   }
-  if (!task.worktree_id) {
+  // Why: research (plan-only) runs headless before any worktree exists, so it
+  // may have a null worktree_id. Later terminal stages still require one.
+  if (!task.worktree_id && task.pipeline_stage !== 'research') {
     throw new Error(`Task ${task.id} has no worktree_id — product pipeline requires a worktree`)
   }
   const role = (task.pipeline_role || 'implementer') as ProductPipelineRole
@@ -108,6 +71,70 @@ export async function dispatchPipelineStageTask(
   const waitTimeoutMs = options.waitTimeoutMs ?? 90_000
   const coordinatorHandle = options.coordinatorHandle ?? 'orchestrator'
 
+  // Why: drafting runs headless via the in-process pi RPC session (JSON-style)
+  // instead of a TUI terminal — the operator watches progress in the plan
+  // modal, not in a terminal tab.
+  if (task.pipeline_stage === 'research') {
+    try {
+      // Why: mark dispatched before the blocking RPC so the UI never shows a
+      // research task stuck at 'ready' while pi is actually drafting.
+      db.setTaskPipelineMeta(task.id, { status: 'dispatched' })
+      // Why: plan-only runs before any worktree exists, so fall back to the
+      // primary repo checkout as the research cwd (research only reads).
+      const cwd = task.worktree_id
+        ? await runtime.resolveWorktreePath(task.worktree_id)
+        : task.repo_id
+          ? await runtime.resolveRepoPath(task.repo_id)
+          : process.cwd()
+      const { result } = await runPiRpcDraftTask({
+        cwd,
+        spec: task.spec,
+        sessionId: task.id
+      })
+      db.setTaskPipelineMeta(task.id, { status: 'completed', result })
+      return {
+        task: db.getTask(task.id)!,
+        dispatchId: `rpc:${task.id}`,
+        to: 'pi-rpc',
+        spawned: false,
+        injected: true,
+        role,
+        agent: 'pi-rpc'
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      db.addTaskComment({
+        taskId: task.id,
+        author: 'system',
+        kind: 'system',
+        role,
+        body: `Pi RPC research failed: ${message}`
+      })
+      db.setTaskPipelineMeta(task.id, { status: 'failed', result: message })
+      throw new Error(`Pi RPC research failed for task ${task.id}: ${message}`)
+    }
+  }
+
+  // Why: productStart lets the operator pick a manager squad; remember it on
+  // the root result and prefer it here for the manage stage dispatch.
+  let roleBindings = defaultRoleBindings()
+  if (role === 'manager' && task.pipeline_id) {
+    const root = db.getTask(task.pipeline_id)
+    let managerSquadId: string | undefined
+    try {
+      managerSquadId = root?.result
+        ? (JSON.parse(root.result) as { managerSquadId?: string }).managerSquadId
+        : undefined
+    } catch {
+      /* keep default binding */
+    }
+    if (managerSquadId) {
+      roleBindings = roleBindings.map((b) =>
+        b.role === 'manager' ? { ...b, squadId: managerSquadId } : b
+      )
+    }
+  }
+
   // Try preferred agent, then failover chain on spawn/ready failure (self-heal).
   const maxAgentTries = Math.min(3, Math.max(1, attempt + 1))
   let lastError: string | null = null
@@ -115,10 +142,10 @@ export async function dispatchPipelineStageTask(
     const resolved = resolveAgentForRole(
       role,
       runtime,
-      defaultRoleBindings(),
+      roleBindings,
       tryIndex === 1 ? attempt : attempt + tryIndex - 1
     )
-    const { agent, briefing, preferredAgent } = resolved
+    const { agent, briefing, preferredAgent, cli, memberSystemPrompt } = resolved
     try {
       const { terminals } = await runtime.listTerminals(worktreeSelector)
       let targetHandle: string | undefined
@@ -142,7 +169,8 @@ export async function dispatchPipelineStageTask(
         const created = await runtime.launchAgentTerminal(worktreeSelector, {
           agent,
           prompt: '',
-          title: `${role}: ${task.display_name || task.task_title || task.id}`.slice(0, 60)
+          title: `${role}: ${task.display_name || task.task_title || task.id}`.slice(0, 60),
+          ...(cli ? { cli } : {})
         })
         targetHandle = created.handle
         spawned = true
@@ -190,7 +218,7 @@ export async function dispatchPipelineStageTask(
       const preamble = buildDispatchPreamble({
         taskId: task.id,
         dispatchId: ctx.id,
-        taskSpec: task.spec,
+        taskSpec: memberSystemPrompt ? `${memberSystemPrompt.trim()}\n\n${task.spec}` : task.spec,
         coordinatorHandle,
         workerHandle: targetHandle,
         devMode: options.devMode,
@@ -266,7 +294,9 @@ export async function dispatchAllReadyPipelineStages(
 > {
   const ready = db
     .listTasksByPipeline(pipelineId)
-    .filter((task) => task.status === 'ready' && task.pipeline_stage && task.pipeline_stage !== 'done')
+    .filter(
+      (task) => task.status === 'ready' && task.pipeline_stage && task.pipeline_stage !== 'done'
+    )
   // Stable order: manage → research → implement → test → review
   const order = ['manage', 'research', 'implement', 'test', 'review']
   ready.sort((a, b) => {
@@ -275,26 +305,36 @@ export async function dispatchAllReadyPipelineStages(
     return (ai === -1 ? 99 : ai) - (bi === -1 ? 99 : bi)
   })
 
+  // Why: run stages one at a time — if any task is already dispatched, wait
+  // for it to finish (supervisor ticks every ~8s) instead of starting a
+  // parallel wave. Only the first ready task is started per call.
+  const active = db.listTasksByPipeline(pipelineId).some((t) => t.status === 'dispatched')
+  if (active) {
+    return []
+  }
+  const target = ready[0]
+  if (!target) {
+    return []
+  }
+
   const results: { taskId: string; to: string; role: string; spawned: boolean }[] = []
-  for (const task of ready) {
-    try {
-      const dispatched = await dispatchPipelineStageTask(db, runtime, task, options)
-      results.push({
-        taskId: task.id,
-        to: dispatched.to,
-        role: dispatched.role,
-        spawned: dispatched.spawned
-      })
-    } catch (err) {
-      // Continue other stages; caller sees partial results.
-      results.push({
-        taskId: task.id,
-        to: '',
-        role: task.pipeline_role || 'unknown',
-        spawned: false
-      })
-      void err
-    }
+  try {
+    const dispatched = await dispatchPipelineStageTask(db, runtime, target, options)
+    results.push({
+      taskId: target.id,
+      to: dispatched.to,
+      role: dispatched.role,
+      spawned: dispatched.spawned
+    })
+  } catch (err) {
+    // Continue other stages; caller sees partial results.
+    results.push({
+      taskId: target.id,
+      to: '',
+      role: target.pipeline_role || 'unknown',
+      spawned: false
+    })
+    void err
   }
   return results
 }

@@ -13,7 +13,8 @@ const EDITOR_TAB_CONTENT_TYPES = new Set<TabContentType>([
   'diff',
   'conflict-review',
   'check-details',
-  'issue-details'
+  'issue-details',
+  'orchestration-task'
 ])
 
 type TerminalTabBulkActionState = ReturnType<typeof useAppStore.getState>

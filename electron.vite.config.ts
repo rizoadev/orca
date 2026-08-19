@@ -1,8 +1,34 @@
+import { isBuiltin } from 'node:module'
 import { resolve } from 'node:path'
 import { defineConfig } from 'electron-vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import { createPlainNodeEntryGuardPlugin } from './build-plugins/plain-node-entry-guard'
+import packageJson from './package.json' with { type: 'json' }
+
+// Why: native dependencies must resolve from packaged node_modules, while the
+// unpacked daemon needs its pure-JS xterm graph bundled. Mirrors upstream's
+// externalization so node-pty (a Napi native module) is never inlined.
+const BUNDLED_MAIN_DEPENDENCIES = new Set([
+  '@xterm/headless',
+  '@xterm/addon-serialize',
+  'psl',
+  // Why: Windows NSIS deploys app.asar before external resources; bootstrap must
+  // not race the later resources/node_modules copy.
+  'zod'
+])
+const EXTERNAL_MAIN_DEPENDENCIES = Object.keys(packageJson.dependencies).filter(
+  (dependency) => !BUNDLED_MAIN_DEPENDENCIES.has(dependency)
+)
+
+function isExternalMainModule(source: string): boolean {
+  if (isBuiltin(source) || source === 'electron' || source.startsWith('electron/')) {
+    return true
+  }
+  return EXTERNAL_MAIN_DEPENDENCIES.some(
+    (dependency) => source === dependency || source.startsWith(`${dependency}/`)
+  )
+}
 
 // Why: the telemetry transport is gated by two compile-time constants that
 // only the official CI release workflow sets. Contributor / `pnpm dev` /
@@ -173,9 +199,12 @@ export default defineConfig({
       // directory cannot reach into app.asar, so pure-JS dependencies used
       // by the daemon must be bundled rather than externalized.
       externalizeDeps: {
-        exclude: ['@xterm/headless', '@xterm/addon-serialize']
+        exclude: [...BUNDLED_MAIN_DEPENDENCIES]
       },
       rollupOptions: {
+        // Why: native dependencies must resolve from packaged node_modules,
+        // while the unpacked daemon needs its pure-JS xterm graph bundled.
+        external: isExternalMainModule,
         input: {
           index: resolve('src/main/index.ts'),
           'daemon-entry': resolve('src/main/daemon/daemon-entry.ts'),
@@ -199,6 +228,13 @@ export default defineConfig({
           'agent-hooks/managed-agent-hook-controls': resolve(
             'src/main/agent-hooks/managed-agent-hook-controls.ts'
           )
+        },
+        // Why: Rolldown's SSR default is ESM, but Electron and sidecar launchers
+        // consume these stable CommonJS paths.
+        output: {
+          format: 'cjs',
+          entryFileNames: '[name].js',
+          chunkFileNames: 'chunks/[name]-[hash].js'
         },
         plugins: [createStartupDiagnosticsBootstrapPlugin(), createPlainNodeEntryGuardPlugin()]
       }

@@ -8,11 +8,19 @@ import {
   subscribeVideoStreamFrames
 } from './emulator-stream-frame-listeners'
 import type { AppIdentity } from '../shared/app-identity'
+import type { GitRemoteIdentity } from '../shared/git-remote-identity'
 import type { DashboardSnapshot, DashboardRevealAgentArgs } from '../shared/dashboard-snapshot'
 import type {
   TerminalPreviewConnectResult,
   TerminalPreviewDataPayload
 } from '../shared/terminal-preview'
+import type {
+  DockerListRequest,
+  DockerListResult,
+  DockerContainerActionRequest,
+  DockerInspectResult,
+  DockerContainerActionResult
+} from '../shared/docker-types'
 import type { CliInstallStatus } from '../shared/cli-install-types'
 import type { AgentHookInstallStatus } from '../shared/agent-hook-types'
 import type { TerminalPaneSplitSource } from '../shared/feature-education-telemetry'
@@ -24,7 +32,8 @@ import type {
   PiIssueChatSetModelArgs,
   PiIssueChatEvent,
   PiModelOption,
-  PiSessionInfo
+  PiSessionInfo,
+  PiIssueChatSessionSnapshot
 } from '../shared/pi-issue-chat-types'
 import type {
   StrandsIssueChatStartArgs,
@@ -32,28 +41,17 @@ import type {
   StrandsIssueChatEvent
 } from '../shared/strands-issue-chat-types'
 import type {
-  DockerContainerActionRequest,
-  DockerContainerActionResult,
-  DockerHostId,
-  DockerInspectResult,
-  DockerListResult
-} from '../shared/docker-types'
-import type {
-  Note,
-  NoteCreateInput,
-  NoteSearchQuery,
-  NoteTagCreateInput,
-  NoteTagUpdateInput,
-  NoteUpdateInput,
-  NotesExportResult,
-  NotesImportResult,
-  NotesListResult
-} from '../shared/notes-types'
-import type {
-  NotesSyncRunResult,
-  NotesSyncStatus,
-  NotesSyncUserConfig
-} from '../shared/notes-sync-types'
+  AsanaConnectionStatus,
+  AsanaConnectArgs,
+  AsanaProject,
+  AsanaSection,
+  AsanaTask,
+  AsanaTaskFilter,
+  AsanaCreateTaskArgs,
+  AsanaTaskUpdate,
+  AsanaMutationResult,
+  AsanaCreateTaskResult
+} from '../shared/asana-types'
 import type {
   HiveAddCredentialArgs,
   HiveDeployEnvironmentArgs,
@@ -601,6 +599,11 @@ const api = {
     create: (args) => ipcRenderer.invoke('repos:create', args),
 
     isGitAvailable: (): Promise<boolean> => ipcRenderer.invoke('repos:isGitAvailable'),
+
+    detectRemoteIdentity: (args: {
+      path: string
+      connectionId?: string | null
+    }): Promise<GitRemoteIdentity | null> => ipcRenderer.invoke('repos:detectRemoteIdentity', args),
 
     getDefaultCreateProjectParent: (): Promise<string> =>
       ipcRenderer.invoke('repos:getDefaultCreateProjectParent'),
@@ -1205,8 +1208,21 @@ const api = {
   },
 
   youtube: {
-    search: (args: { query: string }): Promise<
-      | { ok: true; items: { videoId: string; title: string; uploader: string; durationSeconds: number; thumbnail: string; uploadedDate: string; views: number }[] }
+    search: (args: {
+      query: string
+    }): Promise<
+      | {
+          ok: true
+          items: {
+            videoId: string
+            title: string
+            uploader: string
+            durationSeconds: number
+            thumbnail: string
+            uploadedDate: string
+            views: number
+          }[]
+        }
       | { ok: false; error: string }
     > => ipcRenderer.invoke('youtube:search', args),
     embedPort: (): Promise<number> => ipcRenderer.invoke('youtube:embedPort')
@@ -1770,38 +1786,29 @@ const api = {
   },
 
   asana: {
-    getStatus: (): Promise<import('../shared/asana-types').AsanaConnectionStatus> =>
-      ipcRenderer.invoke('asana:getStatus'),
-    connect: (args: import('../shared/asana-types').AsanaConnectArgs): Promise<
-      import('../shared/asana-types').AsanaConnectionStatus
-    > => ipcRenderer.invoke('asana:connect', args),
-    disconnect: (): Promise<import('../shared/asana-types').AsanaConnectionStatus> =>
-      ipcRenderer.invoke('asana:disconnect'),
-    selectWorkspace: (workspaceGid: string | null): Promise<
-      import('../shared/asana-types').AsanaConnectionStatus
-    > => ipcRenderer.invoke('asana:selectWorkspace', workspaceGid),
-    listProjects: (workspaceGid?: string): Promise<import('../shared/asana-types').AsanaProject[]> =>
+    getStatus: (): Promise<AsanaConnectionStatus> => ipcRenderer.invoke('asana:getStatus'),
+    connect: (args: AsanaConnectArgs): Promise<AsanaConnectionStatus> =>
+      ipcRenderer.invoke('asana:connect', args),
+    disconnect: (): Promise<AsanaConnectionStatus> => ipcRenderer.invoke('asana:disconnect'),
+    selectWorkspace: (workspaceGid: string | null): Promise<AsanaConnectionStatus> =>
+      ipcRenderer.invoke('asana:selectWorkspace', workspaceGid),
+    listProjects: (workspaceGid?: string): Promise<AsanaProject[]> =>
       ipcRenderer.invoke('asana:listProjects', workspaceGid),
-    listSections: (projectGid: string): Promise<import('../shared/asana-types').AsanaSection[]> =>
+    listSections: (projectGid: string): Promise<AsanaSection[]> =>
       ipcRenderer.invoke('asana:listSections', projectGid),
     listTasks: (args?: {
       projectGid?: string
       workspaceGid?: string
-      filter?: import('../shared/asana-types').AsanaTaskFilter
+      filter?: AsanaTaskFilter
       limit?: number
-    }): Promise<import('../shared/asana-types').AsanaTask[]> =>
-      ipcRenderer.invoke('asana:listTasks', args),
-    getTask: (taskGid: string): Promise<import('../shared/asana-types').AsanaTask> =>
-      ipcRenderer.invoke('asana:getTask', taskGid),
-    createTask: (
-      args: import('../shared/asana-types').AsanaCreateTaskArgs
-    ): Promise<import('../shared/asana-types').AsanaCreateTaskResult> =>
+    }): Promise<AsanaTask[]> => ipcRenderer.invoke('asana:listTasks', args),
+    getTask: (taskGid: string): Promise<AsanaTask> => ipcRenderer.invoke('asana:getTask', taskGid),
+    createTask: (args: AsanaCreateTaskArgs): Promise<AsanaCreateTaskResult> =>
       ipcRenderer.invoke('asana:createTask', args),
     updateTask: (args: {
       taskGid: string
-      update: import('../shared/asana-types').AsanaTaskUpdate
-    }): Promise<import('../shared/asana-types').AsanaMutationResult> =>
-      ipcRenderer.invoke('asana:updateTask', args)
+      update: AsanaTaskUpdate
+    }): Promise<AsanaMutationResult> => ipcRenderer.invoke('asana:updateTask', args)
   },
 
   jira: {
@@ -2930,9 +2937,14 @@ const api = {
       ipcRenderer.invoke('piIssueChat:detach', sessionId),
     listSessions: (args: { sessionId: string; cwd: string }): Promise<PiSessionInfo[]> =>
       ipcRenderer.invoke('piIssueChat:listSessions', args),
-    newSession: (args: PiIssueChatStartArgs): Promise<import('../shared/pi-issue-chat-types').PiIssueChatSessionSnapshot> =>
+    newSession: (args: PiIssueChatStartArgs): Promise<PiIssueChatSessionSnapshot> =>
       ipcRenderer.invoke('piIssueChat:newSession', args),
-    switchSession: (args: { sessionId: string; cwd: string; issueContext: string; sessionPath: string }): Promise<import('../shared/pi-issue-chat-types').PiIssueChatSessionSnapshot> =>
+    switchSession: (args: {
+      sessionId: string
+      cwd: string
+      issueContext: string
+      sessionPath: string
+    }): Promise<PiIssueChatSessionSnapshot> =>
       ipcRenderer.invoke('piIssueChat:switchSession', args),
     deleteSession: (args: { sessionId: string; sessionPath: string }): Promise<void> =>
       ipcRenderer.invoke('piIssueChat:deleteSession', args),
@@ -4801,28 +4813,19 @@ const api = {
   },
 
   docker: {
-    listContainers: (args?: {
-      hostIds?: DockerHostId[]
-      includeStopped?: boolean
-      enrich?: boolean
-    }): Promise<DockerListResult> => ipcRenderer.invoke('docker:listContainers', args),
-
+    listContainers: (args: DockerListRequest): Promise<DockerListResult> =>
+      ipcRenderer.invoke('docker:listContainers', args),
     inspect: (args: DockerContainerActionRequest): Promise<DockerInspectResult> =>
       ipcRenderer.invoke('docker:inspect', args),
-
     startContainer: (args: DockerContainerActionRequest): Promise<DockerContainerActionResult> =>
       ipcRenderer.invoke('docker:startContainer', args),
-
     stopContainer: (args: DockerContainerActionRequest): Promise<DockerContainerActionResult> =>
       ipcRenderer.invoke('docker:stopContainer', args),
-
-    restartContainer: (
-      args: DockerContainerActionRequest
-    ): Promise<DockerContainerActionResult> => ipcRenderer.invoke('docker:restartContainer', args),
-
+    restartContainer: (args: DockerContainerActionRequest): Promise<DockerContainerActionResult> =>
+      ipcRenderer.invoke('docker:restartContainer', args),
     removeContainer: (args: DockerContainerActionRequest): Promise<DockerContainerActionResult> =>
       ipcRenderer.invoke('docker:removeContainer', args)
-  } satisfies PreloadApi['docker']
+  }
 }
 
 // Expose Electron APIs via contextBridge when context-isolated, otherwise attach to the DOM global.

@@ -3242,7 +3242,6 @@ export type TopLevelView =
   | 'issues-board'
   | 'agent-dashboard'
   | 'orchestration-board'
-  | 'notes'
   | 'docker'
 
 export type PersistedUIState = {

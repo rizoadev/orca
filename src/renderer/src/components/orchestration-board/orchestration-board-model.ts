@@ -11,6 +11,7 @@ export type OrchestrationBoardTaskPriority = 'low' | 'medium' | 'high' | 'urgent
 export type OrchestrationBoardTask = {
   id: string
   spec: string
+  parent_id?: string | null
   task_title?: string | null
   display_name?: string | null
   status: OrchestrationBoardTaskStatus
@@ -59,12 +60,7 @@ export type OrchestrationBoardInCharge = {
   dispatchId: string | null
 }
 
-export type OrchestrationBoardColumnId =
-  | 'ready'
-  | 'dispatched'
-  | 'blocked'
-  | 'completed'
-  | 'failed'
+export type OrchestrationBoardColumnId = 'ready' | 'dispatched' | 'blocked' | 'completed' | 'failed'
 
 export const ORCHESTRATION_BOARD_COLUMNS: {
   id: OrchestrationBoardColumnId
@@ -77,6 +73,29 @@ export const ORCHESTRATION_BOARD_COLUMNS: {
   { id: 'completed', title: 'Done', statuses: ['completed'] },
   { id: 'failed', title: 'Failed', statuses: ['failed'] }
 ]
+
+export type OrchestrationStatusTone =
+  | 'ready'
+  | 'pending'
+  | 'dispatched'
+  | 'completed'
+  | 'failed'
+  | 'blocked'
+
+// Why: shared status chip tone so table, gantt, and kanban read as one design.
+export const ORCHESTRATION_STATUS_TONE: Record<OrchestrationStatusTone, string> = {
+  ready: 'bg-sky-500/15 text-sky-600 dark:text-sky-400 border-sky-500/30',
+  pending: 'bg-muted text-muted-foreground border-border',
+  dispatched: 'bg-amber-500/15 text-amber-700 dark:text-amber-400 border-amber-500/30',
+  completed: 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 border-emerald-500/30',
+  failed: 'bg-destructive/15 text-destructive border-destructive/30',
+  blocked: 'bg-orange-500/15 text-orange-700 dark:text-orange-400 border-orange-500/30'
+}
+
+export function orchestrationStatusTone(status: string | null | undefined): string {
+  const key = (status ?? 'pending') as OrchestrationStatusTone
+  return ORCHESTRATION_STATUS_TONE[key] ?? ORCHESTRATION_STATUS_TONE.pending
+}
 
 export function taskBoardLabel(task: OrchestrationBoardTask): string {
   // Why: RPC/DB rows can omit title/spec after stop/retry races; never throw in list rows.

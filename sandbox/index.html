@@ -1,0 +1,2196 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>NexusAI Task Swarm & Progress Intelligence Dashboard</title>
+  
+  <!-- Tailwind CSS CDN with Plugins -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            brand: {
+              50: '#f0fdf4',
+              500: '#10b981',
+              600: '#059669',
+            },
+            surface: {
+              DEFAULT: '#0b0f17',
+              50: '#1e293b',
+              100: '#131b2e',
+              200: '#0f172a',
+              300: '#0b1120',
+              border: '#1e293b',
+              highlight: '#334155'
+            }
+          },
+          fontFamily: {
+            sans: ['Inter', 'system-ui', '-apple-system', 'sans-serif'],
+            mono: ['JetBrains Mono', 'Fira Code', 'monospace']
+          }
+        }
+      }
+    }
+  </script>
+
+  <!-- Google Fonts & Lucide Icons -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <script src="https://unpkg.com/lucide@latest"></script>
+
+  <!-- Frappe Gantt (battle-tested timeline chart) -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/frappe-gantt@0.6.1/dist/frappe-gantt.min.css">
+  <script src="https://cdn.jsdelivr.net/npm/frappe-gantt@0.6.1/dist/frappe-gantt.min.js"></script>
+
+  <style>
+    /* Custom Scrollbar for dense technical dashboards */
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    ::-webkit-scrollbar-track {
+      background: #0b1120;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #1e293b;
+      border-radius: 3px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: #334155;
+    }
+    
+    .timeline-grid {
+      background-size: 40px 100%;
+      background-image: linear-gradient(to right, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
+    }
+    
+    .timeline-today-line {
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      width: 2px;
+      background: #3b82f6;
+      z-index: 20;
+      pointer-events: none;
+      box-shadow: 0 0 10px rgba(59, 130, 246, 0.5);
+    }
+    
+    .thread-line::before {
+      content: '';
+      position: absolute;
+      top: 36px;
+      bottom: -16px;
+      left: 19px;
+      width: 2px;
+      background: #1e293b;
+    }
+    
+    .thread-post:last-child .thread-line::before {
+      display: none;
+    }
+
+    /* --- Frappe Gantt dark theme overrides --- */
+    .gantt-wrap {
+      border: none;
+      background: transparent;
+    }
+    #gantt-chart .gantt .bar-wrapper {
+      cursor: pointer;
+    }
+    #gantt-chart .gantt .bar-label {
+      fill: #e2e8f0;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 10px;
+    }
+    #gantt-chart .gantt .grid-header {
+      fill: #0f172a;
+      stroke: #1e293b;
+    }
+    #gantt-chart .gantt .grid-header .upper {
+      fill: #0b1120;
+    }
+    #gantt-chart .gantt .grid-header .lower {
+      fill: #0f172a;
+    }
+    #gantt-chart .gantt .grid-header text {
+      fill: #94a3b8;
+      font-family: 'Inter', sans-serif;
+      font-size: 10px;
+      font-weight: 600;
+    }
+    #gantt-chart .gantt .grid-row {
+      fill: #0c121e;
+    }
+    #gantt-chart .gantt .grid-row-even {
+      fill: #0a101a;
+    }
+    #gantt-chart .gantt .row-line,
+    #gantt-chart .gantt .tick {
+      stroke: #1e293b;
+    }
+    #gantt-chart .gantt .today-highlight {
+      fill: rgba(59, 130, 246, 0.12);
+    }
+    #gantt-chart .gantt .arrow {
+      stroke: #475569;
+    }
+    #gantt-chart .gantt .bar-wrapper:hover .bar {
+      filter: brightness(1.15);
+    }
+    #gantt-chart .gantt .tooltip {
+      background: #0b101c;
+      border: 1px solid #1e293b;
+      border-radius: 8px;
+      box-shadow: 0 10px 30px rgba(0,0,0,.5);
+      color: #e2e8f0;
+      font-family: 'Inter', sans-serif;
+    }
+    #gantt-chart .gantt .tooltip .bar-label {
+      color: #e2e8f0;
+    }
+
+    /* --- Kanban drag & drop --- */
+    .kanban-column {
+      transition: background-color .12s ease, border-color .12s ease;
+    }
+    .kanban-column.drag-over {
+      background: rgba(16, 185, 129, 0.10);
+      border-color: rgba(16, 185, 129, 0.6) !important;
+    }
+    .kanban-card {
+      cursor: grab;
+      transition: transform .12s ease, opacity .12s ease, box-shadow .12s ease;
+    }
+    .kanban-card:active {
+      cursor: grabbing;
+    }
+    .kanban-card.dragging {
+      opacity: 0.45;
+      transform: rotate(1.5deg) scale(0.98);
+      box-shadow: 0 10px 30px rgba(0,0,0,.6);
+      pointer-events: none;
+    }
+    .kanban-card.drag-placeholder {
+      border: 1.5px dashed rgba(52, 211, 153, 0.7);
+      background: rgba(16, 185, 129, 0.06);
+      min-height: 84px;
+      cursor: grabbing;
+    }
+
+    [x-cloak] { display: none !important; }
+  </style>
+</head>
+<body class="bg-[#070b12] text-slate-200 font-sans antialiased min-h-screen flex flex-col selection:bg-emerald-500 selection:text-white">
+
+  <!-- Top App Navigation Bar -->
+  <header class="h-14 border-b border-slate-800/80 bg-[#0b0f19]/90 backdrop-blur-md sticky top-0 z-40 px-4 flex items-center justify-between">
+    <!-- Brand & Workspace -->
+    <div class="flex items-center space-x-3">
+      <div class="h-8 w-8 rounded-lg bg-gradient-to-tr from-emerald-500 via-teal-500 to-cyan-500 flex items-center justify-center shadow-lg shadow-emerald-500/20 text-black font-bold">
+        <i data-lucide="bot" class="w-5 h-5 text-slate-950"></i>
+      </div>
+      <div class="flex items-center space-x-2">
+        <span class="font-bold text-sm tracking-tight text-white flex items-center gap-1.5">
+          NEXUS<span class="text-emerald-400">SWARM</span>
+          <span class="text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded bg-emerald-950/80 text-emerald-400 border border-emerald-800/50 font-mono font-semibold">AI Tasks Hub</span>
+        </span>
+        <span class="text-slate-600">/</span>
+        <div class="flex items-center gap-1.5 px-2 py-1 rounded-md bg-slate-900 border border-slate-800 text-xs text-slate-300 hover:border-slate-700 cursor-pointer transition">
+          <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+          <span class="font-medium">Autonomous Swarm Core v4.2</span>
+          <i data-lucide="chevron-down" class="w-3.5 h-3.5 text-slate-500"></i>
+        </div>
+      </div>
+    </div>
+
+    <!-- Center Swarm Team Roles Bar -->
+    <div class="hidden lg:flex items-center space-x-2 bg-slate-950/80 border border-slate-800/80 px-3 py-1 rounded-full text-xs">
+      <span class="text-slate-400 font-medium">Swarm Roles:</span>
+      <div class="flex items-center space-x-2">
+        <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-blue-950/60 text-blue-400 border border-blue-800/40 text-[11px] font-mono" title="Claude 3.7 — orchestrates the mission">
+          <i data-lucide="crown" class="w-3 h-3 text-blue-400"></i> Manager
+        </span>
+        <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-purple-950/60 text-purple-400 border border-purple-800/40 text-[11px] font-mono" title="DeepSeek R1 — implements code/artifacts">
+          <i data-lucide="code-2" class="w-3 h-3 text-purple-400"></i> Coder
+        </span>
+        <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-teal-950/60 text-teal-400 border border-teal-800/40 text-[11px] font-mono" title="GPT-4o Vision — reviews changes">
+          <i data-lucide="eye" class="w-3 h-3 text-teal-400"></i> Reviewer
+        </span>
+        <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-950/60 text-amber-400 border border-amber-800/40 text-[11px] font-mono" title="Llama-3 Worker — runs tests & QA">
+          <i data-lucide="flask-conical" class="w-3 h-3 text-amber-400"></i> QA / Tester
+        </span>
+      </div>
+    </div>
+
+    <!-- Actions & Controls -->
+    <div class="flex items-center space-x-2.5">
+      <!-- Live Agent Simulation Button -->
+      <button onclick="simulateLiveProgress()" id="btn-simulate" class="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-amber-300 bg-amber-950/50 border border-amber-700/60 rounded-lg hover:bg-amber-900/60 transition shadow-sm active:scale-95">
+        <i data-lucide="zap" class="w-3.5 h-3.5 text-amber-400"></i>
+        <span>Simulate AI Progress Log</span>
+      </button>
+
+      <!-- New Task Button -->
+      <button onclick="openNewTaskModal()" class="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-slate-950 bg-emerald-400 hover:bg-emerald-300 rounded-lg transition shadow-md shadow-emerald-950 active:scale-95">
+        <i data-lucide="plus" class="w-4 h-4 text-slate-950"></i>
+        <span>New Root Task</span>
+      </button>
+
+      <div class="h-6 w-px bg-slate-800 mx-1"></div>
+
+      <!-- Human Supervisor Profile -->
+      <div class="flex items-center gap-2 pl-1 cursor-pointer">
+        <div class="w-7 h-7 rounded-full bg-indigo-600 flex items-center justify-center font-bold text-xs text-white ring-2 ring-indigo-400/30">
+          RZ
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <!-- View Subheader & Global Controls -->
+  <div class="border-b border-slate-800 bg-[#080d16] px-4 py-2.5 flex flex-wrap items-center justify-between gap-3">
+    <!-- View Switcher Tabs: Table, Gantt, Kanban -->
+    <div class="flex items-center p-1 rounded-lg bg-slate-950 border border-slate-800/90 text-xs font-medium">
+      <button onclick="switchView('table')" id="tab-btn-table" class="view-tab-btn flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-slate-800 text-white font-semibold shadow-sm transition">
+        <i data-lucide="table-2" class="w-4 h-4 text-emerald-400"></i>
+        <span>Hierarchical Table</span>
+        <span class="px-1.5 py-0.2 bg-slate-700/80 rounded text-[10px] text-slate-300" id="badge-total-tasks">14</span>
+      </button>
+      <button onclick="switchView('gantt')" id="tab-btn-gantt" class="view-tab-btn flex items-center gap-1.5 px-3 py-1.5 rounded-md text-slate-400 hover:text-slate-200 transition">
+        <i data-lucide="gantt-chart-square" class="w-4 h-4 text-cyan-400"></i>
+        <span>Gantt / Resource Timeline</span>
+      </button>
+      <button onclick="switchView('kanban')" id="tab-btn-kanban" class="view-tab-btn flex items-center gap-1.5 px-3 py-1.5 rounded-md text-slate-400 hover:text-slate-200 transition">
+        <i data-lucide="kanban" class="w-4 h-4 text-purple-400"></i>
+        <span>Kanban Board</span>
+      </button>
+    </div>
+
+    <!-- Search, Filter & Quick Stats -->
+    <div class="flex items-center gap-2.5">
+      <!-- Search Input -->
+      <div class="relative">
+        <i data-lucide="search" class="w-3.5 h-3.5 text-slate-500 absolute left-2.5 top-1/2 -translate-y-1/2"></i>
+        <input 
+          type="text" 
+          id="task-search-input"
+          oninput="handleSearch(this.value)"
+          placeholder="Filter tasks, prompts, agents..." 
+          class="w-56 bg-slate-900/90 border border-slate-800 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 rounded-lg pl-8 pr-3 py-1 text-xs text-slate-200 placeholder-slate-500 transition outline-none"
+        />
+      </div>
+
+      <!-- Agent Filter Dropdown -->
+      <select onchange="handleAgentFilter(this.value)" class="bg-slate-900/90 border border-slate-800 rounded-lg px-2.5 py-1 text-xs text-slate-300 focus:border-emerald-500 outline-none cursor-pointer">
+        <option value="all">All Assignees (AI + Human)</option>
+        <option value="JC">Jake Carter / Claude 3.7</option>
+        <option value="EP">Elvis Preston / DeepSeek</option>
+        <option value="AK">Andrew Kint / Vision</option>
+        <option value="WV">William V. / Data Swarm</option>
+      </select>
+
+      <!-- Status Filter -->
+      <select onchange="handleStatusFilter(this.value)" class="bg-slate-900/90 border border-slate-800 rounded-lg px-2.5 py-1 text-xs text-slate-300 focus:border-emerald-500 outline-none cursor-pointer">
+        <option value="all">All Statuses</option>
+        <option value="Done">Done</option>
+        <option value="In Progress">In Progress</option>
+        <option value="Review">Review</option>
+        <option value="Todo">Todo / Queued</option>
+      </select>
+
+      <!-- Expand All / Collapse All Tree -->
+      <button onclick="toggleExpandAllTree()" id="btn-toggle-expand" title="Expand/Collapse All Hierarchy" class="p-1.5 rounded-lg bg-slate-900 border border-slate-800 text-slate-400 hover:text-slate-200 hover:border-slate-700 transition">
+        <i data-lucide="chevrons-up-down" class="w-4 h-4"></i>
+      </button>
+    </div>
+  </div>
+
+  <!-- Main Dynamic View Container -->
+  <main class="flex-1 flex overflow-hidden relative">
+    
+    <!-- Left / Center Main Canvas Area -->
+    <div class="flex-1 overflow-auto bg-[#070b13] p-4 flex flex-col" id="main-content-scroll">
+      
+      <!-- ========================================================================= -->
+      <!-- 1. HIERARCHICAL TABLE VIEW (Screenshot 1 Clone & AI Enhancement) -->
+      <!-- ========================================================================= -->
+      <section id="view-table" class="space-y-6">
+        
+        <!-- Group 1: Autonomous Client AI Agents & Projects -->
+        <div class="rounded-xl border border-slate-800/90 bg-[#0c121e] overflow-hidden shadow-2xl">
+          <!-- Group Header -->
+          <div class="px-4 py-3 bg-slate-900/80 border-b border-slate-800 flex items-center justify-between">
+            <div class="flex items-center space-x-2.5">
+              <input type="checkbox" class="rounded bg-slate-800 border-slate-700 text-emerald-500 focus:ring-0 focus:ring-offset-0 cursor-pointer" />
+              <button onclick="toggleGroupCollapse('group-client')" class="flex items-center gap-1.5 text-xs font-bold text-slate-200 uppercase tracking-wider hover:text-emerald-400 transition">
+                <i data-lucide="chevron-down" id="chevron-group-client" class="w-4 h-4 text-slate-400"></i>
+                <span>Autonomous Swarm Projects (Fixed Goal Tasks)</span>
+              </button>
+              <span class="px-2 py-0.5 rounded-full text-[11px] font-mono bg-emerald-950/80 text-emerald-400 border border-emerald-800/40">7 Active Workflows</span>
+            </div>
+
+            <div class="flex items-center space-x-4 text-xs font-mono text-slate-400">
+              <span>Total Tokens: <strong class="text-slate-200 font-semibold">1.42M</strong></span>
+              <span>Est. Hours: <strong class="text-slate-200 font-semibold">168h</strong></span>
+              <span>Budget: <strong class="text-emerald-400 font-semibold">$35,130.00</strong></span>
+            </div>
+          </div>
+
+          <!-- Table Header Structure -->
+          <div class="overflow-x-auto">
+            <table class="w-full text-left text-xs border-collapse min-w-[1050px]" id="table-client-projects">
+              <thead>
+                <tr class="border-b border-slate-800/80 bg-slate-950/70 text-slate-400 font-medium text-[11px] uppercase tracking-wider">
+                  <th class="py-2.5 pl-4 pr-2 w-10 text-center"><i data-lucide="layers" class="w-3.5 h-3.5 mx-auto text-slate-500"></i></th>
+                  <th class="py-2.5 px-3 min-w-[340px]">Task / Subtask Hierarchy</th>
+                  <th class="py-2.5 px-3 w-32">Status</th>
+                  <th class="py-2.5 px-3 w-44">Progress</th>
+                  <th class="py-2.5 px-3 w-40">Schedule / Due</th>
+                  <th class="py-2.5 px-3 w-28">Assignee (AI/Human)</th>
+                  <th class="py-2.5 px-3 w-24 text-right">Estimate</th>
+                  <th class="py-2.5 px-3 w-32 text-right">Budget</th>
+                  <th class="py-2.5 px-3 w-20 text-right">Rate</th>
+                  <th class="py-2.5 px-3 w-24 text-right">Cost</th>
+                  <th class="py-2.5 pr-4 pl-2 w-28 text-center">Task Detail & Thread</th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-slate-800/60 font-sans" id="tbody-client-projects">
+                <!-- Dynamically rendered rows with tree indentation -->
+              </tbody>
+              <!-- Inline Add Item Row -->
+              <tfoot>
+                <tr class="bg-slate-950/40 hover:bg-slate-900/60 border-t border-slate-800/80 text-slate-400 transition">
+                  <td colspan="11" class="py-2.5 px-4">
+                    <button onclick="openNewTaskModal('Client Projects')" class="flex items-center gap-1.5 text-xs font-medium text-emerald-400 hover:text-emerald-300 transition">
+                      <i data-lucide="plus" class="w-3.5 h-3.5"></i>
+                      <span>Add New Task to this Group</span>
+                    </button>
+                  </td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        </div>
+
+        <!-- Group 2: R&D / Self-Improving Model Pipelines -->
+        <div class="rounded-xl border border-slate-800/90 bg-[#0c121e] overflow-hidden shadow-2xl">
+          <!-- Group Header -->
+          <div class="px-4 py-3 bg-slate-900/80 border-b border-slate-800 flex items-center justify-between">
+            <div class="flex items-center space-x-2.5">
+              <input type="checkbox" class="rounded bg-slate-800 border-slate-700 text-emerald-500 focus:ring-0 focus:ring-offset-0 cursor-pointer" />
+              <button onclick="toggleGroupCollapse('group-rd')" class="flex items-center gap-1.5 text-xs font-bold text-slate-200 uppercase tracking-wider hover:text-emerald-400 transition">
+                <i data-lucide="chevron-down" id="chevron-group-rd" class="w-4 h-4 text-slate-400"></i>
+                <span>R&D & Model Fine-Tuning Pipeline</span>
+              </button>
+              <span class="px-2 py-0.5 rounded-full text-[11px] font-mono bg-blue-950/80 text-blue-400 border border-blue-800/40">4 Workflows</span>
+            </div>
+
+            <div class="flex items-center space-x-4 text-xs font-mono text-slate-400">
+              <span>Total Tokens: <strong class="text-slate-200 font-semibold">4.80M</strong></span>
+              <span>Est. Hours: <strong class="text-slate-200 font-semibold">21h</strong></span>
+              <span>Budget: <strong class="text-emerald-400 font-semibold">$135,000.00</strong></span>
+            </div>
+          </div>
+
+          <div class="overflow-x-auto">
+            <table class="w-full text-left text-xs border-collapse min-w-[1050px]" id="table-rd-projects">
+              <thead>
+                <tr class="border-b border-slate-800/80 bg-slate-950/70 text-slate-400 font-medium text-[11px] uppercase tracking-wider">
+                  <th class="py-2.5 pl-4 pr-2 w-10 text-center"><i data-lucide="layers" class="w-3.5 h-3.5 mx-auto text-slate-500"></i></th>
+                  <th class="py-2.5 px-3 min-w-[340px]">Task / Subtask Hierarchy</th>
+                  <th class="py-2.5 px-3 w-32">Status</th>
+                  <th class="py-2.5 px-3 w-44">Progress</th>
+                  <th class="py-2.5 px-3 w-40">Schedule / Due</th>
+                  <th class="py-2.5 px-3 w-28">Assignee (AI/Human)</th>
+                  <th class="py-2.5 px-3 w-24 text-right">Estimate</th>
+                  <th class="py-2.5 px-3 w-32 text-right">Budget</th>
+                  <th class="py-2.5 px-3 w-20 text-right">Rate</th>
+                  <th class="py-2.5 px-3 w-24 text-right">Cost</th>
+                  <th class="py-2.5 pr-4 pl-2 w-28 text-center">Task Detail & Thread</th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-slate-800/60 font-sans" id="tbody-rd-projects">
+                <!-- Dynamically rendered rows -->
+              </tbody>
+              <tfoot>
+                <tr class="bg-slate-950/40 hover:bg-slate-900/60 border-t border-slate-800/80 text-slate-400 transition">
+                  <td colspan="11" class="py-2.5 px-4">
+                    <button onclick="openNewTaskModal('R&D')" class="flex items-center gap-1.5 text-xs font-medium text-emerald-400 hover:text-emerald-300 transition">
+                      <i data-lucide="plus" class="w-3.5 h-3.5"></i>
+                      <span>Add New Task to R&D</span>
+                    </button>
+                  </td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        </div>
+
+      </section>
+
+
+      <!-- ========================================================================= -->
+      <!-- 2. GANTT / RESOURCE TIMELINE VIEW (Screenshot 2 Clone & AI Enhancement) -->
+      <!-- ========================================================================= -->
+      <section id="view-gantt" class="hidden space-y-4">
+        
+        <!-- Gantt Controls Header -->
+        <div class="bg-slate-900/90 border border-slate-800 rounded-xl p-3.5 flex flex-wrap items-center justify-between gap-3 shadow-lg">
+          <div class="flex items-center space-x-3">
+            <div class="flex items-center space-x-1 bg-slate-950 p-1 rounded-lg border border-slate-800 text-xs">
+              <button class="px-2.5 py-1 rounded bg-slate-800 font-semibold text-white">March 2026</button>
+              <button class="px-2.5 py-1 rounded text-slate-400 hover:text-slate-200">April 2026</button>
+              <button class="px-2.5 py-1 rounded text-slate-400 hover:text-slate-200">May 2026</button>
+            </div>
+            <div class="h-4 w-px bg-slate-800"></div>
+            <span class="text-xs font-medium text-slate-400 flex items-center gap-1.5">
+              <span class="w-2 h-2 rounded-full bg-blue-500"></span>
+              Current Cycle: <strong class="text-slate-200">Week 09 - Week 11</strong>
+            </span>
+          </div>
+
+          <!-- Gantt Legend -->
+          <div class="flex items-center space-x-4 text-[11px] text-slate-400">
+            <span class="flex items-center gap-1.5"><span class="w-3 h-3 rounded bg-emerald-500/80"></span> In Execution / Done</span>
+            <span class="flex items-center gap-1.5"><span class="w-3 h-3 rounded bg-blue-500/80"></span> Active Working Block</span>
+            <span class="flex items-center gap-1.5"><span class="w-3 h-3 rounded bg-amber-500/40 border border-amber-500"></span> High Workload (>10h)</span>
+            <span class="flex items-center gap-1.5"><span class="w-3 h-3 rounded bg-teal-400/80"></span> Project Alpha Swarm</span>
+          </div>
+        </div>
+
+        <!-- Gantt Matrix Table -->
+        <div class="rounded-xl border border-slate-800/90 bg-[#0c121e] overflow-x-auto shadow-2xl">
+          <div class="min-w-[1200px]">
+            
+            <!-- Timeline Date Grid Header -->
+            <div class="grid grid-cols-[260px_repeat(14,1fr)] border-b border-slate-800 bg-slate-950 text-slate-300 text-xs font-mono select-none">
+              <!-- Top-left empty cell -->
+              <div class="p-3 border-r border-slate-800 font-sans font-bold flex items-center justify-between text-slate-400">
+                <span>Agent Resource</span>
+                <i data-lucide="users" class="w-4 h-4 text-slate-500"></i>
+              </div>
+
+              <!-- March 2026 Columns -->
+              <div class="col-span-14 flex flex-col">
+                <!-- Weeks Bar -->
+                <div class="grid grid-cols-14 border-b border-slate-800/80 py-1 px-2 text-[11px] font-sans font-semibold text-slate-400">
+                  <div class="col-span-3 text-left pl-2">Week 09 (Kickoff)</div>
+                  <div class="col-span-7 text-center">Week 10 (Sprint 1)</div>
+                  <div class="col-span-4 text-center">Week 11 (Delivery)</div>
+                </div>
+                <!-- Days Bar -->
+                <div class="grid grid-cols-14 text-center text-[11px] divide-x divide-slate-800/50">
+                  <div class="py-1 text-slate-400">F 01</div>
+                  <div class="py-1 text-slate-500">S 02</div>
+                  <div class="py-1 text-slate-500">S 03</div>
+                  <div class="py-1 text-slate-300 bg-slate-900/50">M 04</div>
+                  <div class="py-1 text-slate-300 bg-slate-900/50">T 05</div>
+                  <div class="py-1 text-slate-300 bg-slate-900/50">W 06</div>
+                  <!-- Today Column Marker -->
+                  <div class="py-1 bg-blue-600 text-white font-bold rounded-t shadow-md">T 07</div>
+                  <div class="py-1 text-slate-300">F 08</div>
+                  <div class="py-1 text-slate-500">S 09</div>
+                  <div class="py-1 text-slate-500">S 10</div>
+                  <div class="py-1 text-slate-300">M 11</div>
+                  <div class="py-1 text-slate-300">T 12</div>
+                  <div class="py-1 text-slate-300">W 13</div>
+                  <div class="py-1 text-slate-300">T 14</div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Agent Rows List -->
+            <div class="divide-y divide-slate-800/70" id="gantt-agent-rows-container">
+              <!-- Dynamically populated from JS (matching screenshot 2 layout) -->
+            </div>
+
+          </div>
+        </div>
+
+      </section>
+
+
+      <!-- ========================================================================= -->
+      <!-- 3. KANBAN BOARD VIEW -->
+      <!-- ========================================================================= -->
+      <section id="view-kanban" class="hidden h-full flex flex-col">
+        <div class="grid grid-cols-1 md:grid-cols-4 gap-4 flex-1 items-start">
+          
+          <!-- Column 1: Backlog / Queued -->
+          <div class="bg-slate-900/70 border border-slate-800 rounded-xl p-3 flex flex-col max-h-full">
+            <div class="flex items-center justify-between pb-2.5 mb-2.5 border-b border-slate-800">
+              <div class="flex items-center gap-2">
+                <span class="w-2.5 h-2.5 rounded-full bg-purple-400"></span>
+                <span class="text-xs font-bold uppercase tracking-wider text-slate-200">Queued for AI</span>
+                <span class="px-1.5 py-0.5 rounded bg-slate-800 text-[11px] font-mono text-purple-400" id="kanban-count-todo">2</span>
+              </div>
+              <button onclick="openNewTaskModal()" class="text-slate-400 hover:text-white"><i data-lucide="plus" class="w-4 h-4"></i></button>
+            </div>
+            <div class="space-y-2.5 overflow-y-auto pr-1 flex-1" id="kanban-col-todo">
+              <!-- Cards -->
+            </div>
+          </div>
+
+          <!-- Column 2: In Progress (Active Agents) -->
+          <div class="bg-slate-900/70 border border-slate-800 rounded-xl p-3 flex flex-col max-h-full">
+            <div class="flex items-center justify-between pb-2.5 mb-2.5 border-b border-slate-800">
+              <div class="flex items-center gap-2">
+                <span class="w-2.5 h-2.5 rounded-full bg-amber-400 animate-pulse"></span>
+                <span class="text-xs font-bold uppercase tracking-wider text-slate-200">Executing / In Progress</span>
+                <span class="px-1.5 py-0.5 rounded bg-slate-800 text-[11px] font-mono text-amber-400" id="kanban-count-inprogress">3</span>
+              </div>
+            </div>
+            <div class="space-y-2.5 overflow-y-auto pr-1 flex-1" id="kanban-col-inprogress">
+              <!-- Cards -->
+            </div>
+          </div>
+
+          <!-- Column 3: Human Review -->
+          <div class="bg-slate-900/70 border border-slate-800 rounded-xl p-3 flex flex-col max-h-full">
+            <div class="flex items-center justify-between pb-2.5 mb-2.5 border-b border-slate-800">
+              <div class="flex items-center gap-2">
+                <span class="w-2.5 h-2.5 rounded-full bg-cyan-400"></span>
+                <span class="text-xs font-bold uppercase tracking-wider text-slate-200">Needs Review</span>
+                <span class="px-1.5 py-0.5 rounded bg-slate-800 text-[11px] font-mono text-cyan-400" id="kanban-count-review">2</span>
+              </div>
+            </div>
+            <div class="space-y-2.5 overflow-y-auto pr-1 flex-1" id="kanban-col-review">
+              <!-- Cards -->
+            </div>
+          </div>
+
+          <!-- Column 4: Completed -->
+          <div class="bg-slate-900/70 border border-slate-800 rounded-xl p-3 flex flex-col max-h-full">
+            <div class="flex items-center justify-between pb-2.5 mb-2.5 border-b border-slate-800">
+              <div class="flex items-center gap-2">
+                <span class="w-2.5 h-2.5 rounded-full bg-emerald-400"></span>
+                <span class="text-xs font-bold uppercase tracking-wider text-slate-200">Completed & Verified</span>
+                <span class="px-1.5 py-0.5 rounded bg-slate-800 text-[11px] font-mono text-emerald-400" id="kanban-count-done">4</span>
+              </div>
+            </div>
+            <div class="space-y-2.5 overflow-y-auto pr-1 flex-1" id="kanban-col-done">
+              <!-- Cards -->
+            </div>
+          </div>
+
+        </div>
+      </section>
+
+    </div>
+
+
+    <!-- ========================================================================= -->
+    <!-- SLIDE-OVER DRAWER: DEDICATED TASK DETAILS & PROGRESS THREADING HUB -->
+    <!-- ========================================================================= -->
+    <aside id="task-drawer" class="w-full max-w-lg lg:max-w-xl border-l border-slate-800 bg-[#090e18] shadow-2xl flex flex-col transition-all duration-300 transform translate-x-full absolute right-0 top-0 bottom-0 z-50">
+      
+      <!-- Drawer Header: Task Details -->
+      <div class="p-4 border-b border-slate-800 bg-slate-950/90 flex items-start justify-between">
+        <div class="space-y-1.5 flex-1 pr-4">
+          <!-- Breadcrumb path -->
+          <div class="flex items-center gap-1.5 text-[11px] font-mono text-slate-400" id="drawer-breadcrumbs">
+            <span>Client Projects</span>
+            <i data-lucide="chevron-right" class="w-3 h-3 text-slate-600"></i>
+            <span class="text-emerald-400 font-semibold">Offshore Wind farm</span>
+          </div>
+          <h2 class="text-base font-bold text-white tracking-tight" id="drawer-task-title">Offshore Wind farm Customer A. Inc.</h2>
+          
+          <div class="flex flex-wrap items-center gap-2 pt-1">
+            <!-- Status Dropdown inside Detail -->
+            <select id="drawer-status-select" onchange="updateSelectedTaskStatus(this.value)" class="bg-slate-900 border border-slate-700 text-emerald-400 rounded px-2 py-0.5 text-xs font-semibold outline-none cursor-pointer">
+              <option value="Done">Done</option>
+              <option value="In Progress">In Progress</option>
+              <option value="Review">Review</option>
+              <option value="Todo">Todo / Queued</option>
+            </select>
+
+            <span id="drawer-agent-badge" class="text-xs text-slate-300 flex items-center gap-1 bg-slate-900 px-2 py-0.5 rounded border border-slate-800">
+              <span class="w-4 h-4 rounded-full bg-teal-600 text-[10px] text-white flex items-center justify-center font-bold">JC</span>
+              <span id="drawer-agent-name">Jake Carter (Claude 3.7)</span>
+            </span>
+
+            <span class="text-slate-600">•</span>
+            <span id="drawer-tokens" class="text-xs font-mono text-slate-400">40h / 125k Tokens</span>
+          </div>
+        </div>
+
+        <button onclick="closeTaskDrawer()" class="p-1.5 rounded-lg bg-slate-900 border border-slate-800 text-slate-400 hover:text-white hover:bg-slate-800 transition">
+          <i data-lucide="x" class="w-4 h-4"></i>
+        </button>
+      </div>
+
+      <!-- Drawer Content Tabs -->
+      <div class="flex border-b border-slate-800 bg-slate-900/60 px-4 text-xs font-medium text-slate-400">
+        <button onclick="switchDrawerTab('thread')" id="dtab-btn-thread" class="drawer-tab-btn px-3 py-2.5 border-b-2 border-emerald-400 text-white font-semibold flex items-center gap-1.5">
+          <i data-lucide="messages-square" class="w-3.5 h-3.5 text-emerald-400"></i>
+          <span>Progress Threads & Reports</span>
+          <span class="px-1.5 py-0.2 rounded-full bg-slate-800 text-[10px] text-emerald-400" id="drawer-thread-count">3</span>
+        </button>
+        <button onclick="switchDrawerTab('subtasks')" id="dtab-btn-subtasks" class="drawer-tab-btn px-3 py-2.5 border-b-2 border-transparent hover:text-slate-200 flex items-center gap-1.5">
+          <i data-lucide="list-tree" class="w-3.5 h-3.5 text-blue-400"></i>
+          <span>Subtasks Hierarchy</span>
+          <span class="px-1.5 py-0.2 rounded-full bg-slate-800 text-[10px] text-slate-400" id="drawer-subtasks-count">2</span>
+        </button>
+        <button onclick="switchDrawerTab('meta')" id="dtab-btn-meta" class="drawer-tab-btn px-3 py-2.5 border-b-2 border-transparent hover:text-slate-200 flex items-center gap-1.5">
+          <i data-lucide="cpu" class="w-3.5 h-3.5 text-purple-400"></i>
+          <span>Task Overview & Config</span>
+        </button>
+      </div>
+
+      <!-- Drawer Body Area -->
+      <div class="flex-1 overflow-y-auto p-4 space-y-4" id="drawer-scroll-area">
+        
+        <!-- Tab 1: Threading Posts Progress Reports (Directly inside Task Detail) -->
+        <div id="dtab-content-thread" class="space-y-4">
+          
+          <!-- Quick Progress Metric Bar -->
+          <div class="p-3 rounded-xl bg-slate-900/80 border border-slate-800 flex items-center justify-between">
+            <div class="space-y-1">
+              <span class="text-xs font-semibold text-slate-300">Goal Completion Progress</span>
+              <div class="w-48 bg-slate-800 rounded-full h-2 overflow-hidden">
+                <div id="drawer-progress-fill" class="bg-gradient-to-r from-emerald-500 to-teal-400 h-2 rounded-full" style="width: 85%"></div>
+              </div>
+            </div>
+            <span id="drawer-progress-pct" class="text-xs font-mono font-bold text-emerald-400">85% Complete</span>
+          </div>
+
+          <!-- Thread Stream Posts Container -->
+          <div class="space-y-4" id="drawer-thread-posts-stream">
+            <!-- Dynamically rendered thread items with tree connectors -->
+          </div>
+
+          <!-- Rich Thread Composer (Post new progress report inside this task) -->
+          <div class="rounded-xl border border-slate-800 bg-slate-900/90 p-3.5 space-y-3 mt-6 shadow-lg">
+            <div class="flex items-center justify-between">
+              <span class="text-xs font-bold text-slate-300 flex items-center gap-1.5">
+                <i data-lucide="pen-line" class="w-3.5 h-3.5 text-emerald-400"></i>
+                Post Progress Update / Milestone Thread
+              </span>
+              <!-- Author Switcher -->
+              <div class="flex items-center gap-1.5 text-[11px]">
+                <span class="text-slate-500">Post as:</span>
+                <select id="thread-author-select" class="bg-slate-950 border border-slate-800 rounded px-2 py-0.5 text-slate-300 text-[11px] outline-none">
+                  <option value="AI: Claude 3.7">🤖 Claude 3.7 (AI Lead)</option>
+                  <option value="AI: DeepSeek R1">⚡ DeepSeek R1 (AI Worker)</option>
+                  <option value="Human Supervisor">👤 Human Reviewer</option>
+                </select>
+              </div>
+            </div>
+
+            <!-- Post Type Selector -->
+            <div class="flex items-center gap-2 text-xs">
+              <button onclick="setReportType('status')" id="rtype-status" class="report-type-chip px-2.5 py-1 rounded-md bg-emerald-950/70 text-emerald-400 border border-emerald-800 text-[11px] font-medium flex items-center gap-1">
+                <i data-lucide="check-circle-2" class="w-3 h-3"></i> Status Update
+              </button>
+              <button onclick="setReportType('artifact')" id="rtype-artifact" class="report-type-chip px-2.5 py-1 rounded-md bg-slate-950 text-slate-400 border border-slate-800 text-[11px] font-medium flex items-center gap-1 hover:text-slate-200">
+                <i data-lucide="code-2" class="w-3 h-3"></i> Code / Artifact
+              </button>
+              <button onclick="setReportType('blocker')" id="rtype-blocker" class="report-type-chip px-2.5 py-1 rounded-md bg-slate-950 text-slate-400 border border-slate-800 text-[11px] font-medium flex items-center gap-1 hover:text-slate-200">
+                <i data-lucide="alert-triangle" class="w-3 h-3"></i> Blocker / Alert
+              </button>
+            </div>
+
+            <textarea 
+              id="thread-input-content" 
+              rows="3" 
+              placeholder="Describe progress step, findings, log metrics, or subtask completion details for this task..."
+              class="w-full bg-slate-950 border border-slate-800 rounded-lg p-2.5 text-xs text-slate-200 placeholder-slate-500 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 outline-none resize-none font-sans"
+            ></textarea>
+
+            <div class="flex items-center justify-between pt-1">
+              <div class="flex items-center space-x-2 text-slate-400">
+                <button title="Attach code log" onclick="insertSampleSnippet()" class="p-1 rounded hover:bg-slate-800 hover:text-slate-200"><i data-lucide="terminal" class="w-3.5 h-3.5"></i></button>
+                <button title="Attach metric check" onclick="insertSampleMetric()" class="p-1 rounded hover:bg-slate-800 hover:text-slate-200"><i data-lucide="activity" class="w-3.5 h-3.5"></i></button>
+              </div>
+
+              <button onclick="postThreadReport()" class="px-3.5 py-1.5 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs rounded-lg transition shadow-md shadow-emerald-950/50 flex items-center gap-1.5 active:scale-95">
+                <i data-lucide="send" class="w-3.5 h-3.5"></i>
+                <span>Post Thread</span>
+              </button>
+            </div>
+          </div>
+
+        </div>
+
+        <!-- Tab 2: Subtasks Hierarchy Interactive Tree -->
+        <div id="dtab-content-subtasks" class="hidden space-y-3">
+          <div class="flex items-center justify-between pb-2 border-b border-slate-800">
+            <span class="text-xs font-bold text-slate-300">Nested Sub-Tasks & Work Breakdown</span>
+            <button onclick="promptAddSubSubtask()" class="px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-emerald-400 text-xs flex items-center gap-1">
+              <i data-lucide="plus" class="w-3 h-3"></i> Add Subtask
+            </button>
+          </div>
+
+          <div id="drawer-subtasks-tree-container" class="space-y-2">
+            <!-- Populated via JS -->
+          </div>
+        </div>
+
+        <!-- Tab 3: Agent Prompt & Execution Config -->
+        <div id="dtab-content-meta" class="hidden space-y-3 text-xs">
+          <div class="p-3 rounded-lg bg-slate-950 border border-slate-800 space-y-2">
+            <span class="text-slate-400 font-mono text-[11px] block">Root System Prompt & Goal:</span>
+            <p id="drawer-system-prompt" class="text-slate-300 font-mono text-[11px] leading-relaxed bg-slate-900 p-2.5 rounded border border-slate-800">
+              "Execute automated analysis on dataset LPRJ-238, verify safety thresholds, and synthesize execution report into PDF and markdown."
+            </p>
+          </div>
+
+          <div class="grid grid-cols-2 gap-2 font-mono text-[11px]">
+            <div class="p-2.5 rounded bg-slate-900 border border-slate-800">
+              <span class="text-slate-500 block">Model Context Floor:</span>
+              <span class="text-slate-200 font-bold">128k Tokens</span>
+            </div>
+            <div class="p-2.5 rounded bg-slate-900 border border-slate-800">
+              <span class="text-slate-500 block">Temperature:</span>
+              <span class="text-slate-200 font-bold">0.2 (Deterministic)</span>
+            </div>
+            <div class="p-2.5 rounded bg-slate-900 border border-slate-800">
+              <span class="text-slate-500 block">Schedule / Due:</span>
+              <span id="drawer-meta-schedule" class="text-emerald-400 font-bold">2026-03-05</span>
+            </div>
+            <div class="p-2.5 rounded bg-slate-900 border border-slate-800">
+              <span class="text-slate-500 block">Estimated Cost:</span>
+              <span id="drawer-meta-cost" class="text-slate-200 font-bold">€ 550</span>
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+    </aside>
+
+  </main>
+
+
+  <!-- ========================================================================= -->
+  <!-- MODAL: CREATE NEW ROOT TASK / SUBTASK -->
+  <!-- ========================================================================= -->
+  <div id="new-task-modal" class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center hidden p-4">
+    <div class="bg-[#0b101c] border border-slate-800 w-full max-w-lg rounded-2xl shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+      <div class="p-4 border-b border-slate-800 bg-slate-900/60 flex items-center justify-between">
+        <h3 class="text-sm font-bold text-white flex items-center gap-2">
+          <i data-lucide="plus-circle" class="w-4 h-4 text-emerald-400"></i>
+          Create New AI Task Swarm
+        </h3>
+        <button onclick="closeNewTaskModal()" class="text-slate-400 hover:text-white"><i data-lucide="x" class="w-4 h-4"></i></button>
+      </div>
+
+      <div class="p-5 space-y-4 text-xs">
+        <div>
+          <label class="block text-slate-300 font-medium mb-1">Task Title / Mission Name</label>
+          <input type="text" id="input-new-title" placeholder="e.g. Autonomous Security Audit & Penetration Testing" class="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-slate-200 focus:border-emerald-500 outline-none" />
+        </div>
+
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-slate-300 font-medium mb-1">Category / Group</label>
+            <select id="input-new-group" class="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-slate-300 focus:border-emerald-500 outline-none">
+              <option value="Client projects (Fixed date)">Client projects (Fixed date)</option>
+              <option value="R&D">R&D & Optimization</option>
+            </select>
+          </div>
+          <div>
+            <label class="block text-slate-300 font-medium mb-1">Lead Assignee (Agent / Human)</label>
+            <select id="input-new-agent" class="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-slate-300 focus:border-emerald-500 outline-none">
+              <option value="JC">Jake Carter (Claude 3.7)</option>
+              <option value="EP">Elvis Preston (DeepSeek)</option>
+              <option value="AK">Andrew Kint (Vision)</option>
+              <option value="WV">William Vinderssen</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-3 gap-3">
+          <div>
+            <label class="block text-slate-300 font-medium mb-1">Status</label>
+            <select id="input-new-status" class="w-full bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-2 text-slate-300 focus:border-emerald-500 outline-none">
+              <option value="In Progress">In Progress</option>
+              <option value="Todo">Todo / Queued</option>
+              <option value="Review">Review</option>
+              <option value="Done">Done</option>
+            </select>
+          </div>
+          <div>
+            <label class="block text-slate-300 font-medium mb-1">Estimate</label>
+            <input type="text" id="input-new-est" placeholder="24h / 80k" class="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-slate-200 outline-none" />
+          </div>
+          <div>
+            <label class="block text-slate-300 font-medium mb-1">Budget ($)</label>
+            <input type="text" id="input-new-budget" placeholder="€ 15 000" class="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-slate-200 outline-none" />
+          </div>
+        </div>
+
+        <div>
+          <label class="block text-slate-300 font-medium mb-1">Initial Subtasks (Enter 1 per line)</label>
+          <textarea id="input-new-subtasks" rows="3" placeholder="1. Ingest repo and parse dependencies&#10;2. Run vulnerability scans&#10;3. Generate remediation report" class="w-full bg-slate-950 border border-slate-800 rounded-lg p-2.5 text-slate-200 outline-none resize-none font-mono text-[11px]"></textarea>
+        </div>
+      </div>
+
+      <div class="p-4 border-t border-slate-800 bg-slate-900/60 flex items-center justify-end space-x-2.5">
+        <button onclick="closeNewTaskModal()" class="px-3.5 py-1.5 rounded-lg border border-slate-800 text-slate-300 hover:bg-slate-800 text-xs font-medium transition">Cancel</button>
+        <button onclick="submitCreateNewTask()" class="px-4 py-1.5 rounded-lg bg-emerald-400 hover:bg-emerald-300 text-slate-950 font-bold text-xs transition shadow-md shadow-emerald-950">Create Task Swarm</button>
+      </div>
+    </div>
+  </div>
+
+
+  <!-- JAVASCRIPT STATE ENGINE & DATA MODEL -->
+  <script>
+    // =========================================================================
+    // Core Application State
+    // =========================================================================
+    const AppState = {
+      activeView: 'table',
+      expandedRows: new Set(['task-1', 'task-4', 'task-7', 'task-11', 'task-13']),
+      expandedGroups: {
+        'group-client': true,
+        'group-rd': true
+      },
+      selectedTaskId: 'task-1',
+      activeDrawerTab: 'thread',
+      activeReportType: 'status',
+      searchQuery: '',
+      filterAgent: 'all',
+      filterStatus: 'all',
+
+      // Agents Map
+      agents: {
+        'JC': { name: 'Jake Carter', role: 'Lead Agent (Claude 3.7)', color: 'bg-teal-600', text: 'text-teal-400' },
+        'EP': { name: 'Elvis Preston', role: 'Reasoning Agent (DeepSeek)', color: 'bg-rose-600', text: 'text-rose-400' },
+        'AK': { name: 'Andrew Kint', role: 'Vision Agent (GPT-4o)', color: 'bg-blue-600', text: 'text-blue-400' },
+        'WV': { name: 'William Vinderssen', role: 'Data Synthesizer', color: 'bg-cyan-600', text: 'text-cyan-400' }
+      },
+
+      // Tasks Data Store (Hierarchical matching Screenshot 1)
+      tasks: [
+        // Group: Client Projects
+        {
+          id: 'task-1',
+          group: 'Client projects (Fixed date)',
+          title: 'Offshore Wind farm',
+          tag: 'Customer A. Inc.',
+          hasAttachment: true,
+          status: 'Done',
+          schedule: '2026-02-27 - 2026-03-05',
+          assignee: 'JC',
+          estimate: '40h',
+          budget: '€ 120 000',
+          rate: '100',
+          cost: '€ 0',
+          progress: 100,
+          subtasks: [
+            {
+              id: 'task-1-1',
+              title: '3 Wind stations telemetry pipeline',
+              tag: 'IoT Gateway',
+              status: 'Done',
+              schedule: '2026-02-28',
+              assignee: 'JC',
+              estimate: '16h',
+              budget: '€ 40 000',
+              rate: '100',
+              cost: '€ 0',
+              progress: 100,
+              subtasks: []
+            },
+            {
+              id: 'task-1-2',
+              title: 'Onshore Wind farm North integration',
+              tag: '',
+              status: 'Done',
+              schedule: '2026-03-01',
+              assignee: 'JC',
+              estimate: '24h',
+              budget: '€ 80 000',
+              rate: '100',
+              cost: '€ 0',
+              progress: 100,
+              subtasks: []
+            }
+          ]
+        },
+        {
+          id: 'task-4',
+          group: 'Client projects (Fixed date)',
+          title: 'Ireland offshore farm',
+          tag: '',
+          hasAttachment: true,
+          hasNote: true,
+          status: 'Done',
+          schedule: '2026-01-09 - 2026-03-02',
+          assignee: 'EP',
+          secondAssignee: 'WV',
+          estimate: '88h',
+          budget: '€ 10 000',
+          rate: '100',
+          cost: '€ 550',
+          progress: 100,
+          subtasks: [
+            {
+              id: 'task-4-1',
+              title: 'Solar panel TYPE-89 production line',
+              tag: 'CNC-89',
+              status: 'Todo',
+              schedule: '2026-03-12',
+              assignee: 'WV',
+              estimate: '32h',
+              budget: '€ 5 000 000',
+              rate: '',
+              cost: '€ 0',
+              progress: 15,
+              subtasks: []
+            },
+            {
+              id: 'task-4-2',
+              title: 'Solar panel TYPE-89 test batch',
+              tag: 'CNC-89',
+              status: 'Todo',
+              schedule: '2026-03-14',
+              assignee: 'WV',
+              estimate: '12h',
+              budget: '€ 5 000 000',
+              rate: '',
+              cost: '€ 0',
+              progress: 0,
+              subtasks: []
+            }
+          ]
+        },
+        {
+          id: 'task-7',
+          group: 'Client projects (Fixed date)',
+          title: 'Solar inc. - remote power plant',
+          tag: '',
+          hasAttachment: true,
+          hasNote: true,
+          status: 'In Progress',
+          schedule: '13 d due',
+          assignee: 'JC',
+          estimate: '48h',
+          budget: '€ 5 000 000',
+          rate: '100',
+          cost: '€ 450',
+          progress: 65,
+          subtasks: [
+            {
+              id: 'task-7-1',
+              title: 'Eastwind inc. - remote power plant',
+              tag: '',
+              status: 'In Progress',
+              schedule: '10 d due',
+              assignee: 'JC',
+              estimate: '20h',
+              budget: '€ 5 000 000',
+              rate: '',
+              cost: '€ 0',
+              progress: 50,
+              subtasks: []
+            },
+            {
+              id: 'task-7-2',
+              title: 'Eastwind inc. - remote power plant project',
+              tag: '',
+              status: 'In Progress',
+              schedule: '31 d due',
+              badgeSpecial: 'Priority',
+              assignee: 'JC',
+              estimate: '28h',
+              budget: '€ 5 000 000',
+              rate: '',
+              cost: '€ 0',
+              progress: 40,
+              subtasks: []
+            }
+          ]
+        },
+        {
+          id: 'task-10',
+          group: 'Client projects (Fixed date)',
+          title: 'Northwind inc. - remote power plant',
+          tag: '',
+          hasAttachment: true,
+          hasNote: true,
+          status: 'Done',
+          schedule: '2026-03-04',
+          assignee: 'EP',
+          estimate: '16h',
+          budget: '€ 5 000 000',
+          rate: '',
+          cost: '€ 0',
+          progress: 100,
+          subtasks: []
+        },
+
+        // Group: R&D Projects
+        {
+          id: 'task-11',
+          group: 'R&D',
+          title: 'Onshore Wind farm synthetic modeling',
+          tag: '',
+          status: 'Done',
+          schedule: '2026-03-02',
+          assignee: 'AK',
+          estimate: '1h',
+          budget: '€ 10 000',
+          rate: '',
+          cost: '€ 0',
+          progress: 100,
+          subtasks: [
+            {
+              id: 'task-11-1',
+              title: 'Solar panel array simulation',
+              tag: '',
+              status: 'Done',
+              schedule: '2026-03-03',
+              assignee: 'AK',
+              estimate: '4h',
+              budget: '€ 50 000',
+              rate: '',
+              cost: '€ 0',
+              progress: 100,
+              subtasks: []
+            }
+          ]
+        },
+        {
+          id: 'task-13',
+          group: 'R&D',
+          title: 'Project MARS Autonomous Swarm Engine',
+          tag: 'Customer A. Inc.',
+          hasAttachment: true,
+          hasNote: true,
+          status: 'Review',
+          schedule: '2026-05-02',
+          assignee: 'EP',
+          estimate: '8h',
+          budget: '€ 50 000',
+          rate: '1 000',
+          cost: '€ 7 750',
+          progress: 90,
+          subtasks: [
+            {
+              id: 'task-13-1',
+              title: 'Horizon 2026 - kickoff test suites',
+              tag: 'CNC-89',
+              status: 'In Progress',
+              schedule: '2026-05-01',
+              assignee: 'JC',
+              secondAssignee: 'EP',
+              estimate: '16h',
+              budget: '€ 75 000',
+              rate: '7 500',
+              cost: '€ 28 125',
+              progress: 55,
+              subtasks: []
+            }
+          ]
+        }
+      ],
+
+      // Progress Threads Data Store (Thread-based post reporting for each task)
+      threads: {
+        'task-1': [
+          {
+            id: 'post-1',
+            author: 'Jake Carter (Claude 3.7)',
+            authorRole: 'AI Lead Agent',
+            avatar: 'JC',
+            avatarBg: 'bg-teal-600',
+            time: 'Yesterday at 14:20',
+            type: 'status',
+            content: '🚀 Initialized full Offshore Wind farm validation swarm. Parsed 24 turbine sensor streams and generated initial telemetry mesh.',
+            artifacts: ['telemetry_mesh_v1.json'],
+            subReplies: [
+              {
+                author: 'Elvis Preston (DeepSeek)',
+                time: 'Yesterday at 14:35',
+                content: 'Verified vector index for turbine #4. No anomalies detected.'
+              }
+            ]
+          },
+          {
+            id: 'post-2',
+            author: 'Jake Carter (Claude 3.7)',
+            authorRole: 'AI Lead Agent',
+            avatar: 'JC',
+            avatarBg: 'bg-teal-600',
+            time: 'Today at 09:12',
+            type: 'artifact',
+            content: '✅ Subtask "3 Wind stations telemetry" completed with 99.98% packet delivery benchmark. Generated synthesized load calculation report.',
+            codeSnippet: '// Telemetry benchmark summary\n{"station_1": {"status": "HEALTHY", "p99_latency_ms": 1.2},\n "station_2": {"status": "HEALTHY", "p99_latency_ms": 0.9},\n "station_3": {"status": "HEALTHY", "p99_latency_ms": 1.1}}',
+            subReplies: []
+          },
+          {
+            id: 'post-3',
+            author: 'Human Supervisor (RZ)',
+            authorRole: 'Reviewer',
+            avatar: 'RZ',
+            avatarBg: 'bg-indigo-600',
+            time: 'Today at 10:05',
+            type: 'status',
+            content: 'LGTM! Approved final deployment to Customer A staging environment.',
+            subReplies: []
+          }
+        ],
+        'task-7': [
+          {
+            id: 'post-7-1',
+            author: 'Jake Carter (Claude 3.7)',
+            authorRole: 'AI Lead Agent',
+            avatar: 'JC',
+            avatarBg: 'bg-teal-600',
+            time: '2 hours ago',
+            type: 'status',
+            content: '⚡ Working on subtask: Eastwind remote power plant calibration. Synchronizing inverter schedules.',
+            subReplies: []
+          },
+          {
+            id: 'post-7-2',
+            author: 'DeepSeek R1 Worker',
+            authorRole: 'AI Worker',
+            avatar: 'EP',
+            avatarBg: 'bg-rose-600',
+            time: '35 mins ago',
+            type: 'blocker',
+            content: '⚠️ Rate limit spike encountered on remote SCADA endpoint. Backoff mechanism engaged for 120s.',
+            subReplies: []
+          }
+        ],
+        'task-13': [
+          {
+            id: 'post-13-1',
+            author: 'Elvis Preston (DeepSeek)',
+            authorRole: 'Reasoning Agent',
+            avatar: 'EP',
+            avatarBg: 'bg-rose-600',
+            time: '4 hours ago',
+            type: 'status',
+            content: 'Submitted Project MARS Autonomous Swarm Engine test runs for Human Review. Validation accuracy: 98.4%.',
+            subReplies: []
+          }
+        ]
+      },
+
+      // Gantt Resources Matrix Data (Screenshot 2 clone)
+      gantt: [
+        {
+          agentId: 'JC',
+          name: 'Jake Carter',
+          avatarBg: 'bg-teal-500',
+          workloads: ['-', '-', '-', '10h', '8h', '8h', '8h', '-', '-', '-', '1h', '1h', '1h', '1h'],
+          tasks: [
+            {
+              title: 'Supporting structure LPRJ-238',
+              subtitle: 'Project Jupiter » Project Jupiter',
+              startDay: 3, // index (M 04)
+              spanDays: 2,
+              duration: '2h',
+              color: 'bg-teal-400/90 text-slate-950 border-teal-300'
+            },
+            {
+              title: 'Site setup and materials LPRJ-237',
+              subtitle: 'Project Jupiter » Project Jupiter',
+              startDay: 3,
+              spanDays: 4,
+              duration: '20h',
+              color: 'bg-emerald-400/90 text-slate-950 border-emerald-300'
+            },
+            {
+              title: 'Weekly project ... LPRJ-467',
+              subtitle: 'Project Pluto » Project a',
+              startDay: 3,
+              spanDays: 4,
+              duration: '4h',
+              color: 'bg-teal-300 text-slate-950 border-teal-200'
+            },
+            {
+              title: 'Turbine LPRJ-234',
+              subtitle: 'Project Jupiter » Procurement',
+              startDay: 3,
+              spanDays: 5,
+              duration: '8h',
+              color: 'bg-teal-500 text-slate-950 border-teal-400'
+            },
+            {
+              title: 'Weekly proje... LPRJ-467',
+              subtitle: 'Project Pluto » Project a',
+              startDay: 10, // M 11
+              spanDays: 4,
+              duration: '4h',
+              color: 'bg-teal-300 text-slate-950 border-teal-200'
+            },
+            {
+              title: 'Wiring LPRJ-248',
+              subtitle: 'Project Jupiter » Project Jupiter',
+              startDay: 10,
+              spanDays: 1,
+              duration: '1h',
+              color: 'bg-blue-400 text-slate-950 border-blue-300'
+            }
+          ]
+        },
+        {
+          agentId: 'AK',
+          name: 'Andrew Kint',
+          avatarBg: 'bg-blue-600',
+          workloads: ['-', '-', '-', '-', '-', '-', '-', '-', '-', '-', '-', '-', '-', '-'],
+          tasks: []
+        },
+        {
+          agentId: 'EP',
+          name: 'Elvis Preston',
+          avatarBg: 'bg-rose-600',
+          workloads: ['-', '-', '-', '4h', '12h', '4h', '4h', '4h', '-', '-', '-', '-', '12h', '12h'],
+          tasks: [
+            {
+              title: 'Blades LPRJ-235',
+              subtitle: 'Project Jupiter » Procurement',
+              startDay: 5,
+              spanDays: 3,
+              duration: '8h',
+              color: 'bg-blue-500 text-white border-blue-400'
+            }
+          ]
+        },
+        {
+          agentId: 'WV',
+          name: 'William Vinderssen',
+          avatarBg: 'bg-cyan-500',
+          workloads: ['-', '-', '-', '-', '-', '-', '-', '8h', '-', '-', '8h', '8h', '8h', '-'],
+          tasks: [
+            {
+              title: 'Materials check LPRJ-233',
+              subtitle: 'Project Jupiter » Procurement',
+              startDay: 7,
+              spanDays: 6,
+              duration: '32h',
+              color: 'bg-cyan-400 text-slate-950 border-cyan-300'
+            }
+          ]
+        }
+      ]
+    };
+
+
+    // =========================================================================
+    // UI Rendering Functions
+    // =========================================================================
+
+    function initDashboard() {
+      renderTableViews();
+      renderGanttView();
+      renderKanbanView();
+      renderTaskDrawer(AppState.selectedTaskId);
+      lucide.createIcons();
+    }
+
+    // Render Table View with Parent & Subtasks
+    function renderTableViews() {
+      const tbodyClient = document.getElementById('tbody-client-projects');
+      const tbodyRd = document.getElementById('tbody-rd-projects');
+      
+      if (!tbodyClient || !tbodyRd) return;
+
+      tbodyClient.innerHTML = '';
+      tbodyRd.innerHTML = '';
+
+      const filteredTasks = AppState.tasks.filter(task => {
+        const matchesSearch = task.title.toLowerCase().includes(AppState.searchQuery.toLowerCase()) ||
+                              (task.tag && task.tag.toLowerCase().includes(AppState.searchQuery.toLowerCase()));
+        const matchesAgent = AppState.filterAgent === 'all' || task.assignee === AppState.filterAgent || task.secondAssignee === AppState.filterAgent;
+        const matchesStatus = AppState.filterStatus === 'all' || task.status === AppState.filterStatus;
+        return matchesSearch && matchesAgent && matchesStatus;
+      });
+
+      filteredTasks.forEach(task => {
+        const targetBody = task.group.includes('Client') ? tbodyClient : tbodyRd;
+        renderTaskRowRecursive(task, targetBody, 0);
+      });
+
+      // Update total counter badge
+      const badge = document.getElementById('badge-total-tasks');
+      if (badge) badge.innerText = filteredTasks.length;
+
+      lucide.createIcons();
+    }
+
+    // Render the Progress column cell: "done/total" counter for parent tasks (e.g. 1/5)
+    // plus a compact progress bar. Leaf tasks fall back to their progress percentage.
+    function renderProgressCell(task) {
+      const subs = task.subtasks && task.subtasks.length > 0 ? task.subtasks : null;
+      let doneCount, totalCount, pct;
+      if (subs) {
+        doneCount = subs.filter(s => s.status === 'Done').length;
+        totalCount = subs.length;
+        pct = totalCount > 0 ? Math.round((doneCount / totalCount) * 100) : (task.status === 'Done' ? 100 : 0);
+      } else {
+        pct = task.progress != null ? task.progress : (task.status === 'Done' ? 100 : 0);
+      }
+
+      const barColor = pct >= 100 ? 'bg-emerald-500' : (pct >= 60 ? 'bg-teal-400' : (pct > 0 ? 'bg-amber-400' : 'bg-slate-700'));
+
+      return `
+        <div class="flex items-center gap-2">
+          ${subs ? `
+            <span class="font-mono text-[11px] text-slate-300 shrink-0 w-10">${doneCount}/${totalCount}</span>
+          ` : `
+            <span class="font-mono text-[11px] text-slate-300 shrink-0 w-10">${pct}%</span>
+          `}
+          <div class="flex-1 min-w-[56px] bg-slate-800/80 rounded-full h-1.5 overflow-hidden" title="${pct}% complete">
+            <div class="${barColor} h-1.5 rounded-full transition-all" style="width: ${pct}%"></div>
+          </div>
+        </div>
+      `;
+    }
+
+    function renderTaskRowRecursive(task, container, depth = 0) {
+      const hasChildren = task.subtasks && task.subtasks.length > 0;
+      const isExpanded = AppState.expandedRows.has(task.id);
+      const isSelected = AppState.selectedTaskId === task.id;
+      const threadCount = (AppState.threads[task.id] || []).length;
+
+      const tr = document.createElement('tr');
+      tr.className = `group border-b border-slate-800/60 hover:bg-slate-900/70 transition cursor-pointer ${isSelected ? 'bg-slate-900/90 ring-1 ring-emerald-500/40' : (depth > 0 ? 'bg-slate-950/40' : '')}`;
+      tr.onclick = (e) => {
+        // Prevent toggle if clicking checkbox
+        if (e.target.closest('input[type="checkbox"]')) return;
+        openTaskDrawer(task.id);
+      };
+
+      // Status Badge Style
+      let statusBadge = '';
+      if (task.status === 'Done') {
+        statusBadge = `<span class="inline-flex items-center px-2.5 py-0.5 rounded text-[11px] font-semibold bg-emerald-500/20 text-emerald-400 border border-emerald-500/40">Done</span>`;
+      } else if (task.status === 'In Progress') {
+        statusBadge = `<span class="inline-flex items-center px-2.5 py-0.5 rounded text-[11px] font-semibold bg-amber-500/20 text-amber-300 border border-amber-500/40 animate-pulse">In Progress</span>`;
+      } else if (task.status === 'Review') {
+        statusBadge = `<span class="inline-flex items-center px-2.5 py-0.5 rounded text-[11px] font-semibold bg-cyan-500/20 text-cyan-300 border border-cyan-500/40">Review</span>`;
+      } else {
+        statusBadge = `<span class="inline-flex items-center px-2.5 py-0.5 rounded text-[11px] font-semibold bg-purple-500/20 text-purple-300 border border-purple-500/40">Todo</span>`;
+      }
+
+      // Schedule Pill
+      let scheduleHtml = `<span class="text-slate-400 font-mono text-[11px]">${task.schedule || '-'}</span>`;
+      if (task.schedule && task.schedule.includes('due')) {
+        scheduleHtml = `<span class="px-2 py-0.5 rounded bg-amber-950/60 text-amber-400 border border-amber-800/40 font-mono text-[11px]">${task.schedule}</span>`;
+      }
+
+      // Assignee Avatars
+      const agentInfo = AppState.agents[task.assignee] || { name: 'Unassigned', color: 'bg-slate-700' };
+      let assigneeHtml = `
+        <div class="flex items-center space-x-1" title="${agentInfo.name}">
+          <div class="w-6 h-6 rounded-full ${agentInfo.color} flex items-center justify-center text-[10px] font-bold text-white shadow">
+            ${task.assignee || '?'}
+          </div>
+          ${task.secondAssignee ? `
+            <div class="w-6 h-6 -ml-2 rounded-full ${AppState.agents[task.secondAssignee]?.color || 'bg-slate-700'} flex items-center justify-center text-[10px] font-bold text-white ring-2 ring-slate-900 shadow">
+              ${task.secondAssignee}
+            </div>` : ''}
+        </div>
+      `;
+
+      tr.innerHTML = `
+        <!-- Checkbox & Color Indicator -->
+        <td class="py-2.5 pl-4 pr-1 text-center relative">
+          ${depth === 0 ? `<div class="absolute left-0 top-0 bottom-0 w-1 ${task.status === 'Done' ? 'bg-emerald-500' : (task.status === 'In Progress' ? 'bg-amber-500' : 'bg-purple-500')}"></div>` : ''}
+          <input type="checkbox" class="rounded bg-slate-800 border-slate-700 text-emerald-500 focus:ring-0 cursor-pointer" />
+        </td>
+
+        <!-- Task Title + Nested Hierarchy -->
+        <td class="py-2.5 px-3">
+          <div class="flex items-center" style="padding-left: ${depth * 20}px;">
+            ${hasChildren ? `
+              <button onclick="event.stopPropagation(); toggleRowExpand('${task.id}')" class="p-1 -ml-1 text-slate-400 hover:text-white rounded transition mr-1">
+                <i data-lucide="${isExpanded ? 'chevron-down' : 'chevron-right'}" class="w-3.5 h-3.5"></i>
+              </button>
+            ` : `<span class="w-5 inline-block text-center text-slate-600">•</span>`}
+
+            <!-- Completion Icon -->
+            <span class="mr-2 text-slate-500">
+              ${task.status === 'Done' ? '<i data-lucide="check-circle" class="w-4 h-4 text-emerald-400"></i>' : (task.status === 'In Progress' ? '<i data-lucide="play-circle" class="w-4 h-4 text-amber-400"></i>' : '<i data-lucide="circle-dashed" class="w-4 h-4 text-slate-500"></i>')}
+            </span>
+
+            <span class="font-medium ${depth === 0 ? 'text-slate-100 font-semibold' : 'text-slate-300'} group-hover:text-emerald-300 transition">
+              ${task.title}
+            </span>
+
+            ${task.tag ? `<span class="ml-2 px-1.5 py-0.5 rounded text-[10px] font-mono bg-teal-950/80 text-teal-300 border border-teal-800/40">${task.tag}</span>` : ''}
+            
+            ${task.hasAttachment ? `<i data-lucide="paperclip" class="w-3 h-3 text-slate-500 ml-2" title="Has attached files"></i>` : ''}
+            ${task.hasNote ? `<i data-lucide="file-text" class="w-3 h-3 text-slate-500 ml-1.5" title="Has notes"></i>` : ''}
+            ${task.badgeSpecial ? `<span class="ml-2 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-rose-950/80 text-rose-300 border border-rose-800/40">${task.badgeSpecial}</span>` : ''}
+          </div>
+        </td>
+
+        <!-- Status -->
+        <td class="py-2.5 px-3">${statusBadge}</td>
+
+        <!-- Progress: done/total subtask count + thin progress bar -->
+        <td class="py-2.5 px-3">
+          ${renderProgressCell(task)}
+        </td>
+
+        <!-- Schedule / Due -->
+        <td class="py-2.5 px-3">${scheduleHtml}</td>
+
+        <!-- Assignee -->
+        <td class="py-2.5 px-3">${assigneeHtml}</td>
+
+        <!-- Estimate -->
+        <td class="py-2.5 px-3 text-right font-mono text-slate-400">${task.estimate || '-'}</td>
+
+        <!-- Budget -->
+        <td class="py-2.5 px-3 text-right font-mono text-slate-200">${task.budget || '-'}</td>
+
+        <!-- Rate -->
+        <td class="py-2.5 px-3 text-right font-mono text-slate-400">${task.rate || '-'}</td>
+
+        <!-- Cost -->
+        <td class="py-2.5 px-3 text-right font-mono ${task.cost !== '€ 0' ? 'text-emerald-400 font-semibold' : 'text-slate-400'}">${task.cost || '€ 0'}</td>
+
+        <!-- Task Detail & Progress Thread Button -->
+        <td class="py-2.5 pr-4 pl-2 text-center">
+          <button onclick="event.stopPropagation(); openTaskDrawer('${task.id}')" class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-emerald-400 text-[11px] font-mono transition border border-slate-700/60 shadow-sm">
+            <i data-lucide="messages-square" class="w-3 h-3 text-emerald-400"></i>
+            <span>${threadCount} Threads</span>
+          </button>
+        </td>
+      `;
+
+      container.appendChild(tr);
+
+      // Recursive Subtasks rendering
+      if (hasChildren && isExpanded) {
+        task.subtasks.forEach(sub => {
+          renderTaskRowRecursive(sub, container, depth + 1);
+        });
+      }
+    }
+
+
+    // =========================================================================
+    // Gantt / Timeline View (Screenshot 2 Clone)
+    // =========================================================================
+    function renderGanttView() {
+      const container = document.getElementById('gantt-agent-rows-container');
+      if (!container) return;
+      container.innerHTML = '';
+
+      AppState.gantt.forEach(agentRow => {
+        const row = document.createElement('div');
+        row.className = 'grid grid-cols-[260px_repeat(14,1fr)] bg-[#090e18] hover:bg-slate-900/30 transition relative';
+
+        // Left agent column
+        let leftCol = `
+          <div class="p-3 border-r border-slate-800 flex items-center justify-between">
+            <div class="flex items-center space-x-2.5">
+              <div class="w-7 h-7 rounded-full ${agentRow.avatarBg} flex items-center justify-center text-xs font-bold text-white shadow">
+                ${agentRow.agentId}
+              </div>
+              <span class="text-xs font-semibold text-slate-200">${agentRow.name}</span>
+            </div>
+            <i data-lucide="chevron-down" class="w-3.5 h-3.5 text-slate-500"></i>
+          </div>
+        `;
+
+        // Workload & Task Timeline Bar Area
+        let daysGrid = `
+          <div class="col-span-14 flex flex-col relative timeline-grid">
+            
+            <!-- Workload Hours Top Row -->
+            <div class="grid grid-cols-14 text-center text-[11px] font-mono border-b border-slate-800/40 divide-x divide-slate-800/30 py-1">
+              ${agentRow.workloads.map((w, idx) => {
+                let cellStyle = 'text-slate-500';
+                if (w.includes('10h') || w.includes('12h')) cellStyle = 'bg-rose-950/40 text-rose-300 font-bold';
+                else if (w.includes('8h') || w.includes('4h')) cellStyle = 'bg-blue-950/40 text-blue-300';
+                else if (w.includes('1h')) cellStyle = 'text-slate-400';
+                if (idx === 6) cellStyle += ' ring-1 ring-blue-500/60 font-bold text-white'; // Today column
+                return `<div class="py-0.5 ${cellStyle}">${w}</div>`;
+              }).join('')}
+            </div>
+
+            <!-- Task Blocks Container -->
+            <div class="py-1.5 min-h-[70px] relative space-y-1.5">
+              
+              <!-- Today vertical marker line (aligned to day col center) -->
+              <div class="timeline-today-line" style="left: ${(6.5 / 14) * 100}%;"></div>
+
+              ${agentRow.tasks.map(task => {
+                const leftPct = (task.startDay / 14) * 100;
+                const widthPct = (task.spanDays / 14) * 100;
+                return `
+                  <div 
+                    onclick="openTaskDrawer('task-1')"
+                    class="relative rounded-lg px-2 py-1.5 text-xs border shadow-md hover:scale-[1.01] hover:brightness-110 cursor-pointer transition flex items-center justify-between ${task.color}"
+                    style="margin-left: calc(${leftPct}% + 2px); width: calc(${widthPct}% - 6px);"
+                  >
+                    <div class="truncate pr-2">
+                      <div class="font-bold text-[11px] truncate">${task.title}</div>
+                      <div class="text-[9px] opacity-80 truncate">${task.subtitle}</div>
+                    </div>
+                    <span class="px-1.5 py-0.5 rounded bg-black/20 text-[10px] font-mono font-bold shrink-0">${task.duration}</span>
+                  </div>
+                `;
+              }).join('')}
+
+            </div>
+
+          </div>
+        `;
+
+        row.innerHTML = leftCol + daysGrid;
+        container.appendChild(row);
+      });
+
+      lucide.createIcons();
+    }
+
+
+    // =========================================================================
+    // Kanban Board View
+    // =========================================================================
+    function renderKanbanView() {
+      const colTodo = document.getElementById('kanban-col-todo');
+      const colProg = document.getElementById('kanban-col-inprogress');
+      const colRev = document.getElementById('kanban-col-review');
+      const colDone = document.getElementById('kanban-col-done');
+
+      if (!colTodo) return;
+
+      colTodo.innerHTML = '';
+      colProg.innerHTML = '';
+      colRev.innerHTML = '';
+      colDone.innerHTML = '';
+
+      // Wire drop zones directly on the card containers so drag & drop works
+      setupKanbanDropZone(colTodo, 'Todo');
+      setupKanbanDropZone(colProg, 'In Progress');
+      setupKanbanDropZone(colRev, 'Review');
+      setupKanbanDropZone(colDone, 'Done');
+
+      // Flatten all tasks & subtasks for Kanban
+      const allCards = [];
+      AppState.tasks.forEach(t => {
+        allCards.push({ ...t, isRoot: true });
+        if (t.subtasks) {
+          t.subtasks.forEach(sub => allCards.push({ ...sub, parentTitle: t.title }));
+        }
+      });
+
+      allCards.forEach(item => {
+        const card = document.createElement('div');
+        card.className = 'kanban-card p-3 rounded-xl bg-slate-950 border border-slate-800/80 hover:border-slate-700 hover:shadow-xl transition cursor-pointer space-y-2.5 group';
+        card.setAttribute('draggable', 'true');
+        card.setAttribute('data-kanban-task', item.id);
+        card.addEventListener('dragstart', handleKanbanDragStart);
+        card.addEventListener('dragend', handleKanbanDragEnd);
+        card.onclick = () => openTaskDrawer(item.id.startsWith('task') ? item.id : 'task-1');
+
+        const threadCount = (AppState.threads[item.id] || []).length || 1;
+
+        card.innerHTML = `
+          ${item.parentTitle ? `<div class="text-[10px] font-mono text-slate-500 truncate">↳ Under: ${item.parentTitle}</div>` : ''}
+          <div class="flex items-start justify-between gap-2">
+            <h4 class="text-xs font-semibold text-slate-200 group-hover:text-emerald-400 transition leading-snug">${item.title}</h4>
+            <span class="w-5 h-5 rounded-full ${AppState.agents[item.assignee]?.color || 'bg-slate-700'} text-[10px] text-white flex items-center justify-center font-bold shrink-0">
+              ${item.assignee || 'AI'}
+            </span>
+          </div>
+
+          ${item.tag ? `<span class="inline-block px-1.5 py-0.5 rounded text-[10px] font-mono bg-slate-900 text-teal-400 border border-slate-800">${item.tag}</span>` : ''}
+
+          <!-- Progress Bar -->
+          <div class="w-full bg-slate-900 rounded-full h-1.5 overflow-hidden">
+            <div class="bg-emerald-500 h-1.5 rounded-full" style="width: ${item.progress || (item.status === 'Done' ? 100 : 45)}%"></div>
+          </div>
+
+          <div class="flex items-center justify-between text-[11px] font-mono text-slate-400 pt-1 border-t border-slate-900">
+            <span>${item.estimate || '8h'}</span>
+            <span class="flex items-center gap-1 text-slate-400 group-hover:text-emerald-400">
+              <i data-lucide="messages-square" class="w-3 h-3 text-emerald-400"></i> ${threadCount} threads
+            </span>
+          </div>
+        `;
+
+        if (item.status === 'Todo') colTodo.appendChild(card);
+        else if (item.status === 'In Progress') colProg.appendChild(card);
+        else if (item.status === 'Review') colRev.appendChild(card);
+        else colDone.appendChild(card);
+      });
+
+      lucide.createIcons();
+    }
+
+    // =========================================================================
+    // Kanban Drag & Drop
+    // =========================================================================
+    const KanbanDragState = {
+      taskId: null,
+      draggingCard: null,
+      placeholder: null
+    };
+
+    function handleKanbanDragStart(e) {
+      const card = e.target.closest('.kanban-card');
+      if (!card) return;
+      KanbanDragState.taskId = card.getAttribute('data-kanban-task');
+      KanbanDragState.draggingCard = card;
+      card.classList.add('dragging');
+
+      // Insert a drop placeholder in place of the dragged card for live re-ordering
+      const placeholder = document.createElement('div');
+      placeholder.className = 'kanban-card drag-placeholder rounded-xl';
+      placeholder.setAttribute('data-placeholder', 'true');
+      card.after(placeholder);
+      KanbanDragState.placeholder = placeholder;
+
+      e.dataTransfer.effectAllowed = 'move';
+      e.dataTransfer.setData('text/plain', KanbanDragState.taskId);
+    }
+
+    function handleKanbanDragEnd(e) {
+      const card = e.target.closest('.kanban-card');
+      if (card) card.classList.remove('dragging');
+      document.querySelectorAll('.kanban-column.drag-over').forEach(c => c.classList.remove('drag-over'));
+      if (KanbanDragState.placeholder) {
+        KanbanDragState.placeholder.remove();
+        KanbanDragState.placeholder = null;
+      }
+      KanbanDragState.taskId = null;
+      KanbanDragState.draggingCard = null;
+      // Re-render to restore clean column state regardless of drop outcome
+      renderKanbanView();
+    }
+
+    function setupKanbanDropZone(colContainer, status) {
+      if (!colContainer) return;
+      // Apply visual highlight to the visible column shell (parent of the card container)
+      const columnShell = colContainer.parentElement;
+      if (columnShell) columnShell.classList.add('kanban-column');
+      // Skip re-wiring if already wired to avoid duplicate handlers on re-renders
+      if (colContainer.dataset.kanbanWired === status) return;
+      colContainer.dataset.kanbanWired = status;
+
+      colContainer.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'move';
+        if (columnShell) columnShell.classList.add('drag-over');
+        if (!KanbanDragState.placeholder) return;
+        const afterEl = getKanbanDragAfterElement(colContainer, e.clientY);
+        colContainer.insertBefore(KanbanDragState.placeholder, afterEl || null);
+      });
+
+      colContainer.addEventListener('dragleave', (e) => {
+        if (!colContainer.contains(e.relatedTarget) && columnShell) {
+          columnShell.classList.remove('drag-over');
+        }
+      });
+
+      colContainer.addEventListener('drop', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        if (columnShell) columnShell.classList.remove('drag-over');
+        const taskId = e.dataTransfer.getData('text/plain') || KanbanDragState.taskId;
+        moveKanbanCard(taskId, status);
+      });
+    }
+
+    function getKanbanDragAfterElement(container, y) {
+      const cards = [...container.querySelectorAll('.kanban-card:not(.dragging):not([data-placeholder])')];
+      return cards.reduce((closest, child) => {
+        const box = child.getBoundingClientRect();
+        const offset = y - box.top - box.height / 2;
+        if (offset < 0 && offset > closest.offset) {
+          return { offset: offset, element: child };
+        }
+        return closest;
+      }, { offset: Number.NEGATIVE_INFINITY, element: null }).element;
+    }
+
+    function moveKanbanCard(taskId, newStatus) {
+      const sourceTask = findTaskById(taskId);
+      if (!sourceTask) return;
+      sourceTask.status = newStatus;
+      sourceTask.progress = newStatus === 'Done' ? 100 : (newStatus === 'In Progress' ? 60 : (newStatus === 'Review' ? 85 : 20));
+      renderTableViews();
+      renderKanbanView();
+      if (AppState.selectedTaskId === taskId) renderTaskDrawer(taskId);
+      document.querySelectorAll('.kanban-column.drag-over').forEach(c => c.classList.remove('drag-over'));
+    }
+
+
+    // =========================================================================
+    // Slide-over Drawer: Task Details & Dedicated Threading Progress Stream
+    // =========================================================================
+    function openTaskDrawer(taskId) {
+      AppState.selectedTaskId = taskId;
+      const drawer = document.getElementById('task-drawer');
+      if (drawer) {
+        drawer.classList.remove('translate-x-full');
+      }
+      renderTaskDrawer(taskId);
+      renderTableViews();
+    }
+
+    function closeTaskDrawer() {
+      const drawer = document.getElementById('task-drawer');
+      if (drawer) {
+        drawer.classList.add('translate-x-full');
+      }
+    }
+
+    function findTaskById(id, list = AppState.tasks) {
+      for (const t of list) {
+        if (t.id === id) return t;
+        if (t.subtasks && t.subtasks.length > 0) {
+          const found = findTaskById(id, t.subtasks);
+          if (found) return found;
+        }
+      }
+      return null;
+    }
+
+    function renderTaskDrawer(taskId) {
+      const task = findTaskById(taskId) || AppState.tasks[0];
+      if (!task) return;
+
+      document.getElementById('drawer-task-title').innerText = task.title;
+      document.getElementById('drawer-breadcrumbs').innerHTML = `
+        <span>${task.group || 'Project Swarm'}</span>
+        <i data-lucide="chevron-right" class="w-3 h-3 text-slate-600"></i>
+        <span class="text-emerald-400 font-semibold">${task.title}</span>
+      `;
+
+      const statusSelect = document.getElementById('drawer-status-select');
+      if (statusSelect) statusSelect.value = task.status;
+
+      const agentInfo = AppState.agents[task.assignee] || { name: 'AI Lead Agent', role: 'Worker' };
+      document.getElementById('drawer-agent-name').innerText = `${agentInfo.name} (${agentInfo.role})`;
+      document.getElementById('drawer-tokens').innerText = `${task.estimate || '40h'} • Budget: ${task.budget || '$10k'}`;
+      
+      const progress = task.progress || (task.status === 'Done' ? 100 : 50);
+      document.getElementById('drawer-progress-fill').style.width = `${progress}%`;
+      document.getElementById('drawer-progress-pct').innerText = `${progress}% Complete`;
+
+      // Meta Tab update
+      if (document.getElementById('drawer-meta-schedule')) {
+        document.getElementById('drawer-meta-schedule').innerText = task.schedule || '2026-03-05';
+        document.getElementById('drawer-meta-cost').innerText = task.cost || '€ 0';
+      }
+
+      // Render Thread Posts
+      const threadPosts = AppState.threads[task.id] || [];
+      document.getElementById('drawer-thread-count').innerText = threadPosts.length;
+      const threadContainer = document.getElementById('drawer-thread-posts-stream');
+      threadContainer.innerHTML = '';
+
+      if (threadPosts.length === 0) {
+        threadContainer.innerHTML = `
+          <div class="text-center py-8 text-slate-500 text-xs font-mono space-y-2 bg-slate-950/40 rounded-xl border border-dashed border-slate-800">
+            <i data-lucide="message-square-dashed" class="w-7 h-7 mx-auto text-slate-600"></i>
+            <p class="font-medium text-slate-400">No progress threads logged yet for this task.</p>
+            <p class="text-[11px] text-slate-600">Post the first step update or checkpoint below.</p>
+          </div>
+        `;
+      } else {
+        threadPosts.forEach((post) => {
+          const postEl = document.createElement('div');
+          postEl.className = 'thread-post relative flex space-x-3 text-xs';
+
+          postEl.innerHTML = `
+            <!-- Thread Line Avatar Connector -->
+            <div class="thread-line relative flex flex-col items-center">
+              <div class="w-8 h-8 rounded-full ${post.avatarBg} text-white flex items-center justify-center font-bold text-[11px] ring-4 ring-[#090e18] shadow z-10">
+                ${post.avatar}
+              </div>
+            </div>
+
+            <!-- Post Content Box -->
+            <div class="flex-1 space-y-2 pb-4">
+              <div class="p-3.5 rounded-xl bg-slate-900/90 border border-slate-800/90 shadow-sm space-y-2 hover:border-slate-700 transition">
+                <div class="flex items-center justify-between">
+                  <div class="flex items-center gap-1.5">
+                    <span class="font-bold text-slate-200">${post.author}</span>
+                    <span class="text-[10px] font-mono px-1.5 py-0.2 rounded bg-slate-800 text-slate-400">${post.authorRole}</span>
+                  </div>
+                  <span class="text-[10px] text-slate-500 font-mono">${post.time}</span>
+                </div>
+
+                <p class="text-slate-300 leading-relaxed">${post.content}</p>
+
+                ${post.codeSnippet ? `
+                  <pre class="bg-slate-950 p-2 rounded-lg border border-slate-800 text-[11px] font-mono text-emerald-400 overflow-x-auto">${post.codeSnippet}</pre>
+                ` : ''}
+
+                ${post.artifacts && post.artifacts.length > 0 ? `
+                  <div class="flex items-center gap-2 pt-1">
+                    <span class="text-[10px] text-slate-500">Outputs:</span>
+                    ${post.artifacts.map(a => `<span class="px-2 py-0.5 rounded bg-slate-950 text-emerald-400 border border-slate-800 text-[10px] font-mono flex items-center gap-1"><i data-lucide="file-code" class="w-3 h-3"></i> ${a}</span>`).join('')}
+                  </div>
+                ` : ''}
+
+                <!-- Sub-thread Replies (Twitter/Slack style threading) -->
+                ${post.subReplies && post.subReplies.length > 0 ? `
+                  <div class="pt-2 mt-2 border-t border-slate-800/80 space-y-2">
+                    ${post.subReplies.map(reply => `
+                      <div class="flex items-start gap-2 bg-slate-950/60 p-2 rounded-lg border border-slate-800/50">
+                        <i data-lucide="corner-down-right" class="w-3 h-3 text-slate-500 mt-0.5"></i>
+                        <div>
+                          <div class="flex items-center gap-1.5">
+                            <span class="font-semibold text-[11px] text-slate-300">${reply.author}</span>
+                            <span class="text-[10px] text-slate-500 font-mono">${reply.time}</span>
+                          </div>
+                          <p class="text-[11px] text-slate-400 mt-0.5">${reply.content}</p>
+                        </div>
+                      </div>
+                    `).join('')}
+                  </div>
+                ` : ''}
+
+              </div>
+            </div>
+          `;
+          threadContainer.appendChild(postEl);
+        });
+      }
+
+      // Render Subtasks list in Drawer
+      const subContainer = document.getElementById('drawer-subtasks-tree-container');
+      subContainer.innerHTML = '';
+      const subList = task.subtasks || [];
+      document.getElementById('drawer-subtasks-count').innerText = subList.length;
+
+      if (subList.length === 0) {
+        subContainer.innerHTML = `<p class="text-xs text-slate-500 font-mono py-2">No nested subtasks. Click "+ Add Subtask" above.</p>`;
+      } else {
+        subList.forEach((sub) => {
+          const itemDiv = document.createElement('div');
+          itemDiv.className = 'p-2.5 rounded-lg bg-slate-950 border border-slate-800 flex items-center justify-between';
+          itemDiv.innerHTML = `
+            <div class="flex items-center space-x-2">
+              <input type="checkbox" ${sub.status === 'Done' ? 'checked' : ''} onchange="toggleSubtaskStatus('${task.id}', '${sub.id}')" class="rounded bg-slate-800 border-slate-700 text-emerald-500 cursor-pointer" />
+              <span class="text-xs ${sub.status === 'Done' ? 'line-through text-slate-500' : 'text-slate-200 font-medium'}">${sub.title}</span>
+            </div>
+            <div class="flex items-center space-x-2">
+              <span class="text-[10px] font-mono text-slate-500">${sub.estimate || '4h'}</span>
+              <span class="w-5 h-5 rounded-full ${AppState.agents[sub.assignee]?.color || 'bg-slate-700'} text-[10px] text-white flex items-center justify-center font-bold">${sub.assignee || 'AI'}</span>
+            </div>
+          `;
+          subContainer.appendChild(itemDiv);
+        });
+      }
+
+      lucide.createIcons();
+    }
+
+
+    // =========================================================================
+    // User Action Handlers & Interactivity
+    // =========================================================================
+
+    function switchView(viewName) {
+      AppState.activeView = viewName;
+      ['table', 'gantt', 'kanban'].forEach(v => {
+        const sec = document.getElementById(`view-${v}`);
+        const btn = document.getElementById(`tab-btn-${v}`);
+        if (v === viewName) {
+          sec.classList.remove('hidden');
+          btn.className = 'view-tab-btn flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-slate-800 text-white font-semibold shadow-sm transition';
+        } else {
+          sec.classList.add('hidden');
+          btn.className = 'view-tab-btn flex items-center gap-1.5 px-3 py-1.5 rounded-md text-slate-400 hover:text-slate-200 transition';
+        }
+      });
+      lucide.createIcons();
+    }
+
+    function switchDrawerTab(tabName) {
+      AppState.activeDrawerTab = tabName;
+      ['thread', 'subtasks', 'meta'].forEach(t => {
+        const content = document.getElementById(`dtab-content-${t}`);
+        const btn = document.getElementById(`dtab-btn-${t}`);
+        if (t === tabName) {
+          content.classList.remove('hidden');
+          btn.className = 'drawer-tab-btn px-3 py-2.5 border-b-2 border-emerald-400 text-white font-semibold flex items-center gap-1.5';
+        } else {
+          content.classList.add('hidden');
+          btn.className = 'drawer-tab-btn px-3 py-2.5 border-b-2 border-transparent hover:text-slate-200 flex items-center gap-1.5';
+        }
+      });
+      lucide.createIcons();
+    }
+
+    function updateSelectedTaskStatus(newStatus) {
+      const task = findTaskById(AppState.selectedTaskId);
+      if (task) {
+        task.status = newStatus;
+        task.progress = newStatus === 'Done' ? 100 : (newStatus === 'In Progress' ? 60 : 20);
+        renderTableViews();
+        renderKanbanView();
+        renderTaskDrawer(AppState.selectedTaskId);
+      }
+    }
+
+    function toggleRowExpand(taskId) {
+      if (AppState.expandedRows.has(taskId)) {
+        AppState.expandedRows.delete(taskId);
+      } else {
+        AppState.expandedRows.add(taskId);
+      }
+      renderTableViews();
+    }
+
+    function toggleExpandAllTree() {
+      if (AppState.expandedRows.size > 0) {
+        AppState.expandedRows.clear();
+      } else {
+        AppState.tasks.forEach(t => {
+          AppState.expandedRows.add(t.id);
+          if (t.subtasks) t.subtasks.forEach(sub => AppState.expandedRows.add(sub.id));
+        });
+      }
+      renderTableViews();
+    }
+
+    function toggleGroupCollapse(groupId) {
+      AppState.expandedGroups[groupId] = !AppState.expandedGroups[groupId];
+      const chevron = document.getElementById(`chevron-${groupId}`);
+      const tbody = groupId.includes('client') ? document.getElementById('tbody-client-projects') : document.getElementById('tbody-rd-projects');
+      if (tbody) {
+        tbody.style.display = AppState.expandedGroups[groupId] ? '' : 'none';
+      }
+      if (chevron) {
+        chevron.style.transform = AppState.expandedGroups[groupId] ? 'rotate(0deg)' : 'rotate(-90deg)';
+      }
+    }
+
+    function handleSearch(val) {
+      AppState.searchQuery = val;
+      renderTableViews();
+    }
+
+    function handleAgentFilter(val) {
+      AppState.filterAgent = val;
+      renderTableViews();
+    }
+
+    function handleStatusFilter(val) {
+      AppState.filterStatus = val;
+      renderTableViews();
+    }
+
+    function setReportType(type) {
+      AppState.activeReportType = type;
+      ['status', 'artifact', 'blocker'].forEach(t => {
+        const btn = document.getElementById(`rtype-${t}`);
+        if (t === type) {
+          btn.className = 'report-type-chip px-2.5 py-1 rounded-md bg-emerald-950/70 text-emerald-400 border border-emerald-800 text-[11px] font-medium flex items-center gap-1';
+        } else {
+          btn.className = 'report-type-chip px-2.5 py-1 rounded-md bg-slate-950 text-slate-400 border border-slate-800 text-[11px] font-medium flex items-center gap-1 hover:text-slate-200';
+        }
+      });
+    }
+
+    // Post new progress report to task thread
+    function postThreadReport() {
+      const textarea = document.getElementById('thread-input-content');
+      const authorSelect = document.getElementById('thread-author-select');
+      const content = textarea.value.trim();
+      if (!content) return;
+
+      const authorValue = authorSelect.value;
+      const isAI = authorValue.startsWith('AI');
+
+      const newPost = {
+        id: `post-${Date.now()}`,
+        author: authorValue,
+        authorRole: isAI ? 'AI Agent Swarm' : 'Human Reviewer',
+        avatar: isAI ? (authorValue.includes('Claude') ? 'JC' : 'EP') : 'RZ',
+        avatarBg: isAI ? (authorValue.includes('Claude') ? 'bg-teal-600' : 'bg-rose-600') : 'bg-indigo-600',
+        time: 'Just now',
+        type: AppState.activeReportType,
+        content: content,
+        subReplies: []
+      };
+
+      if (!AppState.threads[AppState.selectedTaskId]) {
+        AppState.threads[AppState.selectedTaskId] = [];
+      }
+      AppState.threads[AppState.selectedTaskId].push(newPost);
+      textarea.value = '';
+
+      renderTaskDrawer(AppState.selectedTaskId);
+      renderKanbanView();
+      renderTableViews();
+    }
+
+    function insertSampleSnippet() {
+      const textarea = document.getElementById('thread-input-content');
+      textarea.value += '\n```json\n{"checkpoint": "STEP_04", "eval_score": 0.992, "status": "VERIFIED"}\n```';
+    }
+
+    function insertSampleMetric() {
+      const textarea = document.getElementById('thread-input-content');
+      textarea.value += ' ⚡ Benchmark: latency 42ms, tokens consumed: 12.4k, zero errors logged.';
+    }
+
+    function toggleSubtaskStatus(parentId, subId) {
+      const parent = findTaskById(parentId);
+      if (!parent || !parent.subtasks) return;
+      const sub = parent.subtasks.find(s => s.id === subId);
+      if (sub) {
+        sub.status = sub.status === 'Done' ? 'In Progress' : 'Done';
+        renderTaskDrawer(parentId);
+        renderTableViews();
+        renderKanbanView();
+      }
+    }
+
+    function promptAddSubSubtask() {
+      const title = prompt('Enter Subtask Title:');
+      if (!title) return;
+      const task = findTaskById(AppState.selectedTaskId);
+      if (task) {
+        if (!task.subtasks) task.subtasks = [];
+        task.subtasks.push({
+          id: `task-${Date.now()}`,
+          title: title,
+          status: 'In Progress',
+          estimate: '4h',
+          assignee: task.assignee || 'JC',
+          progress: 20
+        });
+        renderTaskDrawer(AppState.selectedTaskId);
+        renderTableViews();
+      }
+    }
+
+    // Modal Control
+    function openNewTaskModal(defaultGroup) {
+      if (defaultGroup) {
+        document.getElementById('input-new-group').value = defaultGroup.includes('Client') ? 'Client projects (Fixed date)' : 'R&D';
+      }
+      document.getElementById('new-task-modal').classList.remove('hidden');
+    }
+
+    function closeNewTaskModal() {
+      document.getElementById('new-task-modal').classList.add('hidden');
+    }
+
+    function submitCreateNewTask() {
+      const title = document.getElementById('input-new-title').value.trim();
+      if (!title) return;
+
+      const group = document.getElementById('input-new-group').value;
+      const agent = document.getElementById('input-new-agent').value;
+      const status = document.getElementById('input-new-status').value;
+      const estimate = document.getElementById('input-new-est').value || '20h';
+      const budget = document.getElementById('input-new-budget').value || '$10 000';
+      const subtasksRaw = document.getElementById('input-new-subtasks').value.trim();
+
+      const parsedSubtasks = subtasksRaw ? subtasksRaw.split('\n').filter(s => s.trim()).map((st, i) => ({
+        id: `sub-${Date.now()}-${i}`,
+        title: st.replace(/^[0-9]+[.\-)]\s*/, ''),
+        status: 'Todo',
+        estimate: '6h',
+        assignee: agent,
+        progress: 0,
+        subtasks: []
+      })) : [];
+
+      const newTask = {
+        id: `task-${Date.now()}`,
+        group: group,
+        title: title,
+        status: status,
+        schedule: '2026-03-10',
+        assignee: agent,
+        estimate: estimate,
+        budget: budget,
+        rate: '100',
+        cost: '€ 0',
+        progress: status === 'Done' ? 100 : (status === 'In Progress' ? 30 : 0),
+        subtasks: parsedSubtasks
+      };
+
+      // Add initial thread post inside this task
+      AppState.threads[newTask.id] = [
+        {
+          id: `post-init-${Date.now()}`,
+          author: `${AppState.agents[agent]?.name || 'AI Lead'} (${AppState.agents[agent]?.role || 'Agent'})`,
+          authorRole: 'AI Agent Swarm',
+          avatar: agent,
+          avatarBg: AppState.agents[agent]?.color || 'bg-teal-600',
+          time: 'Just now',
+          type: 'status',
+          content: `🎯 Task Swarm created with ${parsedSubtasks.length} initial sub-tasks queued for autonomous execution.`,
+          subReplies: []
+        }
+      ];
+
+      AppState.tasks.unshift(newTask);
+      closeNewTaskModal();
+      renderTableViews();
+      renderKanbanView();
+      openTaskDrawer(newTask.id);
+    }
+
+    // Live AI Simulation to test thread reports popping up inside task
+    function simulateLiveProgress() {
+      const activeTasks = AppState.tasks.filter(t => t.status === 'In Progress' || t.status === 'Review');
+      const targetTask = activeTasks[Math.floor(Math.random() * activeTasks.length)] || AppState.tasks[0];
+      
+      const simulationLogs = [
+        '⚡ Autonomous validation check passed for partition #8. Vector index recalculated.',
+        '🔍 Scraped and parsed 120 target schemas. Extracted 4,200 entities into staging DB.',
+        '🤖 Code Generation Swarm created automated unit tests (coverage: 97.4%).',
+        '📊 Checkpoint metric: Model hallucination rate dropped to 0.02% across 500 test queries.',
+        '✅ Sub-subtask completed: Pipeline memory footprint optimized by 38%.'
+      ];
+
+      const chosenLog = simulationLogs[Math.floor(Math.random() * simulationLogs.length)];
+      
+      if (!AppState.threads[targetTask.id]) AppState.threads[targetTask.id] = [];
+      
+      AppState.threads[targetTask.id].push({
+        id: `sim-post-${Date.now()}`,
+        author: 'Claude 3.7 & DeepSeek Swarm',
+        authorRole: 'Live Autonomous Worker',
+        avatar: 'JC',
+        avatarBg: 'bg-emerald-600',
+        time: 'Just now',
+        type: 'status',
+        content: chosenLog,
+        codeSnippet: `// Live Agent Output Log\n{"agent": "worker-4", "status": "PROGRESS_LOGGED", "timestamp": "${new Date().toISOString()}"}`,
+        subReplies: []
+      });
+
+      // Show temporary notification
+      const btn = document.getElementById('btn-simulate');
+      const originalText = btn.innerHTML;
+      btn.innerHTML = `<i data-lucide="check" class="w-3.5 h-3.5 text-emerald-400"></i><span class="text-emerald-300">Progress Logged!</span>`;
+      setTimeout(() => {
+        btn.innerHTML = originalText;
+        lucide.createIcons();
+      }, 1500);
+
+      renderTableViews();
+      renderKanbanView();
+      if (AppState.selectedTaskId === targetTask.id) {
+        renderTaskDrawer(targetTask.id);
+      }
+      lucide.createIcons();
+    }
+
+    // Auto initialize on load
+    window.addEventListener('DOMContentLoaded', () => {
+      initDashboard();
+    });
+  </script>
+</body>
+</html>

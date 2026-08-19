@@ -60,7 +60,7 @@ export function RightSidebarPanelContent({
             description="Retry this panel, or switch tabs and come back."
           >
             <OrchestrationPanel
-              key="orchestration-panel"
+              key={`orchestration-panel:${rightSidebarRouteRequestId}`}
               isVisible={rightSidebarOpen && effectiveTab === 'orchestration'}
             />
           </RecoverableRenderErrorBoundary>

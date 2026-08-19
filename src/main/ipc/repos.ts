@@ -85,6 +85,7 @@ import { getCohortAtEmit } from '../telemetry/cohort-classifier'
 import type { RepoMethod } from '../../shared/telemetry-events'
 import { detectRepoIconAndUpstream } from '../repo-icon-autodetect'
 import { enrichMissingRepoGitRemoteIdentities } from '../repo-git-remote-identity-enrichment'
+import { detectGitRemoteIdentity } from '../repo-git-remote-identity'
 import { getProjectHostSetupForRepo } from '../../shared/project-host-setup-projection'
 import {
   getRepoExecutionHostId,
@@ -1136,6 +1137,7 @@ export function registerRepoHandlers(
   ipcMain.removeHandler('repos:isGitAvailable')
   ipcMain.removeHandler('repos:getDefaultCreateProjectParent')
   ipcMain.removeHandler('repos:getGitUsername')
+  ipcMain.removeHandler('repos:detectRemoteIdentity')
   ipcMain.removeHandler('repos:getBaseRefDefault')
   ipcMain.removeHandler('repos:searchBaseRefs')
   ipcMain.removeHandler('repos:searchBaseRefDetails')
@@ -1289,6 +1291,11 @@ export function registerRepoHandlers(
   )
 
   ipcMain.handle('repos:isGitAvailable', () => isGitAvailable())
+  ipcMain.handle(
+    'repos:detectRemoteIdentity',
+    async (_event, args: { path: string; connectionId?: string | null }) =>
+      detectGitRemoteIdentity(args.path, args.connectionId ?? null)
+  )
   ipcMain.handle('repos:getDefaultCreateProjectParent', () => getDefaultCreateProjectParent())
 
   ipcMain.handle('projectGroups:list', () => store.getProjectGroups())

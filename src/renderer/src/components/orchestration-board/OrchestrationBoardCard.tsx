@@ -1,6 +1,8 @@
 import React from 'react'
+import { Bot, ListTree } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import {
+  orchestrationStatusTone,
   priorityTone,
   shortWorktreeLabel,
   taskBoardLabel,
@@ -9,10 +11,13 @@ import {
 
 export function OrchestrationBoardCard({
   task,
-  onSelect
+  onSelect,
+  subtaskCount = 0
 }: {
   task: OrchestrationBoardTask
   onSelect: (task: OrchestrationBoardTask) => void
+  /** Number of live subtasks under this task (manager breakdown). */
+  subtaskCount?: number
 }): React.JSX.Element {
   const label = taskBoardLabel(task)
   const tone = priorityTone(task.priority)
@@ -42,16 +47,36 @@ export function OrchestrationBoardCard({
           <div className="line-clamp-2 text-[13px] font-medium leading-snug text-foreground">
             {label}
           </div>
-          <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-muted-foreground">
-            <span className="font-mono tabular-nums">{task.id.slice(0, 12)}</span>
-            {task.priority && task.priority !== 'medium' ? (
-              <span className="uppercase tracking-wide">{task.priority}</span>
+
+          <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-muted-foreground">
+            {task.pipeline_role ? (
+              <span className="inline-flex items-center gap-1 rounded-full border border-border/50 bg-muted/30 px-1.5 py-0.5 text-[10px] capitalize">
+                <Bot className="size-3" />
+                {task.pipeline_role}
+              </span>
             ) : null}
-            {task.assignee_handle ? <span>→ {task.assignee_handle}</span> : null}
+            <span
+              className={cn(
+                'inline-flex rounded-full border px-1.5 py-0.5 text-[10px] capitalize',
+                orchestrationStatusTone(task.status)
+              )}
+            >
+              {task.status}
+            </span>
+            {task.assignee_handle ? (
+              <span className="font-mono">→ {task.assignee_handle}</span>
+            ) : null}
+            {subtaskCount > 0 ? (
+              <span className="inline-flex items-center gap-1 font-mono">
+                <ListTree className="size-3" />
+                {subtaskCount}
+              </span>
+            ) : null}
+          </div>
+
+          <div className="mt-1 flex items-center gap-2 font-mono text-[10px] text-muted-foreground/70">
+            <span>{task.id.slice(0, 12)}</span>
             {worktree ? <span className="truncate">{worktree}</span> : null}
-            {task.host_id && task.host_id !== 'local' ? (
-              <span className="truncate">{task.host_id}</span>
-            ) : null}
           </div>
         </div>
       </div>

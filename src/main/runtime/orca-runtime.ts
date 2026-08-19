@@ -17637,6 +17637,27 @@ export class OrcaRuntimeService {
     return await this.resolveWorktreeSelector(worktreeSelector)
   }
 
+  // Why: resolves a worktree id to its filesystem path. Used by pipeline
+  // dispatch to get a cwd for headless pi RPC research tasks.
+  async resolveWorktreePath(worktreeId: string): Promise<string> {
+    const explicit = this.getValidatedExplicitWorktreeIdSelector(`id:${worktreeId}`)
+    if (explicit) {
+      const built = this.buildResolvedWorktreeFromId(explicit)
+      if (built?.path) {
+        return built.path
+      }
+    }
+    const worktree = await this.resolveWorktreeSelector(`id:${worktreeId}`)
+    return worktree.path
+  }
+
+  // Why: plan-only research needs a cwd before any worktree exists; the
+  // primary repo checkout path is the source of truth.
+  async resolveRepoPath(repoId: string): Promise<string> {
+    const repo = await this.showRepo(`id:${repoId}`)
+    return repo.path
+  }
+
   async scanWorkspacePorts(repoId?: string): Promise<WorkspacePortScanResult> {
     return scanWorkspacePortProbes(await this.getWorkspacePortProbes(repoId))
   }
@@ -17863,7 +17884,8 @@ export class OrcaRuntimeService {
   private buildStartupForAgent(
     repo: Repo,
     agent: TuiAgent,
-    prompt: string | undefined
+    prompt: string | undefined,
+    cli?: string
   ): { agent: TuiAgent; startup: WorktreeStartupLaunch; followup?: WorktreeStartupFollowup } {
     if (!this.store) {
       throw new Error('runtime_unavailable')
@@ -17884,7 +17906,9 @@ export class OrcaRuntimeService {
     const startupPlan = buildAgentStartupPlan({
       agent,
       prompt: prompt ?? '',
-      cmdOverrides: settings.agentCmdOverrides ?? {},
+      cmdOverrides: cli
+        ? { ...settings.agentCmdOverrides, [agent]: cli }
+        : (settings.agentCmdOverrides ?? {}),
       agentArgs: resolveTuiAgentLaunchArgs(agent, settings.agentDefaultArgs),
       agentEnv: resolveTuiAgentLaunchEnv(agent, settings.agentDefaultEnv),
       platform: agentLaunchPlatform,
@@ -22081,14 +22105,14 @@ export class OrcaRuntimeService {
 
   async launchAgentTerminal(
     worktreeSelector: string,
-    opts: { agent: TuiAgent; prompt: string; title?: string }
+    opts: { agent: TuiAgent; prompt: string; title?: string; cli?: string }
   ): Promise<RuntimeTerminalCreate> {
     const worktree = await this.resolveWorktreeSelector(worktreeSelector)
     const repo = this.store?.getRepo(worktree.repoId)
     if (!repo) {
       throw new Error('Repository for the selected workspace is no longer available.')
     }
-    const startup = this.buildStartupForAgent(repo, opts.agent, opts.prompt)
+    const startup = this.buildStartupForAgent(repo, opts.agent, opts.prompt, opts.cli)
     if (repo.connectionId) {
       await this.markRemoteWorkspaceTrustedForAgent(opts.agent, repo.connectionId, worktree.path)
     } else {

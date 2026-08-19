@@ -47,4 +47,32 @@ describe('agent-squads', () => {
     expect(parseSquadAddress('@squad:frontend')).toBe('frontend')
     expect(parseSquadAddress('@claude')).toBeNull()
   })
+
+  it('preserves per-member role, cli, and system prompt through normalization', () => {
+    const configured = normalizeAgentSquads([
+      {
+        id: 'product',
+        name: 'Product Team',
+        leader: { agent: 'claude', role: 'manager', systemPrompt: 'You manage the team.' },
+        members: [
+          { agent: 'claude', role: 'manager', cli: 'claude', systemPrompt: 'You manage the team.' },
+          { agent: 'codex', role: 'coder', cli: 'codex', systemPrompt: 'Implement features.' },
+          { agent: 'pi', role: 'tester', cli: 'pi', systemPrompt: 'Run tests.' }
+        ],
+        routing: 'leader_decide'
+      }
+    ])
+    expect(configured).toHaveLength(1)
+    const squad = configured[0]!
+    expect(squad.leader.role).toBe('manager')
+    expect(squad.leader.systemPrompt).toBe('You manage the team.')
+    const coder = squad.members.find((m) => m.agent === 'codex')!
+    expect(coder.role).toBe('coder')
+    expect(coder.cli).toBe('codex')
+    expect(coder.systemPrompt).toBe('Implement features.')
+    const briefing = buildSquadLeaderBriefing(squad)
+    expect(briefing).toContain('role: coder')
+    expect(briefing).toContain('cli: codex')
+    expect(briefing).toContain('Implement features.')
+  })
 })

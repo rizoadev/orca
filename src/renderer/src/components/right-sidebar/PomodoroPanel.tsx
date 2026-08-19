@@ -11,6 +11,7 @@ import {
   usePomodoroStore,
   type PomodoroPhase
 } from './pomodoro-timer-store'
+import { PomodoroTaskList } from './PomodoroTaskList'
 
 const RING_RADIUS = 56
 const RING_CIRCUMFERENCE = 2 * Math.PI * RING_RADIUS
@@ -229,6 +230,8 @@ export function PomodoroPanel(): React.JSX.Element {
           })}
         </div>
       </div>
+
+      <PomodoroTaskList />
     </div>
   )
 }

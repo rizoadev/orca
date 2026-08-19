@@ -41,6 +41,11 @@ export type DockerListResult = {
   scannedAt: number
 }
 
+export type DockerListRequest = {
+  hostIds?: DockerHostId[]
+  includeStopped?: boolean
+}
+
 export type DockerContainerActionRequest = {
   hostId: DockerHostId
   containerId: string

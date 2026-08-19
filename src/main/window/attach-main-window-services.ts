@@ -6,7 +6,6 @@ import type { BrowserWindow } from 'electron'
 import type { Store } from '../persistence'
 import type {
   CreateWorktreeResult,
-  UpdateCheckOptions,
   WorktreeStartupLaunch
 } from '../../shared/types'
 import { registerRepoHandlers } from '../ipc/repos'
@@ -24,15 +23,7 @@ import { registerRemoteWorkspaceHandlers } from '../ipc/remote-workspace'
 import { browserManager } from '../browser/browser-manager'
 import { hasSystemMediaAccess, requestSystemMediaAccess } from '../browser/browser-media-access'
 import type { OrcaRuntimeService } from '../runtime/orca-runtime'
-import {
-  checkForUpdatesFromMenu,
-  downloadUpdate,
-  getUpdateStatus,
-  quitAndInstall,
-  setupAutoUpdater,
-  dismissNudge,
-  type UpdateInstallMode
-} from '../updater'
+import type { UpdateInstallMode } from '../updater'
 import { scheduleHistoryGc } from '../terminal-history'
 import { hydrateLocalPtyRegistryAtBoot } from '../memory/hydrate-local-pty-registry'
 import type { ClaudeRuntimeAuthPreparation } from '../claude-accounts/runtime-auth-service'
@@ -51,9 +42,6 @@ import {
   scheduleWorktreeBaseDirectoryWatcherSync,
   setWorktreeBaseDirectoryWatcherSyncContext
 } from '../ipc/worktree-base-directory-watcher'
-import { logStartupMilestone } from '../startup/startup-diagnostics'
-
-const UPDATER_SETUP_FALLBACK_MS = 15_000
 
 // Why: a manual check can arrive before deferred setup runs, so entry points force this pending setup to configure the updater first.
 let pendingAutoUpdaterSetup: (() => void) | null = null
@@ -129,46 +117,8 @@ export function attachMainWindowServices(
   registerSshHandlers(store, () => mainWindow, runtime)
   registerRemoteWorkspaceHandlers(store, () => mainWindow)
   registerFileDropRelay(mainWindow)
-  // Why: setupAutoUpdater sync-require()s electron-updater (slow on cold Windows w/ Defender, #7225), so defer past first paint; timer fallback covers crash-looping renderers.
-  let updaterSetupDone = false
-  const setupAutoUpdaterDeferred = (): void => {
-    if (updaterSetupDone || mainWindow.isDestroyed()) {
-      return
-    }
-    updaterSetupDone = true
-    setupAutoUpdater(mainWindow, {
-      getLastUpdateCheckAt: () => store.getUI().lastUpdateCheckAt,
-      onBeforeQuit: async () => {
-        try {
-          await options?.onBeforeUpdateQuit?.()
-        } finally {
-          store.flush()
-        }
-      },
-      setLastUpdateCheckAt: (timestamp) => {
-        store.updateUI({ lastUpdateCheckAt: timestamp })
-      },
-      getPendingUpdateNudgeId: () => store.getUI().pendingUpdateNudgeId ?? null,
-      getDismissedUpdateNudgeId: () => store.getUI().dismissedUpdateNudgeId ?? null,
-      setPendingUpdateNudgeId: (id) => {
-        // Why: only the apply branch also nulls dismissedUpdateVersion so relaunch can't resurrect the old hidden card; clearing must not, or it un-dismisses.
-        if (id) {
-          store.updateUI({ pendingUpdateNudgeId: id, dismissedUpdateVersion: null })
-        } else {
-          store.updateUI({ pendingUpdateNudgeId: null })
-        }
-      },
-      setDismissedUpdateNudgeId: (id) => {
-        store.updateUI({ dismissedUpdateNudgeId: id })
-      },
-      installMode: options?.updateInstallMode
-    })
-    logStartupMilestone('updater-setup-done')
-  }
-  pendingAutoUpdaterSetup = setupAutoUpdaterDeferred
-  mainWindow.once('ready-to-show', () => setImmediate(setupAutoUpdaterDeferred))
-  const updaterSetupFallback = setTimeout(setupAutoUpdaterDeferred, UPDATER_SETUP_FALLBACK_MS)
-  updaterSetupFallback.unref?.()
+  // Why: auto-update disabled — this is a custom build; skip updater setup entirely.
+  pendingAutoUpdaterSetup = () => { /* noop */ }
   registerRuntimeWindowLifecycle(mainWindow, runtime)
 
   const allowedPermissions = new Set(['media', 'fullscreen', 'pointerLock'])
@@ -424,13 +374,12 @@ export function registerUpdaterHandlers(_store: Store): void {
   ipcMain.removeHandler('updater:quitAndInstall')
   ipcMain.removeHandler('updater:dismissNudge')
 
-  ipcMain.handle('updater:getStatus', () => getUpdateStatus())
+  // Why: auto-update disabled for this custom build; return safe stubs so the
+  // renderer settings page and status hooks do not throw.
+  ipcMain.handle('updater:getStatus', () => ({ state: 'idle', nudgeId: null }))
   ipcMain.handle('updater:getVersion', () => app.getVersion())
-  ipcMain.handle('updater:check', (_event, options?: UpdateCheckOptions) => {
-    ensureAutoUpdaterConfigured()
-    return checkForUpdatesFromMenu(options)
-  })
-  ipcMain.handle('updater:download', () => downloadUpdate())
-  ipcMain.handle('updater:quitAndInstall', () => quitAndInstall())
-  ipcMain.handle('updater:dismissNudge', () => dismissNudge())
+  ipcMain.handle('updater:check', () => ({ state: 'idle', nudgeId: null }))
+  ipcMain.handle('updater:download', () => undefined)
+  ipcMain.handle('updater:quitAndInstall', () => undefined)
+  ipcMain.handle('updater:dismissNudge', () => undefined)
 }

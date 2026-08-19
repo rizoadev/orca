@@ -547,9 +547,7 @@ export class OrchestrationDb {
       // v6 → v7: priority + soft scope pointers (repo/project/worktree/host). Stored in userData, not per-worktree.
       if (current < 7) {
         if (!this.hasColumn('tasks', 'priority')) {
-          this.db.exec(
-            `ALTER TABLE tasks ADD COLUMN priority TEXT NOT NULL DEFAULT 'medium'`
-          )
+          this.db.exec(`ALTER TABLE tasks ADD COLUMN priority TEXT NOT NULL DEFAULT 'medium'`)
         }
         if (!this.hasColumn('tasks', 'repo_id')) {
           this.db.exec(`ALTER TABLE tasks ADD COLUMN repo_id TEXT`)
@@ -933,7 +931,13 @@ export class OrchestrationDb {
     ])
     const depsJson = JSON.stringify(deps)
     const hasDeps = deps.length > 0
-    const status: TaskStatus = hasDeps ? 'pending' : 'ready'
+    // Why: a task whose deps are already done starts ready (not stranded
+    // pending) — promoteReadyTasks only runs when a dep completes, which a
+    // pre-completed parent never will.
+    const status: TaskStatus =
+      hasDeps && !deps.every((depId) => this.getTask(depId)?.status === 'completed')
+        ? 'pending'
+        : 'ready'
     const display = buildOrchestrationTaskDisplayMetadata({
       spec: task.spec,
       taskTitle: task.taskTitle,
@@ -1023,7 +1027,7 @@ export class OrchestrationDb {
         `SELECT DISTINCT task_id FROM dispatch_contexts
          WHERE status = 'dispatched'
            AND dispatched_at < ?
-           AND (last_heartbeat_at IS NULL OR last_heartbeat_at < ?)`,
+           AND (last_heartbeat_at IS NULL OR last_heartbeat_at < ?)`
       )
       .all(thresholdIso, thresholdIso) as { task_id: string }[]
 
@@ -1038,7 +1042,9 @@ export class OrchestrationDb {
         .prepare(`UPDATE tasks SET status = 'ready' WHERE id = ? AND status = 'dispatched'`)
         .run(task_id)
       this.db
-        .prepare(`UPDATE dispatch_contexts SET status = 'failed', last_failure = ? WHERE task_id = ? AND status = 'dispatched'`)
+        .prepare(
+          `UPDATE dispatch_contexts SET status = 'failed', last_failure = ? WHERE task_id = ? AND status = 'dispatched'`
+        )
         .run('requeued on startup: no live agent', task_id)
       try {
         this.addTaskComment({
@@ -1086,7 +1092,9 @@ export class OrchestrationDb {
       return undefined
     }
     const pipelineId =
-      meta.pipelineId !== undefined ? normalizeScopeId(meta.pipelineId || undefined) : task.pipeline_id
+      meta.pipelineId !== undefined
+        ? normalizeScopeId(meta.pipelineId || undefined)
+        : task.pipeline_id
     const pipelineStage =
       meta.pipelineStage !== undefined
         ? normalizeScopeId(meta.pipelineStage || undefined)
@@ -1220,7 +1228,8 @@ export class OrchestrationDb {
       return undefined
     }
     const next = {
-      priority: scope.priority !== undefined ? normalizeTaskPriority(scope.priority) : task.priority,
+      priority:
+        scope.priority !== undefined ? normalizeTaskPriority(scope.priority) : task.priority,
       repo_id:
         scope.repoId !== undefined ? normalizeScopeId(scope.repoId || undefined) : task.repo_id,
       project_id:
@@ -1247,14 +1256,7 @@ export class OrchestrationDb {
          SET priority = ?, repo_id = ?, project_id = ?, worktree_id = ?, host_id = ?
          WHERE id = ?`
       )
-      .run(
-        next.priority,
-        next.repo_id,
-        next.project_id,
-        next.worktree_id,
-        next.host_id,
-        id
-      )
+      .run(next.priority, next.repo_id, next.project_id, next.worktree_id, next.host_id, id)
     return this.getTask(id)
   }
 
@@ -1417,9 +1419,7 @@ export class OrchestrationDb {
     }
     const payload = JSON.stringify({ kind: 'stopped', reason })
     const targets =
-      task.pipeline_id && task.pipeline_id === task.id
-        ? this.listTasksByPipeline(task.id)
-        : [task]
+      task.pipeline_id && task.pipeline_id === task.id ? this.listTasksByPipeline(task.id) : [task]
     const stoppedIds: string[] = []
     for (const target of targets) {
       if (
@@ -1476,18 +1476,23 @@ export class OrchestrationDb {
   }
 
   /**
-   * Hard-delete a task (and product-pipeline children when deleting a root).
-   * Also removes related dispatch contexts and decision gates.
+   * Hard-delete a task and all its descendants (recursive parent→children
+   * cascade). Also removes related dispatch contexts and decision gates.
    */
   deleteTask(id: string): { deletedIds: string[] } | undefined {
     const task = this.getTask(id)
     if (!task) {
       return undefined
     }
-    const targets =
-      task.pipeline_id && task.pipeline_id === task.id
-        ? this.listTasksByPipeline(task.id)
-        : [task]
+    const targets: TaskRow[] = []
+    const pending = [task]
+    while (pending.length > 0) {
+      const current = pending.pop()!
+      targets.push(current)
+      for (const child of this.listTasksByParent(current.id)) {
+        pending.push(child)
+      }
+    }
     const deletedIds = targets.map((t) => t.id)
     const placeholders = deletedIds.map(() => '?').join(', ')
     this.db

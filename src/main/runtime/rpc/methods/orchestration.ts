@@ -9,6 +9,7 @@ import {
   requiredString
 } from '../schemas'
 import type { MessageType, MessagePriority, TaskStatus } from '../../orchestration/db'
+import type { TaskRow } from '../../orchestration/types'
 import { buildDispatchPreamble } from '../../orchestration/preamble'
 import {
   buildSquadLeaderBriefing,
@@ -31,8 +32,10 @@ import {
 } from '../../orchestration/query-retention'
 import { abbreviateOrchestrationTasks } from '../../../../shared/orchestration-task-summary'
 import { getRepoIdFromWorktreeId } from '../../../../shared/worktree-id'
+import { withRootAutopilotFlag } from '../../../../shared/orchestration-autopilot'
 import {
   createProductPipelineTasks,
+  createProductPlanTasks,
   isProductPipelineAutopilotEnabled,
   setProductPipelineAutopilot
 } from '../../orchestration/product-pipeline-engine'
@@ -69,8 +72,7 @@ async function resolveTaskScopeFromCallerTerminal(
     const terminal = await runtime.showTerminal(callerTerminalHandle)
     const worktreeId = explicit.worktreeId ?? terminal.worktreeId
     const repoId =
-      explicit.repoId ??
-      (worktreeId ? getRepoIdFromWorktreeId(worktreeId) || undefined : undefined)
+      explicit.repoId ?? (worktreeId ? getRepoIdFromWorktreeId(worktreeId) || undefined : undefined)
     let hostId = explicit.hostId
     if (!hostId && worktreeId) {
       try {
@@ -222,7 +224,12 @@ const TaskCreateParams = z.object({
   repoId: OptionalString,
   projectId: OptionalString,
   worktreeId: OptionalString,
-  hostId: OptionalString
+  hostId: OptionalString,
+  // Why: let any caller (manager agent / UI) create a pipeline-aware stage so
+  // the supervisor discovers and delegates it as an orchestration stage.
+  pipelineId: OptionalString,
+  pipelineStage: OptionalString,
+  pipelineRole: OptionalString
 })
 
 const TaskListParams = z.object({
@@ -345,7 +352,12 @@ const ProductStartParams = z.object({
   autoDispatch: OptionalBoolean,
   waitTimeoutMs: OptionalFiniteNumber,
   devMode: OptionalBoolean,
-  priority: TaskPrioritySchema.optional()
+  priority: TaskPrioritySchema.optional(),
+  // Why: optional manager squad — the pipeline leader/breakdown squad to use.
+  squad: OptionalString,
+  // Why: plan-only mode creates root + research only; the UI shows the
+  // breakdown checklist before real subtasks are created.
+  planOnly: OptionalBoolean
 })
 
 const ProductTickParams = z.object({
@@ -646,6 +658,12 @@ export const ORCHESTRATION_METHODS: RpcMethod[] = [
           throw new Error('Invalid --deps: must be a JSON array of task IDs')
         }
       }
+      // Why: a subtask must wait for its parent, so without explicit deps we
+      // default to depending on the parent — the child auto-executes once the
+      // parent completes (promoteReadyTasks).
+      if (!deps && params.parent) {
+        deps = [params.parent]
+      }
 
       // Why: Multica-style coalesce — fold follow-up specs into a pending/ready task with the same key.
       if (params.coalesceKey) {
@@ -690,7 +708,10 @@ export const ORCHESTRATION_METHODS: RpcMethod[] = [
         repoId: scope.repoId,
         projectId: params.projectId,
         worktreeId: scope.worktreeId,
-        hostId: scope.hostId
+        hostId: scope.hostId,
+        pipelineId: params.pipelineId,
+        pipelineStage: params.pipelineStage,
+        pipelineRole: params.pipelineRole
       })
       return { task }
     }
@@ -865,10 +886,7 @@ export const ORCHESTRATION_METHODS: RpcMethod[] = [
       }
 
       const squads = normalizeAgentSquads(runtime.getClientSettings().agentSquads)
-      const squadId =
-        params.squad?.trim() ||
-        squads[0]?.id ||
-        null
+      const squadId = params.squad?.trim() || squads[0]?.id || null
       if (!squadId) {
         return {
           task: retried.task,
@@ -1043,9 +1061,26 @@ export const ORCHESTRATION_METHODS: RpcMethod[] = [
             ? db.listPipelineRoster(pipelineId)
             : []
       const active = agents.find((a) => a.status === 'dispatched') ?? agents[0] ?? null
-      const pipelineRoot =
-        task.pipeline_id != null ? db.getTask(task.pipeline_id) : undefined
+      const pipelineRoot = task.pipeline_id != null ? db.getTask(task.pipeline_id) : undefined
       const autopilot = isProductPipelineAutopilotEnabled(pipelineRoot)
+      // Why: breadcrumb chain from root → parent (exclude self), so the task
+      // detail header can show where this task sits in the pipeline tree.
+      const ancestors: TaskRow[] = []
+      const seen = new Set<string>()
+      let cursor: TaskRow | undefined = task
+      while (cursor) {
+        const parentId = cursor.parent_id
+        if (!parentId || seen.has(parentId)) {
+          break
+        }
+        seen.add(parentId)
+        const parent = db.getTask(parentId)
+        if (!parent) {
+          break
+        }
+        ancestors.unshift(parent)
+        cursor = parent
+      }
       return {
         task,
         comments,
@@ -1053,6 +1088,7 @@ export const ORCHESTRATION_METHODS: RpcMethod[] = [
         roster,
         autopilot,
         pipelineId: task.pipeline_id,
+        ancestors,
         inCharge: active
           ? {
               handle: active.handle,
@@ -1241,8 +1277,7 @@ export const ORCHESTRATION_METHODS: RpcMethod[] = [
       const waitTimeoutMs = params.waitTimeoutMs ?? 90_000
 
       const worktreeSelector =
-        params.worktree?.trim() ||
-        (task.worktree_id ? `id:${task.worktree_id}` : undefined)
+        params.worktree?.trim() || (task.worktree_id ? `id:${task.worktree_id}` : undefined)
       if (!worktreeSelector) {
         throw new Error(
           'Task has no worktree scope. Set --worktree on assign, or create the task with a worktree bound.'
@@ -1600,40 +1635,83 @@ export const ORCHESTRATION_METHODS: RpcMethod[] = [
         }
       }
 
-      if (!worktreeId) {
-        const branchSlug = (params.title || params.goal)
-          .toLowerCase()
-          .replace(/[^a-z0-9]+/g, '-')
-          .replace(/^-+|-+$/g, '')
-          .slice(0, 40)
-        const created = await runtime.createManagedWorktree({
-          repoSelector: params.repo,
-          name: branchSlug || `product-${Date.now().toString(36)}`,
-          baseBranch: params.baseBranch,
-          displayName: params.title?.trim() || params.goal.trim().slice(0, 80),
-          comment: `Product pipeline: ${params.goal.trim().slice(0, 200)}`,
-          linkedIssue: issueNumber,
-          activate: true
-        })
-        worktreeId = created.worktree?.id ?? null
-        worktreeCreated = true
+      // Why: plan-only should NOT create a worktree yet — the operator may
+      // discard the draft. A worktree is only created when the draft is
+      // submitted (create-plan), so the initial repo checkout is enough for
+      // the headless research cwd.
+      if (!params.planOnly) {
         if (!worktreeId) {
-          throw new Error('worktree.create returned without an id')
+          const branchSlug = (params.title || params.goal)
+            .toLowerCase()
+            .replace(/[^a-z0-9]+/g, '-')
+            .replace(/^-+|-+$/g, '')
+            .slice(0, 40)
+          const created = await runtime.createManagedWorktree({
+            repoSelector: params.repo,
+            name: branchSlug || `product-${Date.now().toString(36)}`,
+            baseBranch: params.baseBranch,
+            displayName: params.title?.trim() || params.goal.trim().slice(0, 80),
+            comment: `Product pipeline: ${params.goal.trim().slice(0, 200)}`,
+            linkedIssue: issueNumber,
+            activate: true
+          })
+          worktreeId = created.worktree?.id ?? null
+          worktreeCreated = true
+          if (!worktreeId) {
+            throw new Error('worktree.create returned without an id')
+          }
+        } else if (!worktreeId.includes('::')) {
+          // Allow path/name selectors: resolve via show
+          const shown = await runtime.showManagedWorktree(worktreeId)
+          worktreeId = shown.id
         }
-      } else if (!worktreeId.includes('::')) {
-        // Allow path/name selectors: resolve via show
-        const shown = await runtime.showManagedWorktree(worktreeId)
-        worktreeId = shown.id
       }
 
-      const pipeline = createProductPipelineTasks(db, {
-        productGoal: params.goal,
-        title: params.title,
-        repoId: repo.id,
-        worktreeId,
-        hostId: 'local',
-        priority: params.priority ?? 'high'
-      })
+      // Why: plan-only starts root + research only; the UI shows the breakdown
+      // checklist before the operator creates the real subtasks. Both shapes
+      // expose { root, stages } so the rest of the handler is identical.
+      const pipeline =
+        params.planOnly === true
+          ? (() => {
+              const plan = createProductPlanTasks(db, {
+                productGoal: params.goal,
+                title: params.title,
+                repoId: repo.id,
+                worktreeId: worktreeId ?? undefined,
+                hostId: 'local',
+                priority: params.priority ?? 'high'
+              })
+              return { root: plan.root, stages: [plan.research] }
+            })()
+          : createProductPipelineTasks(db, {
+              productGoal: params.goal,
+              title: params.title,
+              repoId: repo.id,
+              worktreeId: worktreeId ?? undefined,
+              hostId: 'local',
+              priority: params.priority ?? 'high'
+            })
+
+      // Why: remember the chosen manager squad on the root so the manage stage
+      // dispatch can prefer it over the default manager squad binding.
+      if (params.squad?.trim()) {
+        const root = db.getTask(pipeline.root.id)
+        if (root) {
+          try {
+            const parsed = JSON.parse(root.result ?? '{}') as Record<string, unknown>
+            parsed.managerSquadId = params.squad.trim()
+            db.setTaskPipelineMeta(root.id, {
+              // Why: re-wrap with withRootAutopilotFlag — a bare
+              // JSON.stringify(parsed) here would drop autopilot:true and turn
+              // fully autopilot back off.
+              result: withRootAutopilotFlag(JSON.stringify(parsed), true),
+              status: root.status
+            })
+          } catch {
+            // keep default squad binding on malformed root result
+          }
+        }
+      }
 
       let dispatches: {
         taskId: string
@@ -1642,11 +1720,30 @@ export const ORCHESTRATION_METHODS: RpcMethod[] = [
         spawned: boolean
       }[] = []
       if (params.autoDispatch !== false) {
-        dispatches = await dispatchAllReadyPipelineStages(db, runtime, pipeline.root.id, {
-          waitTimeoutMs: params.waitTimeoutMs ?? 90_000,
-          devMode: params.devMode,
-          coordinatorHandle: 'orchestrator'
-        })
+        const dispatch = (): Promise<
+          {
+            taskId: string
+            to: string
+            role: string
+            spawned: boolean
+          }[]
+        > =>
+          dispatchAllReadyPipelineStages(db, runtime, pipeline.root.id, {
+            waitTimeoutMs: params.waitTimeoutMs ?? 90_000,
+            devMode: params.devMode,
+            coordinatorHandle: 'orchestrator'
+          })
+        if (params.planOnly === true) {
+          // Why: plan-only research runs as a headless pi RPC that blocks until
+          // the breakdown completes. Fire-and-forget so productStart returns
+          // { pipelineId, researchTaskId } right away and the modal polls the
+          // research task instead of hanging on the RPC.
+          void dispatch().catch((err) => {
+            void err
+          })
+        } else {
+          dispatches = await dispatch()
+        }
       }
 
       // Why: set-and-forget — supervisor keeps dispatching unlocked stages + recovering hung agents until done/failed.

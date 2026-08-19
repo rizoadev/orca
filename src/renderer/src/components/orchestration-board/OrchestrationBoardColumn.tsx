@@ -6,16 +6,19 @@ import type {
   OrchestrationBoardTask
 } from './orchestration-board-model'
 
+const EMPTY: Record<string, number> = {}
 export function OrchestrationBoardColumn({
   id,
   title,
   tasks,
-  onSelectTask
+  onSelectTask,
+  subtaskCounts = EMPTY
 }: {
   id: OrchestrationBoardColumnId
   title: string
   tasks: OrchestrationBoardTask[]
   onSelectTask: (task: OrchestrationBoardTask) => void
+  subtaskCounts?: Record<string, number>
 }): React.JSX.Element {
   return (
     <section
@@ -39,7 +42,12 @@ export function OrchestrationBoardColumn({
           </div>
         ) : (
           tasks.map((task) => (
-            <OrchestrationBoardCard key={task.id} task={task} onSelect={onSelectTask} />
+            <OrchestrationBoardCard
+              key={task.id}
+              task={task}
+              subtaskCount={subtaskCounts[task.id] ?? 0}
+              onSelect={onSelectTask}
+            />
           ))
         )}
       </div>

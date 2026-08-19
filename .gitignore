@@ -136,3 +136,6 @@ OrchestrationPanel-*.js
 
 # AppImage extraction leftover (from --appimage-extract during local install)
 squashfs-root/
+
+# Local data (keyring, etc)
+.data/

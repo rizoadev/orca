@@ -614,7 +614,6 @@ export type UISlice = {
     | 'issues-board'
     | 'agent-dashboard'
     | 'orchestration-board'
-    | 'notes'
     | 'docker'
   previousViewBeforeSettings:
     | 'terminal'
@@ -627,7 +626,6 @@ export type UISlice = {
     | 'issues-board'
     | 'agent-dashboard'
     | 'orchestration-board'
-    | 'notes'
     | 'docker'
   previousViewBeforeActivity:
     | 'terminal'
@@ -640,7 +638,6 @@ export type UISlice = {
     | 'issues-board'
     | 'agent-dashboard'
     | 'orchestration-board'
-    | 'notes'
     | 'docker'
   previousViewBeforeAutomations:
     | 'terminal'
@@ -653,7 +650,6 @@ export type UISlice = {
     | 'issues-board'
     | 'agent-dashboard'
     | 'orchestration-board'
-    | 'notes'
     | 'docker'
   previousViewBeforeSpace:
     | 'terminal'
@@ -666,7 +662,6 @@ export type UISlice = {
     | 'issues-board'
     | 'agent-dashboard'
     | 'orchestration-board'
-    | 'notes'
     | 'docker'
   previousViewBeforeSkills:
     | 'terminal'
@@ -679,7 +674,6 @@ export type UISlice = {
     | 'issues-board'
     | 'agent-dashboard'
     | 'orchestration-board'
-    | 'notes'
     | 'docker'
   previousViewBeforeMobile:
     | 'terminal'
@@ -692,7 +686,6 @@ export type UISlice = {
     | 'issues-board'
     | 'agent-dashboard'
     | 'orchestration-board'
-    | 'notes'
     | 'docker'
   previousViewBeforeIssuesBoard:
     | 'terminal'
@@ -706,7 +699,6 @@ export type UISlice = {
     | 'issues-board'
     | 'agent-dashboard'
     | 'orchestration-board'
-    | 'notes'
     | 'docker'
   previousViewBeforeAgentDashboard:
     | 'terminal'
@@ -720,7 +712,6 @@ export type UISlice = {
     | 'issues-board'
     | 'agent-dashboard'
     | 'orchestration-board'
-    | 'notes'
     | 'docker'
   previousViewBeforeOrchestrationBoard:
     | 'terminal'
@@ -734,21 +725,6 @@ export type UISlice = {
     | 'issues-board'
     | 'agent-dashboard'
     | 'orchestration-board'
-    | 'notes'
-    | 'docker'
-  previousViewBeforeNotes:
-    | 'terminal'
-    | 'settings'
-    | 'tasks'
-    | 'activity'
-    | 'automations'
-    | 'space'
-    | 'skills'
-    | 'mobile'
-    | 'issues-board'
-    | 'agent-dashboard'
-    | 'orchestration-board'
-    | 'notes'
     | 'docker'
   previousViewBeforeDocker:
     | 'terminal'
@@ -762,16 +738,12 @@ export type UISlice = {
     | 'issues-board'
     | 'agent-dashboard'
     | 'orchestration-board'
-    | 'notes'
-    | 'docker'
   openIssuesBoardPage: () => void
   closeIssuesBoardPage: () => void
   openAgentDashboardPage: () => void
   closeAgentDashboardPage: () => void
   openOrchestrationBoardPage: (opts?: { taskId?: string | null }) => void
   closeOrchestrationBoardPage: () => void
-  openNotesPage: () => void
-  closeNotesPage: () => void
   openDockerPage: () => void
   closeDockerPage: () => void
   /** One-shot focus when opening the board from the right-sidebar list. */
@@ -1336,7 +1308,6 @@ export const createUISlice: StateCreator<AppState, [], [], UISlice> = (set, get)
   previousViewBeforeIssuesBoard: 'terminal',
   previousViewBeforeAgentDashboard: 'terminal',
   previousViewBeforeOrchestrationBoard: 'terminal',
-  previousViewBeforeNotes: 'terminal',
   previousViewBeforeDocker: 'terminal',
   setActiveView: (view) => set({ activeView: view }),
   taskPageData: {},
@@ -1648,21 +1619,11 @@ export const createUISlice: StateCreator<AppState, [], [], UISlice> = (set, get)
       activeView: state.previousViewBeforeOrchestrationBoard,
       orchestrationBoardFocusTaskId: null
     })),
-  openNotesPage: () =>
-    set((state) => ({
-      activeView: 'notes',
-      previousViewBeforeNotes:
-        state.activeView === 'notes' ? state.previousViewBeforeNotes : state.activeView
-    })),
-  closeNotesPage: () =>
-    set((state) => ({
-      activeView: state.previousViewBeforeNotes
-    })),
   openDockerPage: () =>
     set((state) => ({
       activeView: 'docker',
       previousViewBeforeDocker:
-        state.activeView === 'docker' ? state.previousViewBeforeDocker : state.activeView
+        state.activeView === 'docker' ? state.previousViewBeforeDocker : (state.activeView as UISlice['previousViewBeforeDocker'])
     })),
   closeDockerPage: () =>
     set((state) => ({

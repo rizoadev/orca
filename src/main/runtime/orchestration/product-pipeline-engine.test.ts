@@ -2,8 +2,10 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { OrchestrationDb } from './db'
 import {
   advanceProductPipelineAfterTaskComplete,
-  createProductPipelineTasks
+  createProductPipelineTasks,
+  createProductPlanTasks
 } from './product-pipeline-engine'
+import { parseRootAutopilotFlag } from '../../../shared/orchestration-autopilot'
 
 describe('product-pipeline-engine', () => {
   let db: OrchestrationDb | undefined
@@ -25,15 +27,41 @@ describe('product-pipeline-engine', () => {
     expect(root.status).toBe('completed')
     expect(root.pipeline_stage).toBe('running')
     expect(stages).toHaveLength(4)
-    expect(stages.map((s) => s.pipeline_stage)).toEqual([
-      'research',
-      'implement',
-      'test',
-      'review'
-    ])
+    expect(stages.map((s) => s.pipeline_stage)).toEqual(['research', 'implement', 'test', 'review'])
     expect(stages[0]?.status).toBe('ready')
     expect(stages[1]?.status).toBe('pending')
     expect(JSON.parse(stages[1]!.deps)).toEqual([stages[0]!.id])
+  })
+
+  it('sets plan-only root pipeline_id to itself so productWatch accepts it', () => {
+    db = new OrchestrationDb(':memory:')
+    const { root, research } = createProductPlanTasks(db, {
+      productGoal: 'Add OTP email mockup dashboard page',
+      repoId: 'repo-1',
+      hostId: 'local',
+      priority: 'high'
+    })
+
+    const rootAfter = db.getTask(root.id)!
+    expect(rootAfter.pipeline_id).toBe(rootAfter.id)
+    expect(rootAfter.status).toBe('completed')
+    expect(parseRootAutopilotFlag(rootAfter.result)).toBe(true)
+    expect(research.pipeline_id).toBe(root.id)
+    expect(research.status).toBe('ready')
+  })
+
+  it('cascades delete to child tasks recursively', () => {
+    db = new OrchestrationDb(':memory:')
+    const parent = db.createTask({ spec: 'parent' })
+    const child = db.createTask({ spec: 'child', parentId: parent.id })
+    const grandchild = db.createTask({ spec: 'grandchild', parentId: child.id })
+    const unrelated = db.createTask({ spec: 'unrelated' })
+    const deleted = db.deleteTask(parent.id)
+    expect(deleted?.deletedIds.sort()).toEqual([parent.id, child.id, grandchild.id].sort())
+    expect(db.getTask(parent.id)).toBeUndefined()
+    expect(db.getTask(child.id)).toBeUndefined()
+    expect(db.getTask(grandchild.id)).toBeUndefined()
+    expect(db.getTask(unrelated.id)).not.toBeUndefined()
   })
 
   it('rewrites implement+test on tester FAIL', () => {

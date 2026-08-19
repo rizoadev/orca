@@ -46,9 +46,10 @@ export default function DockerContainersPage(): React.JSX.Element {
       void options.force
       setRefreshing(true)
       try {
-        const next = await window.api.docker.listContainers({
-          includeStopped: includeStoppedRef.current
-        })
+        const next = await window.api.docker.listContainers(
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          { includeStopped: includeStoppedRef.current } as any
+        )
         if (generation === generationRef.current) {
           setResult(next)
           setLoading(false)

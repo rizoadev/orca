@@ -4,6 +4,7 @@ import { basename } from '@/lib/path'
 import {
   ChevronRight,
   CircleSlash,
+  CloudUpload,
   Copy,
   Download,
   ExternalLink,
@@ -14,6 +15,7 @@ import {
   Folder,
   FolderOpen,
   FolderPlus,
+  FileCode2,
   Globe,
   ListCollapse,
   Link,
@@ -290,6 +292,8 @@ type FileExplorerRowProps = {
   onAddFolderAsProject: () => void
   canAddAsProject: boolean
   onOpenInTerminal: () => void
+  onSyncEnvToSnippet?: () => void
+  synced?: boolean
   onRequestDelete: () => void
   onCollapseFolderSubtree: () => void
   onFindInFolder: () => void
@@ -461,6 +465,8 @@ export function FileExplorerRow({
   onAddFolderAsProject,
   canAddAsProject,
   onOpenInTerminal,
+  onSyncEnvToSnippet,
+  synced = false,
   onRequestDelete,
   onCollapseFolderSubtree,
   onFindInFolder,
@@ -667,6 +673,17 @@ export function FileExplorerRow({
           >
             {node.name}
           </span>
+          {synced && !node.isDirectory ? (
+            <span
+              title={translate(
+                'auto.components.right.sidebar.FileExplorerRow.gitlabSnippetMarker',
+                'Synced to GitLab snippet'
+              )}
+              className="ml-1 shrink-0"
+            >
+              <FileCode2 className="size-3 text-emerald-500" />
+            </span>
+          ) : null}
           {nodeStatus ? (
             <span
               className="ml-auto shrink-0 text-[10px] font-semibold tracking-wide mr-2"
@@ -758,6 +775,15 @@ export function FileExplorerRow({
           <ContextMenuItem onSelect={onViewFile}>
             <File />
             {translate('auto.components.right.sidebar.FileExplorerRow.1d8e182c32', 'View File')}
+          </ContextMenuItem>
+        )}
+        {!node.isDirectory && onSyncEnvToSnippet && (
+          <ContextMenuItem onSelect={onSyncEnvToSnippet}>
+            <CloudUpload />
+            {translate(
+              'auto.components.right.sidebar.FileExplorerRow.syncEnvToSnippet',
+              'Sync to GitLab snippet'
+            )}
           </ContextMenuItem>
         )}
         {!node.isDirectory && activeWorktreeId && (
