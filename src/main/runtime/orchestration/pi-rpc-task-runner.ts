@@ -18,6 +18,12 @@ export type PiRpcDraftResult = {
   provider: string
 }
 
+type SdkEvent = {
+  type: string
+  assistantMessageEvent?: { type: string; delta?: string; name?: string }
+  message?: { role: string; content: { type: string; text?: string }[] }
+}
+
 export async function runPiRpcDraftTask(args: {
   cwd: string
   spec: string
@@ -34,25 +40,45 @@ export async function runPiRpcDraftTask(args: {
     PIPELINE_SESSIONS_DIR
   )
 
-  try {
-    await agentSession.prompt(args.spec)
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const messages: any[] = agentSession.messages ?? []
-    // Why: the final assistant message carries the completed breakdown; text
-    // blocks are the only content we persist to the task result.
-    for (let i = messages.length - 1; i >= 0; i--) {
-      const m = messages[i]
-      if (m?.role !== 'assistant') {
-        continue
+  // Why: the session streams assistant text via events rather than reliably
+  // populating messages on the session object, so collect it from the same
+  // subscription stream the issue-chat panel uses.
+  let collected = ''
+  const unsubscribe = agentSession.subscribe((event: SdkEvent) => {
+    if (event.type === 'message_update') {
+      const inner = event.assistantMessageEvent
+      if (inner?.type === 'text_delta' && typeof inner.delta === 'string') {
+        collected += inner.delta
       }
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const text = (m.blocks ?? []).find((b: any) => b.type === 'text')?.text ?? ''
+      return
+    }
+    if (
+      event.type === 'message_end' &&
+      event.message?.role === 'assistant' &&
+      Array.isArray(event.message.content)
+    ) {
+      const text = event.message.content
+        .filter((b) => b.type === 'text' && typeof b.text === 'string')
+        .map((b) => b.text ?? '')
+        .join('')
       if (text.trim()) {
-        return { result: text.trim(), modelId, provider }
+        collected = text
       }
     }
-    throw new Error('Pi RPC session returned no assistant text')
+  })
+
+  try {
+    await agentSession.prompt(args.spec)
+    if (!collected.trim()) {
+      throw new Error('Pi RPC session returned no assistant text')
+    }
+    return { result: collected.trim(), modelId, provider }
   } finally {
+    try {
+      unsubscribe?.()
+    } catch {
+      // ignore unsub errors
+    }
     try {
       await agentSession.dispose?.()
     } catch {

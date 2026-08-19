@@ -115,6 +115,17 @@ export function OrchestrationProductGoalDialog({
         const status = result.task?.status
         const body = result.task?.result ?? ''
         if (status === 'completed' || status === 'failed' || body.length > 0) {
+          if (status === 'failed') {
+            setPhase('goal')
+            setPlanError(
+              body.trim() ||
+                translate(
+                  'auto.components.orchestration.board.product.researchFailed',
+                  'The research agent failed. Try again.'
+                )
+            )
+            return
+          }
           const parsed = parseSubtaskBreakdown(body)
           setItems(parsed)
           setChecked(new Set(parsed.map((_, i) => i)))
