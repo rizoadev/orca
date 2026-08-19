@@ -60,7 +60,9 @@ export async function dispatchPipelineStageTask(
   if (task.status !== 'ready') {
     throw new Error(`Task ${task.id} is ${task.status}; only ready stage tasks can be dispatched`)
   }
-  if (!task.worktree_id) {
+  // Why: research (plan-only) runs headless before any worktree exists, so it
+  // may have a null worktree_id. Later terminal stages still require one.
+  if (!task.worktree_id && task.pipeline_stage !== 'research') {
     throw new Error(`Task ${task.id} has no worktree_id — product pipeline requires a worktree`)
   }
   const role = (task.pipeline_role || 'implementer') as ProductPipelineRole

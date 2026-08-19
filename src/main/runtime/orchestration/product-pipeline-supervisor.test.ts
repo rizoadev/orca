@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { OrchestrationDb } from './db'
-import { createProductPipelineTasks } from './product-pipeline-engine'
+import { createProductPipelineTasks, createProductPlanTasks } from './product-pipeline-engine'
 import { dispatchAllReadyPipelineStages } from './product-pipeline-dispatch'
 import {
   getProductSupervisorSnapshot,
@@ -99,5 +99,41 @@ describe('product-pipeline-supervisor', () => {
     const after = db.listTasksByPipeline(root.id).find((t) => t.pipeline_stage === 'research')
     expect(after?.status).toBe('completed')
     expect(after?.result).toContain('Add login form')
+  })
+
+  it('dispatches plan-only research without a worktree via repo path', async () => {
+    db = new OrchestrationDb(':memory:')
+    // plan-only: no worktree yet, only a repo checkout
+    const { research } = createProductPlanTasks(db, {
+      productGoal: 'OTP email mockup',
+      repoId: 'repo-1',
+      hostId: 'local',
+      priority: 'high'
+    })
+    db.setTaskPipelineMeta(research.id, { status: 'ready' })
+
+    const runtime = {
+      getClientSettings: () => ({ agentSquads: [], defaultTuiAgent: 'pi' }),
+      listTerminals: vi.fn().mockResolvedValue({ terminals: [] }),
+      launchAgentTerminal: vi.fn().mockResolvedValue({ handle: 'term_spawned' }),
+      waitForTerminal: vi.fn().mockResolvedValue({}),
+      isTerminalRunningAgent: vi.fn().mockResolvedValue(true),
+      getTerminalPaneKey: vi.fn().mockReturnValue('tab:leaf'),
+      getTerminalOrchestrationCliCommand: vi.fn().mockReturnValue('orca' as const),
+      sendTerminalAgentPrompt: vi.fn().mockResolvedValue(undefined),
+      getAgentStatusForHandle: vi.fn().mockReturnValue('idle'),
+      resolveWorktreePath: vi.fn(),
+      resolveRepoPath: vi.fn().mockResolvedValue('/repo')
+    }
+
+    const results = await dispatchAllReadyPipelineStages(db, runtime, research.pipeline_id!)
+    expect(runPiRpcDraftTaskMock).toHaveBeenCalled()
+    expect(results.some((r) => r.role === 'researcher' && r.to === 'pi-rpc')).toBe(true)
+    const after = db
+      .listTasksByPipeline(research.pipeline_id!)
+      .find((t) => t.pipeline_stage === 'research')
+    expect(after?.status).toBe('completed')
+    // cwd fell back to the primary repo checkout when no worktree exists
+    expect(runPiRpcDraftTaskMock.mock.calls[0][0].cwd).toBe('/repo')
   })
 })
