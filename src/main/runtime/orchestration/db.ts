@@ -1476,16 +1476,23 @@ export class OrchestrationDb {
   }
 
   /**
-   * Hard-delete a task (and product-pipeline children when deleting a root).
-   * Also removes related dispatch contexts and decision gates.
+   * Hard-delete a task and all its descendants (recursive parent→children
+   * cascade). Also removes related dispatch contexts and decision gates.
    */
   deleteTask(id: string): { deletedIds: string[] } | undefined {
     const task = this.getTask(id)
     if (!task) {
       return undefined
     }
-    const targets =
-      task.pipeline_id && task.pipeline_id === task.id ? this.listTasksByPipeline(task.id) : [task]
+    const targets: TaskRow[] = []
+    const pending = [task]
+    while (pending.length > 0) {
+      const current = pending.pop()!
+      targets.push(current)
+      for (const child of this.listTasksByParent(current.id)) {
+        pending.push(child)
+      }
+    }
     const deletedIds = targets.map((t) => t.id)
     const placeholders = deletedIds.map(() => '?').join(', ')
     this.db

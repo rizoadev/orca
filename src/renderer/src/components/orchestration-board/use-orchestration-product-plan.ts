@@ -107,12 +107,13 @@ export function useOrchestrationProductPlan(): {
           { timeoutMs: 15_000, skipCompatibilityCheck: true }
         )
       }
-      // Why: the plan-only pipeline isn't watched yet; watch it so the
-      // supervisor discovers and delegates the newly created ready subtasks.
+      // Why: turn on fully autopilot + start watching so the supervisor
+      // discovers and delegates the newly created ready subtasks and keeps
+      // running them to completion without the operator.
       await callRuntimeRpc(
         LOCAL_RUNTIME_TARGET,
-        'orchestration.productWatch',
-        { pipeline: pipelineId },
+        'orchestration.productAutopilot',
+        { pipeline: pipelineId, enabled: true },
         { timeoutMs: 15_000, skipCompatibilityCheck: true }
       )
     },

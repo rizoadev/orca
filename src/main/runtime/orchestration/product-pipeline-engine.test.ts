@@ -50,6 +50,20 @@ describe('product-pipeline-engine', () => {
     expect(research.status).toBe('ready')
   })
 
+  it('cascades delete to child tasks recursively', () => {
+    db = new OrchestrationDb(':memory:')
+    const parent = db.createTask({ spec: 'parent' })
+    const child = db.createTask({ spec: 'child', parentId: parent.id })
+    const grandchild = db.createTask({ spec: 'grandchild', parentId: child.id })
+    const unrelated = db.createTask({ spec: 'unrelated' })
+    const deleted = db.deleteTask(parent.id)
+    expect(deleted?.deletedIds.sort()).toEqual([parent.id, child.id, grandchild.id].sort())
+    expect(db.getTask(parent.id)).toBeUndefined()
+    expect(db.getTask(child.id)).toBeUndefined()
+    expect(db.getTask(grandchild.id)).toBeUndefined()
+    expect(db.getTask(unrelated.id)).not.toBeUndefined()
+  })
+
   it('rewrites implement+test on tester FAIL', () => {
     db = new OrchestrationDb(':memory:')
     const { root, stages } = createProductPipelineTasks(db, {
