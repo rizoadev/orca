@@ -353,7 +353,7 @@ export function OrchestrationProductGoalDialog({
               {creating ? <LoaderCircle className="mr-2 h-3.5 w-3.5 animate-spin" /> : null}
               {translate(
                 'auto.components.orchestration.board.product.startPlanning',
-                'Start planning'
+                'Create & run'
               )}
             </Button>
           ) : null}
