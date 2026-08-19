@@ -26,6 +26,7 @@ import {
   type SubTaskBreakdownItem
 } from '../../../../shared/subtask-breakdown'
 import { OrchestrationPlanChecklist } from './OrchestrationPlanChecklist'
+import { OrchestrationPlanRunning } from './OrchestrationPlanRunning'
 
 const LOCAL_RUNTIME_TARGET = { kind: 'local' as const }
 const PLAN_POLL_MS = 3_000
@@ -47,7 +48,7 @@ export function OrchestrationProductGoalDialog({
   onStartPlan: (goal: string, squadId: string | null) => Promise<PlanStartResult>
   onCreatePlan: (items: SubTaskBreakdownItem[], pipelineId: string) => Promise<void>
 }): React.JSX.Element {
-  const [phase, setPhase] = useState<'goal' | 'planning' | 'review'>('goal')
+  const [phase, setPhase] = useState<'goal' | 'planning' | 'review' | 'running'>('goal')
   const [goal, setGoal] = useState('')
   const [squadId, setSquadId] = useState('')
   const [pipelineId, setPipelineId] = useState<string | null>(null)
@@ -182,13 +183,15 @@ export function OrchestrationProductGoalDialog({
     setCreating(true)
     try {
       await onCreatePlan(selected, pipelineId)
-      onOpenChange(false)
+      // Why: keep the modal open and switch to the live running view so the
+      // operator sees subtask progress/results without leaving the dialog.
+      setPhase('running')
     } catch (err) {
       setPlanError(err instanceof Error ? err.message : String(err))
     } finally {
       setCreating(false)
     }
-  }, [checked, items, onCreatePlan, onOpenChange, pipelineId])
+  }, [checked, items, onCreatePlan, pipelineId])
 
   const hasSquads = squads.length > 0
 
@@ -305,6 +308,10 @@ export function OrchestrationProductGoalDialog({
               setItems((prev) => prev.map((it, i) => (i === index ? next : it)))
             }}
           />
+        ) : null}
+
+        {phase === 'running' && pipelineId ? (
+          <OrchestrationPlanRunning pipelineId={pipelineId} onDone={() => {}} />
         ) : null}
 
         {planError ? <p className="text-xs text-destructive">{planError}</p> : null}
