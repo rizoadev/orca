@@ -20,7 +20,7 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/component
 import { Button } from '@/components/ui/button'
 import { translate } from '@/i18n/i18n'
 import { branchName } from '@/lib/git-utils'
-import { joinPath } from '@/lib/path'
+import { basename, joinPath } from '@/lib/path'
 import { formatBytes } from '@/components/status-bar/workspace-space-format'
 import type { S3ObjectSummary } from '../../../../shared/s3-types'
 import type { Repo } from '../../../../shared/types'
@@ -153,7 +153,7 @@ export function S3ObjectBrowserSection({
             translate(
               'auto.components.right.sidebar.S3ObjectBrowserSection.downloaded',
               'Downloaded {name} from S3',
-              { name: relPath }
+              { name: basename(relPath) }
             )
           )
         } else {
@@ -181,7 +181,7 @@ export function S3ObjectBrowserSection({
           translate(
             'auto.components.right.sidebar.S3ObjectBrowserSection.deleted',
             'Deleted {name} from S3',
-            { name: item.key }
+            { name: basename(item.key) }
           )
         )
       } else {
