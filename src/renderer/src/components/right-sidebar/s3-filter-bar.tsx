@@ -37,7 +37,7 @@ export function S3FilterBar({
         type="button"
         onClick={() => onScopeChange('branch')}
         className={cn(
-          'flex h-6 min-w-0 flex-1 items-center rounded-md border px-2 font-mono text-[11px] transition-colors',
+          'flex h-6 min-w-0 max-w-[45%] items-center rounded-md border px-2 font-mono text-[11px] transition-colors',
           scope === 'branch'
             ? 'border-primary/40 bg-primary/10 text-primary'
             : 'border-border bg-transparent text-muted-foreground hover:bg-sidebar-accent'

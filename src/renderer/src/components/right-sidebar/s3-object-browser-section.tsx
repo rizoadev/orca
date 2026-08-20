@@ -152,7 +152,7 @@ export function S3ObjectBrowserSection({
           toast.success(
             translate(
               'auto.components.right.sidebar.S3ObjectBrowserSection.downloaded',
-              'Downloaded {name} from S3',
+              'Downloaded {{name}} from S3',
               { name: basename(relPath) }
             )
           )
@@ -180,7 +180,7 @@ export function S3ObjectBrowserSection({
         toast.success(
           translate(
             'auto.components.right.sidebar.S3ObjectBrowserSection.deleted',
-            'Deleted {name} from S3',
+            'Deleted {{name}} from S3',
             { name: basename(item.key) }
           )
         )
