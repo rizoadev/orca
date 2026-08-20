@@ -86,6 +86,7 @@ import {
 import { rememberLiveBrowserUrl } from './browser-runtime'
 import { ensureBrowserPageWebview } from './browser-page-webview'
 import { maybeHidePaseoWorkspaceList, preparePaseoWebview } from './paseo-webview-style'
+import { prepareDeepSeekWebview } from './deepseek-webview-style'
 import {
   destroyPersistentWebview,
   moveFocusToRendererBeforeWebviewDetach,
@@ -3741,6 +3742,7 @@ function BrowserPagePane({
       // Why: force the Paseo web app onto the workspace for Orca's active
       // worktree — pin its persisted last-workspace selection in localStorage.
       preparePaseoWebview(webview, browserTab.id, webview.getURL())
+      prepareDeepSeekWebview(webview, browserTab.id, webview.getURL())
       maybeHidePaseoWorkspaceList(webview, webview.getURL())
       const queuedAnnotationViewportBridgeSync =
         registeredWebContentsIds.get(browserTab.id) !== webview.getWebContentsId()

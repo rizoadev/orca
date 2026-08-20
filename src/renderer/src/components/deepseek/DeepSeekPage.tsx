@@ -18,11 +18,18 @@ import {
 } from '@/components/ui/select'
 import { translate } from '@/i18n/i18n'
 import { DEEPSEEK_WEBVIEW_CSS } from '@/lib/deepseek-webview-css'
+import {
+  prepareDeepSeekWebview,
+  queueDeepSeekSession
+} from '@/components/browser-pane/deepseek-webview-style'
 import type {
   DeepSeekAgentPreset,
   DeepSeekSessionSummary,
   DeepSeekWebStatus
 } from '../../../../shared/deepseek-web-types'
+
+// Why: this webview has no store page id; a fixed key addresses its pending session.
+const DEEPSEEK_PAGE_ID = 'deepseek-page-view'
 
 export default function DeepSeekPage(): React.JSX.Element {
   const [state, setState] = useState<DeepSeekWebStatus['state']>('stopped')
@@ -81,7 +88,10 @@ export default function DeepSeekPage(): React.JSX.Element {
     const injectCss = (): void => {
       void node.insertCSS(DEEPSEEK_WEBVIEW_CSS)
     }
-    node.addEventListener('dom-ready', injectCss)
+    node.addEventListener('dom-ready', () => {
+      prepareDeepSeekWebview(node, DEEPSEEK_PAGE_ID, node.getURL())
+      injectCss()
+    })
     node.addEventListener('did-navigate', injectCss)
   }, [])
 
@@ -151,6 +161,31 @@ export default function DeepSeekPage(): React.JSX.Element {
       cancelled = true
     }
   }, [state, webUrl])
+
+  // Why: pin the Harness UI to the session whose cwd matches the active
+  // worktree (same shape as Paseo) so switching projects opens the right chat.
+  useEffect(() => {
+    if (state !== 'running') {
+      return
+    }
+    const cwd = activeWorktree?.path ?? null
+    if (!cwd) {
+      return
+    }
+    let cancelled = false
+    void window.api.deepseekWeb.listSessions().then((list) => {
+      if (cancelled) {
+        return
+      }
+      const match = list.find((session) => session.cwd === cwd)
+      if (match) {
+        queueDeepSeekSession(DEEPSEEK_PAGE_ID, match.sessionId)
+      }
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [state, webUrl, activeWorktree?.path, activeWorktreeId])
 
   const loading = state === 'starting' || state === 'stopped'
   const noWorktree = !activeWorktree?.path

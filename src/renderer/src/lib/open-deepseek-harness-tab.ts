@@ -1,20 +1,16 @@
 import { toast } from 'sonner'
 import { useAppStore } from '@/store'
 import { translate } from '@/i18n/i18n'
+import { queueDeepSeekSession } from '@/components/browser-pane/deepseek-webview-style'
 
 /**
- * New Tab → DeepSeek Harness entry.
- *
- * Routes to the in-app DeepSeek Harness screen (the sidebar view) instead of
- * a browser tab: the browser-pane webview renders the harness SPA blank /
- * loading-forever (browser-pane guest injections conflict with it), while the
- * DeepSeekPage webview path is the one that reliably works. The screen starts
- * the web host for the active worktree on mount.
+ * Ensure the DeepSeek Harness web host is running for the given worktree,
+ * then open its UI in a browser tab (same shape as the Paseo entry).
  */
-export function openDeepSeekHarnessTab(_worktreeId: string, _groupId: string): void {
+export async function openDeepSeekHarnessTab(worktreeId: string, groupId: string): Promise<void> {
   const state = useAppStore.getState()
-  const activeWorktree = state.getKnownWorktreeById(state.activeWorktreeId ?? '')
-  if (!activeWorktree?.path) {
+  const worktree = state.getKnownWorktreeById(worktreeId)
+  if (!worktree?.path) {
     toast.error(
       translate(
         'deepseek.view.no-worktree',
@@ -23,5 +19,28 @@ export function openDeepSeekHarnessTab(_worktreeId: string, _groupId: string): v
     )
     return
   }
-  state.setActiveView('deepseek-harness')
+  let status
+  try {
+    status = await window.api.deepseekWeb.start(worktree.path)
+  } catch (err) {
+    toast.error(err instanceof Error ? err.message : String(err))
+    return
+  }
+  if (status.state !== 'running' || !status.url) {
+    toast.error(
+      status.error ?? translate('deepseek.view.start-failed', 'DeepSeek Harness failed to start')
+    )
+    return
+  }
+  const created = useAppStore.getState().createBrowserTab(worktreeId, status.url, {
+    activate: true,
+    targetGroupId: groupId,
+    title: 'DeepSeek Harness'
+  })
+  // Why: pin the Harness UI to the session whose cwd matches this worktree.
+  const sessions = await window.api.deepseekWeb.listSessions().catch(() => [])
+  const match = sessions.find((session) => session.cwd === worktree.path)
+  if (created.activePageId && match) {
+    queueDeepSeekSession(created.activePageId, match.sessionId)
+  }
 }

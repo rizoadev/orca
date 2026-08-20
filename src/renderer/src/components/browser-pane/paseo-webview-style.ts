@@ -19,10 +19,10 @@ const PASEO_WORKSPACE_LIST_HIDE_CSS = `
 // Why: hide the Paseo sidebar chrome (list, Add project, History, picker).
 const PASEO_SIDEBAR_HIDE_ENABLED = true
 
-// Why: the daemon serves the web app on loopback with a dynamic port; any
-// path (root, /h/, ...) is part of the Paseo app after SPA redirects, and the
-// selectors below are specific enough to never affect other loopback pages.
-const PASEO_WEBVIEW_URL_PATTERN = /^http:\/\/127\.0\.0\.1:\d+/
+// Why: the Paseo web app always lives under its /h/ host route (workspace or
+// sessions); DeepSeek Harness serves its SPA from the loopback root, so this
+// narrower pattern keeps browser-pane injections from touching DeepSeek.
+const PASEO_WEBVIEW_URL_PATTERN = /^http:\/\/127\.0\.0\.1:\d+\/h\//
 
 // Why: AsyncStorage (web) stores this key verbatim in localStorage; setting it
 // pins the app to a specific workspace, clearing it lets the URL route win.
