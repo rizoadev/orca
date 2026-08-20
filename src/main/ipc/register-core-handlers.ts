@@ -17,6 +17,7 @@ import { registerHostedReviewHandlers } from './hosted-review'
 import { registerLinearHandlers } from './linear'
 import { registerJiraHandlers } from './jira'
 import { registerAsanaHandlers } from './asana'
+import { registerS3Handlers } from './s3'
 import { registerFeedbackHandlers } from './feedback'
 import { registerCrashReportingHandlers } from './crash-reporting'
 import { registerExportHandlers } from './export'
@@ -61,7 +62,6 @@ import { registerUIHandlers, setTrustedUIRendererWebContentsId } from './ui'
 import { registerEmulatorFrameStreamHandlers } from './emulator-frame-stream'
 import { registerEmulatorVideoStreamHandlers } from './emulator-video-stream'
 import { registerSpeechHandlers } from './speech'
-import { registerDockerHandlers } from './docker'
 import { registerTerminalRenderDesyncEvidenceHandler } from './terminal-render-desync-evidence'
 import { registerOrcaProfileHandlers } from './orca-profiles'
 import { registerCodexAccountHandlers } from './codex-accounts'
@@ -160,13 +160,13 @@ export function registerCoreHandlers(
   registerLinearHandlers()
   registerJiraHandlers()
   registerAsanaHandlers()
+  registerS3Handlers()
   registerFeedbackHandlers()
   if (crashReports) {
     registerCrashReportingHandlers(crashReports)
   }
   registerExportHandlers()
   registerNotesHandlers()
-  registerDockerHandlers(store)
   registerStatsHandlers(stats)
   registerMemoryHandlers(store)
   registerNotificationHandlers(store, runtime)

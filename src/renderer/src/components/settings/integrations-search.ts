@@ -216,10 +216,7 @@ export const getIntegrationsPaneSearchEntries = createLocalizedCatalog(() => [
       'Connect Asana with a Personal Access Token to browse tasks.'
     ),
     keywords: [
-      ...translateSearchKeyword(
-        'auto.components.settings.integrations.search.asanaKw',
-        'asana'
-      ),
+      ...translateSearchKeyword('auto.components.settings.integrations.search.asanaKw', 'asana'),
       ...translateSearchKeyword(
         'auto.components.settings.integrations.search.c450244ad7',
         'integration'
@@ -254,6 +251,40 @@ export const getIntegrationsPaneSearchEntries = createLocalizedCatalog(() => [
       ...translateSearchKeyword('settings.telegramBridge.search.kw.topic', 'topic'),
       ...translateSearchKeyword('settings.telegramBridge.search.kw.bridge', 'bridge'),
       ...translateSearchKeyword('settings.telegramBridge.search.kw.remote', 'remote chat')
+    ]
+  },
+  {
+    title: translate(
+      'auto.components.settings.integrations.search.s3Title',
+      'S3 Storage Integration'
+    ),
+    description: translate(
+      'auto.components.settings.integrations.search.s3Desc',
+      'Connect an S3-compatible bucket to upload large files from the explorer.'
+    ),
+    keywords: [
+      ...translateSearchKeyword('auto.components.settings.integrations.search.s3Kw', 's3'),
+      ...translateSearchKeyword('auto.components.settings.integrations.search.s3MinioKw', 'minio'),
+      ...translateSearchKeyword(
+        'auto.components.settings.integrations.search.s3R2Kw',
+        'cloudflare r2'
+      ),
+      ...translateSearchKeyword(
+        'auto.components.settings.integrations.search.s3BackupKw',
+        'backup'
+      ),
+      ...translateSearchKeyword(
+        'auto.components.settings.integrations.search.s3UploadKw',
+        'upload'
+      ),
+      ...translateSearchKeyword(
+        'auto.components.settings.integrations.search.c450244ad7',
+        'integration'
+      ),
+      ...translateSearchKeyword(
+        'auto.components.settings.integrations.search.s3StorageKw',
+        'object storage'
+      )
     ]
   }
 ])

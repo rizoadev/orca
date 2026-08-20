@@ -11,23 +11,20 @@ import { AsanaIntegrationCard } from './asana-integration-card'
 import { useIntegrationProviderStatusRefresh } from './use-integration-provider-status-refresh'
 import { TelegramBridgeSettingsCard } from './TelegramBridgeSettingsCard'
 import { TursoIntegrationCard } from './TursoIntegrationCard'
+import { S3IntegrationCard } from './S3IntegrationCard'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { translate } from '@/i18n/i18n'
 
 export { getIntegrationsPaneSearchEntries } from './integrations-search'
 
-type IntegrationsTab = 'remote-chat' | 'review' | 'tasks' | 'notes'
+type IntegrationsTab = 'remote-chat' | 'review' | 'tasks' | 'notes' | 'storage'
 
 export function IntegrationsPane(): React.JSX.Element {
   useIntegrationProviderStatusRefresh()
   const [tab, setTab] = useState<IntegrationsTab>('remote-chat')
 
   return (
-    <Tabs
-      value={tab}
-      onValueChange={(value) => setTab(value as IntegrationsTab)}
-      className="gap-4"
-    >
+    <Tabs value={tab} onValueChange={(value) => setTab(value as IntegrationsTab)} className="gap-4">
       <TabsList variant="line" className="h-8 w-full justify-start overflow-x-auto">
         <TabsTrigger value="remote-chat" className="px-3 text-xs">
           {translate('settings.integrations.remoteChat', 'Remote chat')}
@@ -40,6 +37,9 @@ export function IntegrationsPane(): React.JSX.Element {
         </TabsTrigger>
         <TabsTrigger value="notes" className="px-3 text-xs">
           {translate('settings.integrations.notes', 'Notes')}
+        </TabsTrigger>
+        <TabsTrigger value="storage" className="px-3 text-xs">
+          {translate('auto.components.settings.IntegrationsPane.storageTab', 'Storage')}
         </TabsTrigger>
       </TabsList>
 
@@ -91,6 +91,16 @@ export function IntegrationsPane(): React.JSX.Element {
           )}
         </p>
         <TursoIntegrationCard />
+      </TabsContent>
+
+      <TabsContent value="storage" className="space-y-3">
+        <p className="text-xs text-muted-foreground">
+          {translate(
+            'auto.components.settings.IntegrationsPane.storageDescription',
+            'Connect an S3-compatible bucket to upload large files (backups, archives) straight from the file explorer.'
+          )}
+        </p>
+        <S3IntegrationCard />
       </TabsContent>
     </Tabs>
   )

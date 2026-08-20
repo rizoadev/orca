@@ -814,6 +814,49 @@ function createWebPreloadApi(): Partial<PreloadApi> {
     emulator: createEmulatorApi(),
     gh: createGitHubApi(),
     gl: createGitLabApi(),
+    // Why: browser fallback can't touch the local filesystem or sign S3
+    // requests; expose a stub that reports disconnected so the settings card
+    // renders without crashing. uploadFile is intentionally absent — the
+    // explorer menu gates on it.
+    s3: {
+      getStatus: () =>
+        Promise.resolve({
+          connected: false,
+          endpoint: null,
+          region: null,
+          bucket: null
+        }),
+      connect: () => Promise.reject(new Error('S3 uploads are only available in the desktop app.')),
+      disconnect: () =>
+        Promise.resolve({
+          connected: false,
+          endpoint: null,
+          region: null,
+          bucket: null
+        }),
+      testConnection: () =>
+        Promise.resolve({ ok: false, error: 'S3 uploads are only available in the desktop app.' }),
+      uploadFile: () =>
+        Promise.resolve({
+          ok: false as const,
+          error: 'S3 uploads are only available in the desktop app.'
+        }),
+      listObjects: () =>
+        Promise.resolve({
+          ok: false as const,
+          error: 'S3 uploads are only available in the desktop app.'
+        }),
+      deleteObject: () =>
+        Promise.resolve({
+          ok: false as const,
+          error: 'S3 uploads are only available in the desktop app.'
+        }),
+      downloadObject: () =>
+        Promise.resolve({
+          ok: false as const,
+          error: 'S3 uploads are only available in the desktop app.'
+        })
+    },
     hostedReview: createRuntimeNamespaceApi('hostedReview'),
     linear: createRuntimeNamespaceApi('linear'),
     hooks: createHooksApi(),
@@ -2922,6 +2965,7 @@ function createRateLimitsApi(): NonNullable<Partial<PreloadApi>['rateLimits']> {
     kimi: null,
     antigravity: null,
     minimax: null,
+    deepseek: null,
     grok: null,
     minimaxCookieConfigured: false,
     grokAuthConfigured: false,

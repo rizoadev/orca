@@ -58,8 +58,16 @@ import type { RightSidebarExplorerView } from '../../../../shared/types'
 import { getRuntimeEnvironmentIdForWorktree } from '@/lib/worktree-runtime-owner'
 import { createNewTerminalTab } from '@/components/terminal/terminal-tab-create'
 import { EnvSnippetSyncSection } from './env-snippet-sync-section'
+import { S3ObjectBrowserSection } from './s3-object-browser-section'
 import { detectRepoIssueProvider } from './repo-issue-provider'
 import { syncFileToSnippet } from './env-snippet-sync-actions'
+import {
+  completeS3Upload,
+  failS3Upload,
+  startS3Upload,
+  updateS3UploadProgress
+} from './s3-upload-manager'
+import { parseS3ProjectParts, s3UploadObjectKey } from './s3-object-key'
 import { getSyncedSnippetPaths, subscribeSyncedSnippets } from './env-snippet-sync-store'
 
 function FileExplorerFiles(): React.JSX.Element {
@@ -643,6 +651,61 @@ function FileExplorerFiles(): React.JSX.Element {
     [activeRepo, activeWorktree, worktreePath]
   )
 
+  const handleUploadToS3 = useCallback(
+    async (node: TreeNode) => {
+      if (node.isDirectory) {
+        return
+      }
+      if (!window.api.s3?.uploadFile || !window.api.s3?.getStatus) {
+        toast.error(
+          translate(
+            'auto.components.right.sidebar.FileExplorerRow.s3DesktopOnly',
+            'S3 uploads are only available in the desktop app.'
+          )
+        )
+        return
+      }
+      const parts = parseS3ProjectParts(activeRepo, branchName(activeWorktree?.branch ?? ''))
+      if (!parts) {
+        toast.error(
+          translate(
+            'auto.components.right.sidebar.FileExplorerRow.s3NoRemote',
+            'S3 uploads need a git remote so the object key can be namespaced per project.'
+          )
+        )
+        return
+      }
+      const status = await window.api.s3.getStatus().catch(() => null)
+      if (!status?.connected) {
+        toast.error(
+          translate(
+            'auto.components.right.sidebar.FileExplorerRow.s3NotConnected',
+            'S3 is not connected. Configure it in Settings → Integrations.'
+          )
+        )
+        return
+      }
+
+      const uploadId = `s3-upload-${Date.now()}-${Math.random().toString(36).slice(2)}`
+      const objectKey = s3UploadObjectKey(parts, node.relativePath)
+      startS3Upload({ uploadId, filePath: node.path, objectKey })
+      const result = await window.api.s3
+        .uploadFile({ filePath: node.path, objectKey }, (progress) =>
+          updateS3UploadProgress(progress)
+        )
+        .catch((err) => ({
+          ok: false as const,
+          error: err instanceof Error ? err.message : String(err)
+        }))
+      if (result.ok) {
+        completeS3Upload(uploadId)
+      } else {
+        failS3Upload(uploadId, result.error)
+      }
+    },
+    [activeRepo, activeWorktree]
+  )
+
   if (!worktreePath) {
     return (
       <div className="flex h-full items-center justify-center text-[11px] text-muted-foreground px-4 text-center">
@@ -812,6 +875,11 @@ function FileExplorerFiles(): React.JSX.Element {
                 canAddFolderAsProject={(node) => canShowAddAsProjectAction(node, activeRepo)}
                 onOpenInTerminal={handleOpenInTerminal}
                 onSyncEnvToSnippet={handleSyncEnvToSnippet}
+                onUploadToS3={
+                  (globalThis as { __ORCA_WEB_CLIENT__?: boolean }).__ORCA_WEB_CLIENT__ !== true
+                    ? handleUploadToS3
+                    : undefined
+                }
                 syncedSnippetPaths={syncedSnippetPaths}
                 onRequestDelete={handleContextMenuDelete}
                 onCollapseFolderSubtree={handleCollapseFolderSubtree}
@@ -858,6 +926,11 @@ function FileExplorerFiles(): React.JSX.Element {
             isVisible={isFilesViewActive}
           />
         ) : null}
+        <S3ObjectBrowserSection
+          worktreePath={worktreePath ?? null}
+          repo={activeRepo}
+          branch={branchName(activeWorktree?.branch ?? '')}
+        />
       </div>
 
       <FileExplorerBackgroundMenu

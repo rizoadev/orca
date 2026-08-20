@@ -17,6 +17,7 @@ import {
   FolderPlus,
   FileCode2,
   Globe,
+  HardDriveUpload,
   ListCollapse,
   Link,
   Loader2,
@@ -293,6 +294,7 @@ type FileExplorerRowProps = {
   canAddAsProject: boolean
   onOpenInTerminal: () => void
   onSyncEnvToSnippet?: () => void
+  onUploadToS3?: () => void
   synced?: boolean
   onRequestDelete: () => void
   onCollapseFolderSubtree: () => void
@@ -466,6 +468,7 @@ export function FileExplorerRow({
   canAddAsProject,
   onOpenInTerminal,
   onSyncEnvToSnippet,
+  onUploadToS3,
   synced = false,
   onRequestDelete,
   onCollapseFolderSubtree,
@@ -784,6 +787,12 @@ export function FileExplorerRow({
               'auto.components.right.sidebar.FileExplorerRow.syncEnvToSnippet',
               'Sync to GitLab snippet'
             )}
+          </ContextMenuItem>
+        )}
+        {!node.isDirectory && onUploadToS3 && (
+          <ContextMenuItem onSelect={onUploadToS3}>
+            <HardDriveUpload />
+            {translate('auto.components.right.sidebar.FileExplorerRow.uploadToS3', 'Upload to S3')}
           </ContextMenuItem>
         )}
         {!node.isDirectory && activeWorktreeId && (

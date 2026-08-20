@@ -53,6 +53,17 @@ import type {
   AsanaCreateTaskResult
 } from '../shared/asana-types'
 import type {
+  S3ConnectionStatus,
+  S3ConnectArgs,
+  S3TestResult,
+  S3UploadArgs,
+  S3UploadProgress,
+  S3UploadResult,
+  S3ListResult,
+  S3ObjectActionResult,
+  S3DownloadObjectResult
+} from '../shared/s3-types'
+import type {
   HiveAddCredentialArgs,
   HiveDeployEnvironmentArgs,
   HiveDispatchArgs,
@@ -66,6 +77,22 @@ import type {
   HiveTriggerDeployArgs,
   HiveUpdateCredentialArgs
 } from '../shared/hive-types'
+import type {
+  Note,
+  NoteCreateInput,
+  NoteSearchQuery,
+  NoteTagCreateInput,
+  NoteTagUpdateInput,
+  NoteUpdateInput,
+  NotesExportResult,
+  NotesImportResult,
+  NotesListResult
+} from '../shared/notes-types'
+import type {
+  NotesSyncRunResult,
+  NotesSyncStatus,
+  NotesSyncUserConfig
+} from '../shared/notes-sync-types'
 import type {
   AgentProviderSessionMetadata,
   SleepingAgentLaunchConfig
@@ -1809,6 +1836,38 @@ const api = {
       taskGid: string
       update: AsanaTaskUpdate
     }): Promise<AsanaMutationResult> => ipcRenderer.invoke('asana:updateTask', args)
+  },
+
+  s3: {
+    getStatus: (): Promise<S3ConnectionStatus> => ipcRenderer.invoke('s3:getStatus'),
+    connect: (args: S3ConnectArgs): Promise<S3ConnectionStatus> =>
+      ipcRenderer.invoke('s3:connect', args),
+    disconnect: (): Promise<S3ConnectionStatus> => ipcRenderer.invoke('s3:disconnect'),
+    testConnection: (args?: S3ConnectArgs): Promise<S3TestResult> =>
+      ipcRenderer.invoke('s3:testConnection', args),
+    uploadFile: (
+      args: S3UploadArgs,
+      onProgress?: (progress: S3UploadProgress) => void
+    ): Promise<S3UploadResult> => {
+      if (!onProgress) {
+        return ipcRenderer.invoke('s3:uploadFile', args)
+      }
+      const listener = (_event: Electron.IpcRendererEvent, progress: S3UploadProgress): void => {
+        if (progress.filePath === args.filePath && progress.objectKey === args.objectKey) {
+          onProgress(progress)
+        }
+      }
+      ipcRenderer.on('s3:uploadProgress', listener)
+      return ipcRenderer
+        .invoke('s3:uploadFile', args)
+        .finally(() => ipcRenderer.removeListener('s3:uploadProgress', listener))
+    },
+    listObjects: (args: { prefix: string }): Promise<S3ListResult> =>
+      ipcRenderer.invoke('s3:listObjects', args),
+    deleteObject: (args: { key: string }): Promise<S3ObjectActionResult> =>
+      ipcRenderer.invoke('s3:deleteObject', args),
+    downloadObject: (args: { key: string; targetPath: string }): Promise<S3DownloadObjectResult> =>
+      ipcRenderer.invoke('s3:downloadObject', args)
   },
 
   jira: {
@@ -4568,8 +4627,7 @@ const api = {
       ipcRenderer.invoke('notes:createTag', input),
     updateTag: (id: string, input?: NoteTagUpdateInput): Promise<NotesListResult> =>
       ipcRenderer.invoke('notes:updateTag', id, input),
-    deleteTag: (id: string): Promise<NotesListResult> =>
-      ipcRenderer.invoke('notes:deleteTag', id),
+    deleteTag: (id: string): Promise<NotesListResult> => ipcRenderer.invoke('notes:deleteTag', id),
     syncStatus: (): Promise<NotesSyncStatus> => ipcRenderer.invoke('notes:syncStatus'),
     syncNow: (): Promise<NotesSyncRunResult> => ipcRenderer.invoke('notes:syncNow'),
     testConnection: (): Promise<{ ok: boolean; error?: string }> =>

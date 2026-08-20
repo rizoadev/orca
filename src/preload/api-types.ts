@@ -540,6 +540,17 @@ import type {
   AsanaCreateTaskResult
 } from '../shared/asana-types'
 import type {
+  S3ConnectionStatus,
+  S3ConnectArgs,
+  S3TestResult,
+  S3UploadArgs,
+  S3UploadProgress,
+  S3UploadResult,
+  S3ListResult,
+  S3ObjectActionResult,
+  S3DownloadObjectResult
+} from '../shared/s3-types'
+import type {
   StrandsIssueChatStartArgs,
   StrandsIssueChatSendArgs,
   StrandsIssueChatSessionSnapshot,
@@ -2215,6 +2226,19 @@ export type PreloadApi = {
     getTask: (taskGid: string) => Promise<AsanaTask>
     createTask: (args: AsanaCreateTaskArgs) => Promise<AsanaCreateTaskResult>
     updateTask: (args: { taskGid: string; update: AsanaTaskUpdate }) => Promise<AsanaMutationResult>
+  }
+  s3: {
+    getStatus: () => Promise<S3ConnectionStatus>
+    connect: (args: S3ConnectArgs) => Promise<S3ConnectionStatus>
+    disconnect: () => Promise<S3ConnectionStatus>
+    testConnection: (args?: S3ConnectArgs) => Promise<S3TestResult>
+    uploadFile: (
+      args: S3UploadArgs,
+      onProgress?: (progress: S3UploadProgress) => void
+    ) => Promise<S3UploadResult>
+    listObjects: (args: { prefix: string }) => Promise<S3ListResult>
+    deleteObject: (args: { key: string }) => Promise<S3ObjectActionResult>
+    downloadObject: (args: { key: string; targetPath: string }) => Promise<S3DownloadObjectResult>
   }
   jira: {
     connect: (args: {
