@@ -4,14 +4,11 @@ import { DeepSeekIcon } from '@/components/status-bar/icons'
 import { translate } from '@/i18n/i18n'
 import { cn } from '@/lib/utils'
 import { useAppStore } from '../../store'
-import { Badge } from '../ui/badge'
 import { Button } from '../ui/button'
 import { Input } from '../ui/input'
 import { Label } from '../ui/label'
 import { SearchableSetting } from './SearchableSetting'
-import type { ProviderRateLimits } from '../../../../shared/rate-limit-types'
-import { formatResetCountdown } from '@/components/status-bar/tooltip'
-import { clampUsedPercent, getDisplayedUsagePercentage } from '../../../../shared/usage-percentage-display'
+import { clampUsedPercent } from '../../../../shared/usage-percentage-display'
 
 const DEEPSEEK_API_DOCS_URL = 'https://api.deepseek.com/'
 
@@ -66,7 +63,10 @@ export function DeepSeekAccountsSection(): React.JSX.Element {
           rel="noopener noreferrer"
           className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
         >
-          {translate('auto.components.settings.DeepSeekAccountsSection.8f0a7d2e1b', 'DeepSeek API docs')}
+          {translate(
+            'auto.components.settings.DeepSeekAccountsSection.8f0a7d2e1b',
+            'DeepSeek API docs'
+          )}
           <ExternalLink className="size-3" />
         </a>
       </div>
@@ -84,7 +84,10 @@ export function DeepSeekAccountsSection(): React.JSX.Element {
         className="space-y-2"
       >
         <Label>
-          {translate('auto.components.settings.DeepSeekAccountsSection.b69f9d4c1a', 'DeepSeek API key')}
+          {translate(
+            'auto.components.settings.DeepSeekAccountsSection.b69f9d4c1a',
+            'DeepSeek API key'
+          )}
         </Label>
         <div className="flex gap-2">
           <Input
@@ -135,7 +138,8 @@ export function DeepSeekAccountsSection(): React.JSX.Element {
           ) : usageWindow && usedPercent !== null ? (
             <>
               <p className="truncate text-xs font-medium">
-                {usedPercent}% {translate('auto.components.settings.DeepSeekAccountsSection.f9a2b3c4d5', 'used')}
+                {usedPercent}%{' '}
+                {translate('auto.components.settings.DeepSeekAccountsSection.f9a2b3c4d5', 'used')}
               </p>
               {deepseekUsage?.error ? (
                 <p className="text-xs text-destructive">{deepseekUsage.error}</p>
@@ -176,7 +180,10 @@ export function DeepSeekAccountsSection(): React.JSX.Element {
           ) : (
             <RefreshCw className="size-3" />
           )}
-          {translate('auto.components.settings.DeepSeekAccountsSection.3325d996cb', 'Refresh usage')}
+          {translate(
+            'auto.components.settings.DeepSeekAccountsSection.3325d996cb',
+            'Refresh usage'
+          )}
         </Button>
       </div>
     </section>

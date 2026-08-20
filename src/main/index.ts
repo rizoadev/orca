@@ -204,6 +204,11 @@ import { initializeBrowserSessionsForApp } from './browser/browser-session-start
 import { setUnreadDockBadgeCount } from './dock/unread-badge'
 import { AutomationService } from './automations/service'
 import { TelegramBridgeService } from './telegram-bridge/service'
+import { PaseoDaemonManager } from './paseo/daemon-manager'
+import { PaseoAutoAttach } from './paseo/auto-attach'
+import { registerPaseoHandlers } from './ipc/paseo'
+import { DeepSeekWebManager } from './deepseek/deepseek-web-manager'
+import { registerDeepSeekWebHandlers } from './ipc/deepseek-web'
 import { createHeadlessAutomationOutputSnapshotBuffer } from './automations/headless-dispatch'
 import { buildHeadlessAutomationWorktreeCreateArgs } from './automations/headless-workspace-create'
 import { AgentAwakeService } from './agent-awake-service'
@@ -279,6 +284,13 @@ let watcherShutdownDone = false
 let automations: AutomationService | null = null
 let telegramBridge: TelegramBridgeService | null = null
 let keybindings: KeybindingService | null = null
+// Why: Paseo is optional — the daemon only starts when the in-app Paseo view
+// asks for it, so Orca users who never open the view pay no process cost.
+let paseoDaemon: PaseoDaemonManager | null = null
+let paseoAutoAttach: PaseoAutoAttach | null = null
+// Why: the DeepSeek Harness web host is lazy like Paseo — spawned on first
+// view open via IPC, so users who never open the view pay no process cost.
+let deepSeekWeb: DeepSeekWebManager | null = null
 // Why: a reload intent must not leak to a later load; the recovery reload re-fires did-finish-load, so its flag spares live PTYs from the orphan sweep (#5787).
 const expectedRendererReload = createWebContentsTimedFlag()
 const recoveryReloadInFlight = createWebContentsTimedFlag()
@@ -1166,6 +1178,18 @@ function openMainWindow(): BrowserWindow {
   automations.start()
   telegramBridge?.setWebContents(window.webContents)
   void telegramBridge?.start()
+
+  // Why: the Paseo daemon is lazy — spawn on first view open via IPC; the
+  // handler registrar is registered once here so the renderer can always ask.
+  if (!paseoDaemon) {
+    paseoDaemon = new PaseoDaemonManager()
+    paseoAutoAttach = new PaseoAutoAttach(paseoDaemon)
+    registerPaseoHandlers(paseoDaemon, paseoAutoAttach)
+  }
+  if (!deepSeekWeb) {
+    deepSeekWeb = new DeepSeekWebManager()
+    registerDeepSeekWebHandlers(deepSeekWeb)
+  }
   attachMainWindowServices(
     window,
     store,
@@ -2394,13 +2418,21 @@ app.whenReady().then(async () => {
     getRelayStatus: () => desktopRelayStatus,
     cloudflareRelay: {
       setEnabled: (enabled) =>
-        cloudflareRelayService ? cloudflareRelayService.setEnabled(enabled) : Promise.resolve({ ok: false, error: 'cloudflare_relay_unavailable' }),
+        cloudflareRelayService
+          ? cloudflareRelayService.setEnabled(enabled)
+          : Promise.resolve({ ok: false, error: 'cloudflare_relay_unavailable' }),
       deleteTunnel: () =>
-        cloudflareRelayService ? cloudflareRelayService.deleteTunnel() : Promise.resolve({ ok: false, error: 'cloudflare_relay_unavailable' }),
+        cloudflareRelayService
+          ? cloudflareRelayService.deleteTunnel()
+          : Promise.resolve({ ok: false, error: 'cloudflare_relay_unavailable' }),
       getStatus: () =>
-        cloudflareRelayService ? cloudflareRelayService.getStatus() : { state: 'disabled' as const },
+        cloudflareRelayService
+          ? cloudflareRelayService.getStatus()
+          : { state: 'disabled' as const },
       restart: () =>
-        cloudflareRelayService ? cloudflareRelayService.restart() : Promise.resolve({ ok: false, error: 'cloudflare_relay_unavailable' })
+        cloudflareRelayService
+          ? cloudflareRelayService.restart()
+          : Promise.resolve({ ok: false, error: 'cloudflare_relay_unavailable' })
     },
     cloudflareRelayConfigured: () => {
       const settings = store?.getSettings()
@@ -2565,6 +2597,11 @@ app.on('before-quit', () => {
   desktopRelayService?.fenceAndCloseNow()
   cloudflareRelayService?.stop()
   cloudflareRelayService = null
+  paseoDaemon?.stop()
+  paseoDaemon = null
+  paseoAutoAttach = null
+  deepSeekWeb?.stop()
+  deepSeekWeb = null
   runtimeRpc?.setMobileRelayPairingProvider(null)
   unsubscribeSystemResumeBroadcast?.()
   unsubscribeSystemResumeBroadcast = null

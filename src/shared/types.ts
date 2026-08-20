@@ -978,6 +978,10 @@ export type BrowserWorkspace = {
   // Why: runtime-created tabs resolve profile partition in main. Persisting it
   // keeps isolated storage stable when the renderer profile mirror is stale.
   sessionPartition?: string | null
+  // Why: app-like tabs (e.g. the embedded DeepSeek Harness UI) render without
+  // the browser chrome (toolbar, address bar); navigation stays on the host's
+  // own UI.
+  hideBrowserChrome?: boolean
   activePageId?: string | null
   pageIds?: string[]
   // Why: the active page owns real browser chrome state now, but the top-level
@@ -2511,6 +2515,9 @@ export type TuiAgent =
   | 'devin' // Devin CLI
   | 'ante' // Ante (Antigma Labs)
   | 'strands' // Strands Agents SDK via `orca strands`
+  | 'deepseek-harness' // DeepSeek Harness (dsh)
+  | 'paseo' // Paseo (embedded daemon web UI)
+// DeepSeek Harness (dsh)
 
 export type TaskViewPresetId = 'all' | 'issues' | 'review' | 'my-issues' | 'my-prs' | 'prs'
 
@@ -3242,7 +3249,10 @@ export type TopLevelView =
   | 'issues-board'
   | 'agent-dashboard'
   | 'orchestration-board'
+  | 'notes'
+  | 'paseo'
   | 'docker'
+  | 'deepseek-harness'
 
 export type PersistedUIState = {
   lastActiveRepoId: string | null

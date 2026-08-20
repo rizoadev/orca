@@ -10,6 +10,7 @@ import {
   type DragEvent
 } from 'react'
 import { createPortal } from 'react-dom'
+import { DEEPSEEK_WEBVIEW_CSS } from '@/lib/deepseek-webview-css'
 import { cn } from '@/lib/utils'
 import { createBrowserUuid } from '@/lib/browser-uuid'
 import { getConnectionId } from '@/lib/connection-context'
@@ -84,6 +85,7 @@ import {
 } from '../../../../shared/browser-viewport-presets'
 import { rememberLiveBrowserUrl } from './browser-runtime'
 import { ensureBrowserPageWebview } from './browser-page-webview'
+import { maybeHidePaseoWorkspaceList, preparePaseoWebview } from './paseo-webview-style'
 import {
   destroyPersistentWebview,
   moveFocusToRendererBeforeWebviewDetach,
@@ -829,6 +831,7 @@ export default function BrowserPane({
         runtimeEnvironmentId={activeBrowserRuntimeEnvironmentId}
         worktreeId={browserTab.worktreeId}
         isActive={isActive}
+        hideBrowserChrome={browserTab.hideBrowserChrome ?? false}
         onUpdatePageState={updateBrowserPageState}
         onSetUrl={setBrowserPageUrl}
       />
@@ -853,6 +856,7 @@ export default function BrowserPane({
               isAutomationVisible={automationVisiblePageIds.has(page.id)}
               isMobileDriven={mobileDrivenPageIds.has(page.id)}
               inputLocked={activeBrowserDriver.kind === 'mobile'}
+              hideBrowserChrome={browserTab.hideBrowserChrome ?? false}
               onUpdatePageState={updateBrowserPageState}
               onSetUrl={setBrowserPageUrl}
             />
@@ -872,6 +876,7 @@ function RemoteBrowserPagePane({
   runtimeEnvironmentId,
   worktreeId,
   isActive,
+  hideBrowserChrome = false,
   onUpdatePageState,
   onSetUrl
 }: {
@@ -879,6 +884,7 @@ function RemoteBrowserPagePane({
   runtimeEnvironmentId: string
   worktreeId: string
   isActive: boolean
+  hideBrowserChrome?: boolean
   onUpdatePageState: (tabId: string, updates: BrowserTabPageState) => void
   onSetUrl: (tabId: string, url: string) => void
 }): React.JSX.Element {
@@ -2557,78 +2563,80 @@ function RemoteBrowserPagePane({
             document.body
           )
         : null}
-      <div
-        className="relative z-10 flex items-center gap-2 border-b border-border/70 bg-background/95 px-3 py-1.5"
-        data-contextual-tour-target="browser-toolbar"
-      >
-        <Button
-          size="icon"
-          variant="ghost"
-          className="h-7 w-7"
-          onClick={() => void runRemoteNavigation('browser.back')}
+      {!hideBrowserChrome ? (
+        <div
+          className="relative z-10 flex items-center gap-2 border-b border-border/70 bg-background/95 px-3 py-1.5"
+          data-contextual-tour-target="browser-toolbar"
         >
-          <ArrowLeft className="size-4" />
-        </Button>
-        <Button
-          size="icon"
-          variant="ghost"
-          className="h-7 w-7"
-          onClick={() => void runRemoteNavigation('browser.forward')}
-        >
-          <ArrowRight className="size-4" />
-        </Button>
-        <Button
-          size="icon"
-          variant="ghost"
-          className="h-7 w-7"
-          onClick={() => void runRemoteNavigation('browser.reload')}
-        >
-          {busy || browserTab.loading ? (
-            <Loader2 className="size-4 animate-spin" />
-          ) : (
-            <RefreshCw className="size-4" />
-          )}
-        </Button>
-        <BrowserAddressBar
-          value={addressBarValue}
-          onChange={setAddressBarValue}
-          onSubmit={submitAddressBar}
-          onNavigate={navigateToUrl}
-          inputRef={addressBarInputRef}
-        />
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button
-              size="icon"
-              variant="ghost"
-              className="h-7 w-7 opacity-50"
-              aria-disabled="true"
-              aria-label={translate(
-                'auto.components.browser.pane.BrowserPane.deb5293610',
-                'Browser annotations unavailable in remote runtime'
-              )}
-              onClick={(event) => {
-                event.preventDefault()
-              }}
-            >
-              <MessageSquarePlus className="size-4" />
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent side="bottom" sideOffset={4}>
-            {translate(
-              'auto.components.browser.pane.BrowserPane.8b7e6d1f5a',
-              'Browser annotations are only available in local browser tabs.'
+          <Button
+            size="icon"
+            variant="ghost"
+            className="h-7 w-7"
+            onClick={() => void runRemoteNavigation('browser.back')}
+          >
+            <ArrowLeft className="size-4" />
+          </Button>
+          <Button
+            size="icon"
+            variant="ghost"
+            className="h-7 w-7"
+            onClick={() => void runRemoteNavigation('browser.forward')}
+          >
+            <ArrowRight className="size-4" />
+          </Button>
+          <Button
+            size="icon"
+            variant="ghost"
+            className="h-7 w-7"
+            onClick={() => void runRemoteNavigation('browser.reload')}
+          >
+            {busy || browserTab.loading ? (
+              <Loader2 className="size-4 animate-spin" />
+            ) : (
+              <RefreshCw className="size-4" />
             )}
-          </TooltipContent>
-        </Tooltip>
-        <MarkupDrawButton
-          onClick={() => (markup.isActive ? markup.cancel() : void markup.start())}
-          disabled={!frameUrl}
-          active={markup.isActive}
-          surfaceActive={isActive}
-          className="h-7 w-7"
-        />
-      </div>
+          </Button>
+          <BrowserAddressBar
+            value={addressBarValue}
+            onChange={setAddressBarValue}
+            onSubmit={submitAddressBar}
+            onNavigate={navigateToUrl}
+            inputRef={addressBarInputRef}
+          />
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                size="icon"
+                variant="ghost"
+                className="h-7 w-7 opacity-50"
+                aria-disabled="true"
+                aria-label={translate(
+                  'auto.components.browser.pane.BrowserPane.deb5293610',
+                  'Browser annotations unavailable in remote runtime'
+                )}
+                onClick={(event) => {
+                  event.preventDefault()
+                }}
+              >
+                <MessageSquarePlus className="size-4" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="bottom" sideOffset={4}>
+              {translate(
+                'auto.components.browser.pane.BrowserPane.8b7e6d1f5a',
+                'Browser annotations are only available in local browser tabs.'
+              )}
+            </TooltipContent>
+          </Tooltip>
+          <MarkupDrawButton
+            onClick={() => (markup.isActive ? markup.cancel() : void markup.start())}
+            disabled={!frameUrl}
+            active={markup.isActive}
+            surfaceActive={isActive}
+            className="h-7 w-7"
+          />
+        </div>
+      ) : null}
       <div
         ref={remoteViewportRef}
         tabIndex={-1}
@@ -2756,6 +2764,7 @@ function BrowserPagePane({
   isAutomationVisible,
   isMobileDriven,
   inputLocked,
+  hideBrowserChrome = false,
   onUpdatePageState,
   onSetUrl
 }: {
@@ -2768,6 +2777,7 @@ function BrowserPagePane({
   isAutomationVisible: boolean
   isMobileDriven: boolean
   inputLocked: boolean
+  hideBrowserChrome?: boolean
   onUpdatePageState: (tabId: string, updates: BrowserTabPageState) => void
   onSetUrl: (tabId: string, url: string) => void
 }): React.JSX.Element {
@@ -3650,6 +3660,7 @@ function BrowserPagePane({
       container,
       inputLocked: inputLockedRef.current,
       webviewPartition,
+      injectCss: hideBrowserChrome ? DEEPSEEK_WEBVIEW_CSS : undefined,
       resolveContainer: () =>
         ensureBrowserPageViewport(browserTab.id, workspaceId)?.container ?? null
     })
@@ -3727,6 +3738,10 @@ function BrowserPagePane({
     }
 
     const handleDomReady = (): void => {
+      // Why: force the Paseo web app onto the workspace for Orca's active
+      // worktree — pin its persisted last-workspace selection in localStorage.
+      preparePaseoWebview(webview, browserTab.id, webview.getURL())
+      maybeHidePaseoWorkspaceList(webview, webview.getURL())
       const queuedAnnotationViewportBridgeSync =
         registeredWebContentsIds.get(browserTab.id) !== webview.getWebContentsId()
       if (queuedAnnotationViewportBridgeSync) {
@@ -3844,6 +3859,9 @@ function BrowserPagePane({
         return
       }
       const currentUrl = event.url ?? webview.getURL() ?? webview.src ?? 'about:blank'
+      // Why: SPA pushState and full reloads re-run this; re-inject idempotently
+      // so the Paseo styling survives every navigation, not just the first load.
+      maybeHidePaseoWorkspaceList(webview, currentUrl)
       if (isChromiumErrorPage(currentUrl)) {
         return
       }
@@ -4894,183 +4912,187 @@ function BrowserPagePane({
         : null}
 
       <div ref={chromeHeaderRef} className="pointer-events-auto shrink-0">
-        <div
-          className="relative z-10 flex items-center gap-2 border-b border-border/70 bg-background/95 px-3 py-1.5"
-          data-contextual-tour-target="browser-toolbar"
-        >
-          <Button
-            size="icon"
-            variant="ghost"
-            className="h-7 w-7"
-            onClick={() => webviewRef.current?.goBack()}
-            disabled={!browserTab.canGoBack}
+        {!hideBrowserChrome ? (
+          <div
+            className="relative z-10 flex items-center gap-2 border-b border-border/70 bg-background/95 px-3 py-1.5"
+            data-contextual-tour-target="browser-toolbar"
           >
-            <ArrowLeft className="size-4" />
-          </Button>
-          <Button
-            size="icon"
-            variant="ghost"
-            className="h-7 w-7"
-            onClick={() => webviewRef.current?.goForward()}
-            disabled={!browserTab.canGoForward}
-          >
-            <ArrowRight className="size-4" />
-          </Button>
-          <Button
-            size="icon"
-            variant="ghost"
-            className="h-7 w-7"
-            onClick={() => {
-              const webview = webviewRef.current
-              if (!webview) {
-                return
-              }
-              if (browserTab.loading) {
-                webview.stop()
-              } else if (browserTab.loadError) {
-                retryBrowserTabLoad(webview, browserTab, onUpdatePageStateRef.current)
-              } else {
-                webview.reload()
-              }
-            }}
-          >
-            {browserTab.loading ? (
-              <Loader2 className="size-4 animate-spin" />
-            ) : (
-              <RefreshCw className="size-4" />
-            )}
-          </Button>
-
-          <BrowserAddressBar
-            value={addressBarValue}
-            onChange={setAddressBarValue}
-            onSubmit={submitAddressBar}
-            onNavigate={navigateToUrl}
-            inputRef={addressBarInputRef}
-            dismissSuggestionsRef={dismissAddressBarSuggestionsRef}
-          />
-
-          <BrowserImportHintButton profileId={sessionProfileId} />
-
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <span className="inline-flex">
-                <Button
-                  size="icon"
-                  variant={grab.state !== 'idle' && grabIntent === 'copy' ? 'default' : 'ghost'}
-                  className={cn(
-                    'h-8 w-8',
-                    grab.state !== 'idle' &&
-                      grabIntent === 'copy' &&
-                      'bg-foreground/80 text-background hover:bg-foreground/90'
-                  )}
-                  onClick={() => startGrabIntent('copy')}
-                  disabled={isBlankTab || markup.isActive}
-                  aria-label={translate(
-                    'auto.components.browser.pane.BrowserPane.fdfc7fe0ef',
-                    'Grab page element'
-                  )}
-                  data-contextual-tour-target="browser-grab-control"
-                >
-                  <Crosshair className="size-4" />
-                </Button>
-              </span>
-            </TooltipTrigger>
-            <TooltipContent side="bottom" sideOffset={4}>
-              {translate(
-                'auto.components.browser.pane.BrowserPane.acbe79fd01',
-                'Grab page element ({{value0}})',
-                { value0: grabElementShortcut }
+            <Button
+              size="icon"
+              variant="ghost"
+              className="h-7 w-7"
+              onClick={() => webviewRef.current?.goBack()}
+              disabled={!browserTab.canGoBack}
+            >
+              <ArrowLeft className="size-4" />
+            </Button>
+            <Button
+              size="icon"
+              variant="ghost"
+              className="h-7 w-7"
+              onClick={() => webviewRef.current?.goForward()}
+              disabled={!browserTab.canGoForward}
+            >
+              <ArrowRight className="size-4" />
+            </Button>
+            <Button
+              size="icon"
+              variant="ghost"
+              className="h-7 w-7"
+              onClick={() => {
+                const webview = webviewRef.current
+                if (!webview) {
+                  return
+                }
+                if (browserTab.loading) {
+                  webview.stop()
+                } else if (browserTab.loadError) {
+                  retryBrowserTabLoad(webview, browserTab, onUpdatePageStateRef.current)
+                } else {
+                  webview.reload()
+                }
+              }}
+            >
+              {browserTab.loading ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : (
+                <RefreshCw className="size-4" />
               )}
-            </TooltipContent>
-          </Tooltip>
+            </Button>
 
-          <Tooltip>
-            <TooltipTrigger asChild>
-              {/* Why: disabled <button> drops hover events, so wrap in a span so the tooltip trigger still fires. */}
-              <span className="inline-flex">
-                <Button
-                  size="icon"
-                  variant={grab.state !== 'idle' && grabIntent === 'annotate' ? 'default' : 'ghost'}
-                  className={cn(
-                    'relative h-8 w-8',
-                    grab.state !== 'idle' &&
-                      grabIntent === 'annotate' &&
-                      'bg-foreground/80 text-background hover:bg-foreground/90'
-                  )}
-                  onClick={() => startGrabIntent('annotate')}
-                  disabled={isBlankTab || markup.isActive}
-                  aria-label={translate(
-                    'auto.components.browser.pane.BrowserPane.fc9be38f6f',
-                    'Annotate page element'
-                  )}
-                  data-contextual-tour-target="browser-annotation-control"
-                >
-                  <MessageSquarePlus className="size-4" />
-                  {browserAnnotations.length > 0 ? (
-                    <span className="absolute -top-1 -right-1 flex min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[10px] leading-4 text-primary-foreground">
-                      {browserAnnotations.length}
-                    </span>
-                  ) : null}
-                </Button>
-              </span>
-            </TooltipTrigger>
-            <TooltipContent side="bottom" sideOffset={4}>
-              {translate(
-                'auto.components.browser.pane.BrowserPane.fc9be38f6f',
-                'Annotate page element'
+            <BrowserAddressBar
+              value={addressBarValue}
+              onChange={setAddressBarValue}
+              onSubmit={submitAddressBar}
+              onNavigate={navigateToUrl}
+              inputRef={addressBarInputRef}
+              dismissSuggestionsRef={dismissAddressBarSuggestionsRef}
+            />
+
+            <BrowserImportHintButton profileId={sessionProfileId} />
+
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span className="inline-flex">
+                  <Button
+                    size="icon"
+                    variant={grab.state !== 'idle' && grabIntent === 'copy' ? 'default' : 'ghost'}
+                    className={cn(
+                      'h-8 w-8',
+                      grab.state !== 'idle' &&
+                        grabIntent === 'copy' &&
+                        'bg-foreground/80 text-background hover:bg-foreground/90'
+                    )}
+                    onClick={() => startGrabIntent('copy')}
+                    disabled={isBlankTab || markup.isActive}
+                    aria-label={translate(
+                      'auto.components.browser.pane.BrowserPane.fdfc7fe0ef',
+                      'Grab page element'
+                    )}
+                    data-contextual-tour-target="browser-grab-control"
+                  >
+                    <Crosshair className="size-4" />
+                  </Button>
+                </span>
+              </TooltipTrigger>
+              <TooltipContent side="bottom" sideOffset={4}>
+                {translate(
+                  'auto.components.browser.pane.BrowserPane.acbe79fd01',
+                  'Grab page element ({{value0}})',
+                  { value0: grabElementShortcut }
+                )}
+              </TooltipContent>
+            </Tooltip>
+
+            <Tooltip>
+              <TooltipTrigger asChild>
+                {/* Why: disabled <button> drops hover events, so wrap in a span so the tooltip trigger still fires. */}
+                <span className="inline-flex">
+                  <Button
+                    size="icon"
+                    variant={
+                      grab.state !== 'idle' && grabIntent === 'annotate' ? 'default' : 'ghost'
+                    }
+                    className={cn(
+                      'relative h-8 w-8',
+                      grab.state !== 'idle' &&
+                        grabIntent === 'annotate' &&
+                        'bg-foreground/80 text-background hover:bg-foreground/90'
+                    )}
+                    onClick={() => startGrabIntent('annotate')}
+                    disabled={isBlankTab || markup.isActive}
+                    aria-label={translate(
+                      'auto.components.browser.pane.BrowserPane.fc9be38f6f',
+                      'Annotate page element'
+                    )}
+                    data-contextual-tour-target="browser-annotation-control"
+                  >
+                    <MessageSquarePlus className="size-4" />
+                    {browserAnnotations.length > 0 ? (
+                      <span className="absolute -top-1 -right-1 flex min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[10px] leading-4 text-primary-foreground">
+                        {browserAnnotations.length}
+                      </span>
+                    ) : null}
+                  </Button>
+                </span>
+              </TooltipTrigger>
+              <TooltipContent side="bottom" sideOffset={4}>
+                {translate(
+                  'auto.components.browser.pane.BrowserPane.fc9be38f6f',
+                  'Annotate page element'
+                )}
+              </TooltipContent>
+            </Tooltip>
+
+            <MarkupDrawButton
+              onClick={() => (markup.isActive ? markup.cancel() : void markup.start())}
+              disabled={isBlankTab || grab.state !== 'idle'}
+              active={markup.isActive}
+              surfaceActive={isActive}
+            />
+
+            <Button
+              size="icon"
+              variant="ghost"
+              className="h-7 w-7"
+              onClick={() => void window.api.browser.openDevTools({ browserPageId: browserTab.id })}
+              title={translate(
+                'auto.components.browser.pane.BrowserPane.ec75d0c412',
+                'Open browser devtools'
               )}
-            </TooltipContent>
-          </Tooltip>
+            >
+              <SquareCode className="size-4" />
+            </Button>
 
-          <MarkupDrawButton
-            onClick={() => (markup.isActive ? markup.cancel() : void markup.start())}
-            disabled={isBlankTab || grab.state !== 'idle'}
-            active={markup.isActive}
-            surfaceActive={isActive}
-          />
+            <Button
+              size="icon"
+              variant="ghost"
+              className="h-7 w-7"
+              onClick={() => {
+                if (!externalUrl) {
+                  return
+                }
+                void window.api.shell.openUrl(externalUrl)
+              }}
+              title={translate(
+                'auto.components.browser.pane.BrowserPane.0f41bf80c7',
+                'Open in default browser'
+              )}
+              disabled={!externalUrl}
+            >
+              <ExternalLink className="size-4" />
+            </Button>
 
-          <Button
-            size="icon"
-            variant="ghost"
-            className="h-7 w-7"
-            onClick={() => void window.api.browser.openDevTools({ browserPageId: browserTab.id })}
-            title={translate(
-              'auto.components.browser.pane.BrowserPane.ec75d0c412',
-              'Open browser devtools'
-            )}
-          >
-            <SquareCode className="size-4" />
-          </Button>
-
-          <Button
-            size="icon"
-            variant="ghost"
-            className="h-7 w-7"
-            onClick={() => {
-              if (!externalUrl) {
-                return
-              }
-              void window.api.shell.openUrl(externalUrl)
-            }}
-            title={translate(
-              'auto.components.browser.pane.BrowserPane.0f41bf80c7',
-              'Open in default browser'
-            )}
-            disabled={!externalUrl}
-          >
-            <ExternalLink className="size-4" />
-          </Button>
-
-          <BrowserToolbarMenu
-            currentProfileId={sessionProfileId}
-            workspaceId={workspaceId}
-            browserPageId={browserTab.id}
-            viewportPresetId={browserTab.viewportPresetId ?? null}
-            onDestroyWebview={() => destroyPersistentWebview(browserTab.id)}
-            isActive={isActive}
-          />
-        </div>
+            <BrowserToolbarMenu
+              currentProfileId={sessionProfileId}
+              workspaceId={workspaceId}
+              browserPageId={browserTab.id}
+              viewportPresetId={browserTab.viewportPresetId ?? null}
+              onDestroyWebview={() => destroyPersistentWebview(browserTab.id)}
+              isActive={isActive}
+            />
+          </div>
+        ) : null}
         {visibleDownloads.length > 0 ? (
           <div className="border-b border-border/60 bg-background px-3 py-1.5">
             <div className="scrollbar-sleek flex max-h-36 flex-col gap-1 overflow-y-auto">

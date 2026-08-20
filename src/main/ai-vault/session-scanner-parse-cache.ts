@@ -68,6 +68,7 @@ function resumableStateFactoryFor(
     case 'kimi':
     case 'opencode':
     case 'rovo':
+    case 'deepseek-harness':
       return null
   }
 }

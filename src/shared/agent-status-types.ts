@@ -38,6 +38,7 @@ export type WellKnownAgentType =
   | 'hermes'
   | 'devin'
   | 'ante'
+  | 'deepseek-harness'
   | 'unknown'
 export type AgentType = WellKnownAgentType | (string & {})
 

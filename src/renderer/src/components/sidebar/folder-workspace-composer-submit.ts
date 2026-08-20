@@ -11,6 +11,7 @@ import {
   type AgentStartupPlan
 } from '@/lib/tui-agent-startup'
 import { tuiAgentToAgentKind } from '@/lib/telemetry'
+import { isWebViewTuiAgent, routeWebViewTuiAgent } from '@/lib/route-web-view-tui-agent'
 import { activateAndRevealFolderWorkspace } from '@/lib/worktree-activation'
 import { isWorkItemLookupText } from '@/lib/work-item-lookup-text'
 import { TUI_AGENT_CONFIG } from '../../../../shared/tui-agent-config'
@@ -187,8 +188,9 @@ export async function submitFolderWorkspaceCreate({
     isRemote: launchIsRemote,
     terminalWindowsShell
   })
-  const startupPlan =
-    quickAgent && linkedWorkItem
+  const startupPlan = isWebViewTuiAgent(quickAgent)
+    ? null
+    : quickAgent && linkedWorkItem
       ? buildFolderWorkspaceLinkedStartupPlan({
           agent: quickAgent,
           linkedWorkItem,
@@ -268,12 +270,16 @@ export async function submitFolderWorkspaceCreate({
           }
         }
       : undefined
+  const webViewRouteAgent = isWebViewTuiAgent(quickAgent) ? quickAgent : null
   onOpenChange(false)
   try {
     const activation = activateAndRevealFolderWorkspace(workspace.id, {
       ...(startup ? { startup } : {}),
       runtimeEnvironmentId
     })
+    if (webViewRouteAgent) {
+      routeWebViewTuiAgent(webViewRouteAgent)
+    }
     if (
       startupPlan &&
       (startupPlan.followupPrompt || startupPlan.draftPrompt) &&

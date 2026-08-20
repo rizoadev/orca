@@ -1,5 +1,6 @@
 import { mkdir, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
+import { zstdCompressSync } from 'node:zlib'
 
 export function isolatedScanRoots(root: string) {
   return {
@@ -23,7 +24,8 @@ export function isolatedScanRoots(root: string) {
     ompSessionsDir: join(root, 'omp-sessions'),
     droidSessionsDir: join(root, 'droid-sessions'),
     droidProjectsDir: join(root, 'droid-projects'),
-    kimiSessionsDir: join(root, 'kimi-sessions')
+    kimiSessionsDir: join(root, 'kimi-sessions'),
+    deepseekSessionsDir: join(root, 'deepseek-sessions')
   }
 }
 
@@ -68,4 +70,41 @@ export function writeAntigravityScannerFixture(
       content: 'Done'
     }
   ])
+}
+
+export async function writeDeepSeekScannerFixture(sessionsDir: string): Promise<string> {
+  const sessionId = 'session-12345678-1234-4234-8234-123456789012'
+  const sessionDir = join(sessionsDir, sessionId)
+  const records = [
+    {
+      type: 'session',
+      id: sessionId,
+      createdAt: 1_777_634_700_000,
+      cwd: '/tmp/deepseek'
+    },
+    {
+      type: 'session/title',
+      time: 1_777_634_701_000,
+      data: { title: 'DeepSeek title' }
+    },
+    {
+      type: 'assistant/message',
+      time: 1_777_634_702_000,
+      data: {
+        message: {
+          role: 'assistant',
+          content: [{ type: 'text', text: 'DeepSeek answer' }],
+          source: { kind: 'model', model: 'deepseek-v4' }
+        }
+      }
+    }
+  ]
+  await mkdir(sessionDir, { recursive: true })
+  await writeFile(
+    join(sessionDir, 'session.jsonl.zstd'),
+    Buffer.concat(
+      records.map((record) => zstdCompressSync(Buffer.from(`${JSON.stringify(record)}\n`)))
+    )
+  )
+  return sessionId
 }

@@ -603,147 +603,28 @@ export type UISlice = {
   acknowledgeAgents: (paneKeys: string[]) => void
   unacknowledgeAgents: (paneKeys: string[]) => void
   activeView: TopLevelView
-  previousViewBeforeTasks:
-    | 'terminal'
-    | 'settings'
-    | 'activity'
-    | 'automations'
-    | 'space'
-    | 'skills'
-    | 'mobile'
-    | 'issues-board'
-    | 'agent-dashboard'
-    | 'orchestration-board'
-    | 'docker'
-  previousViewBeforeSettings:
-    | 'terminal'
-    | 'tasks'
-    | 'activity'
-    | 'automations'
-    | 'space'
-    | 'skills'
-    | 'mobile'
-    | 'issues-board'
-    | 'agent-dashboard'
-    | 'orchestration-board'
-    | 'docker'
-  previousViewBeforeActivity:
-    | 'terminal'
-    | 'settings'
-    | 'tasks'
-    | 'automations'
-    | 'space'
-    | 'skills'
-    | 'mobile'
-    | 'issues-board'
-    | 'agent-dashboard'
-    | 'orchestration-board'
-    | 'docker'
-  previousViewBeforeAutomations:
-    | 'terminal'
-    | 'settings'
-    | 'tasks'
-    | 'activity'
-    | 'space'
-    | 'skills'
-    | 'mobile'
-    | 'issues-board'
-    | 'agent-dashboard'
-    | 'orchestration-board'
-    | 'docker'
-  previousViewBeforeSpace:
-    | 'terminal'
-    | 'settings'
-    | 'tasks'
-    | 'activity'
-    | 'automations'
-    | 'skills'
-    | 'mobile'
-    | 'issues-board'
-    | 'agent-dashboard'
-    | 'orchestration-board'
-    | 'docker'
-  previousViewBeforeSkills:
-    | 'terminal'
-    | 'settings'
-    | 'tasks'
-    | 'activity'
-    | 'automations'
-    | 'space'
-    | 'mobile'
-    | 'issues-board'
-    | 'agent-dashboard'
-    | 'orchestration-board'
-    | 'docker'
-  previousViewBeforeMobile:
-    | 'terminal'
-    | 'settings'
-    | 'tasks'
-    | 'activity'
-    | 'automations'
-    | 'space'
-    | 'skills'
-    | 'issues-board'
-    | 'agent-dashboard'
-    | 'orchestration-board'
-    | 'docker'
-  previousViewBeforeIssuesBoard:
-    | 'terminal'
-    | 'settings'
-    | 'tasks'
-    | 'activity'
-    | 'automations'
-    | 'space'
-    | 'skills'
-    | 'mobile'
-    | 'issues-board'
-    | 'agent-dashboard'
-    | 'orchestration-board'
-    | 'docker'
-  previousViewBeforeAgentDashboard:
-    | 'terminal'
-    | 'settings'
-    | 'tasks'
-    | 'activity'
-    | 'automations'
-    | 'space'
-    | 'skills'
-    | 'mobile'
-    | 'issues-board'
-    | 'agent-dashboard'
-    | 'orchestration-board'
-    | 'docker'
-  previousViewBeforeOrchestrationBoard:
-    | 'terminal'
-    | 'settings'
-    | 'tasks'
-    | 'activity'
-    | 'automations'
-    | 'space'
-    | 'skills'
-    | 'mobile'
-    | 'issues-board'
-    | 'agent-dashboard'
-    | 'orchestration-board'
-    | 'docker'
-  previousViewBeforeDocker:
-    | 'terminal'
-    | 'settings'
-    | 'tasks'
-    | 'activity'
-    | 'automations'
-    | 'space'
-    | 'skills'
-    | 'mobile'
-    | 'issues-board'
-    | 'agent-dashboard'
-    | 'orchestration-board'
+  // Why: keep the previous-view fields open to every top-level view; a hardcoded
+  // union here silently rejects newly added views (docker, paseo, deepseek-harness).
+  previousViewBeforeTasks: Exclude<TopLevelView, 'tasks'>
+  previousViewBeforeSettings: Exclude<TopLevelView, 'settings'>
+  previousViewBeforeActivity: Exclude<TopLevelView, 'activity'>
+  previousViewBeforeAutomations: Exclude<TopLevelView, 'automations'>
+  previousViewBeforeSpace: Exclude<TopLevelView, 'space'>
+  previousViewBeforeSkills: Exclude<TopLevelView, 'skills'>
+  previousViewBeforeMobile: Exclude<TopLevelView, 'mobile'>
+  previousViewBeforeIssuesBoard: Exclude<TopLevelView, 'issues-board'>
+  previousViewBeforeAgentDashboard: Exclude<TopLevelView, 'agent-dashboard'>
+  previousViewBeforeOrchestrationBoard: Exclude<TopLevelView, 'orchestration-board'>
+  previousViewBeforeNotes: Exclude<TopLevelView, 'notes'>
+  previousViewBeforeDocker: Exclude<TopLevelView, 'docker'>
   openIssuesBoardPage: () => void
   closeIssuesBoardPage: () => void
   openAgentDashboardPage: () => void
   closeAgentDashboardPage: () => void
   openOrchestrationBoardPage: (opts?: { taskId?: string | null }) => void
   closeOrchestrationBoardPage: () => void
+  openNotesPage: () => void
+  closeNotesPage: () => void
   openDockerPage: () => void
   closeDockerPage: () => void
   /** One-shot focus when opening the board from the right-sidebar list. */
@@ -1308,6 +1189,7 @@ export const createUISlice: StateCreator<AppState, [], [], UISlice> = (set, get)
   previousViewBeforeIssuesBoard: 'terminal',
   previousViewBeforeAgentDashboard: 'terminal',
   previousViewBeforeOrchestrationBoard: 'terminal',
+  previousViewBeforeNotes: 'terminal',
   previousViewBeforeDocker: 'terminal',
   setActiveView: (view) => set({ activeView: view }),
   taskPageData: {},
@@ -1619,11 +1501,21 @@ export const createUISlice: StateCreator<AppState, [], [], UISlice> = (set, get)
       activeView: state.previousViewBeforeOrchestrationBoard,
       orchestrationBoardFocusTaskId: null
     })),
+  openNotesPage: () =>
+    set((state) => ({
+      activeView: 'notes',
+      previousViewBeforeNotes:
+        state.activeView === 'notes' ? state.previousViewBeforeNotes : state.activeView
+    })),
+  closeNotesPage: () =>
+    set((state) => ({
+      activeView: state.previousViewBeforeNotes
+    })),
   openDockerPage: () =>
     set((state) => ({
       activeView: 'docker',
       previousViewBeforeDocker:
-        state.activeView === 'docker' ? state.previousViewBeforeDocker : (state.activeView as UISlice['previousViewBeforeDocker'])
+        state.activeView === 'docker' ? state.previousViewBeforeDocker : state.activeView
     })),
   closeDockerPage: () =>
     set((state) => ({

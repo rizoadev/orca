@@ -560,6 +560,36 @@ describe('tui agent startup plans', () => {
     })
   })
 
+  it('launches DeepSeek Harness through its explicit CLI route with the first task as argv', () => {
+    expect(
+      buildAgentStartupPlan({
+        agent: 'deepseek-harness',
+        prompt: 'fix it',
+        cmdOverrides: {},
+        platform: 'linux'
+      })
+    ).toEqual({
+      agent: 'deepseek-harness',
+      launchCommand: "dsh cli 'fix it'",
+      expectedProcess: 'dsh',
+      followupPrompt: null,
+      launchConfig: { agentCommand: 'dsh cli', agentArgs: '', agentEnv: {} }
+    })
+  })
+
+  it('keeps DeepSeek Harness options before the positional first task', () => {
+    const plan = buildAgentStartupPlan({
+      agent: 'deepseek-harness',
+      prompt: 'fix it',
+      cmdOverrides: {},
+      agentArgs: '--approval allow',
+      platform: 'linux'
+    })
+
+    expect(plan?.launchCommand).toBe("dsh cli '--approval' 'allow' 'fix it'")
+    expect(plan?.followupPrompt).toBeNull()
+  })
+
   it('leaves Claude command overrides untouched', () => {
     const plan = buildAgentStartupPlan({
       agent: 'claude',

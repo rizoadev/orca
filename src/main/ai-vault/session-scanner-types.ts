@@ -33,6 +33,7 @@ export type AiVaultScanOptions = {
   droidSessionsDir?: string
   droidProjectsDir?: string
   kimiSessionsDir?: string
+  deepseekSessionsDir?: string
   limit?: number
   limitPerAgent?: number
   // Active workspace/project paths whose sessions must be included regardless of

@@ -1,10 +1,13 @@
-import { useEffect, useState } from 'react'
+import type { GitStatusEntry } from '../../../../shared/git-status-types'
+import { useEffect, useMemo, useState } from 'react'
 import { useShallow } from 'zustand/react/shallow'
+import { Github, Gitlab } from 'lucide-react'
 import mountainLandscapeUrl from '../../../../../resources/mountain-landscape-transparent.svg?url'
 import catPlayingUrl from '../../../../../resources/cat-playing.svg?url'
 import catWatermelonUrl from '../../../../../resources/cat-watermelon.svg?url'
 import catDanceUrl from '../../../../../resources/cat-dance.svg?url'
 import { usePomodoroStore, type PomodoroPhase } from '../right-sidebar/pomodoro-timer-store'
+import { parseRemoteRepo } from '../right-sidebar/source-control-remote-repo'
 import { branchName } from '../../lib/git-utils'
 import { useAppStore } from '../../store'
 
@@ -13,6 +16,9 @@ const HERO_PETS = [
   { url: catWatermelonUrl, className: 'pet-hero-roam-center' },
   { url: catDanceUrl, className: 'pet-hero-roam-right' }
 ] as const
+
+// Why: stable reference to avoid infinite re-render when worktree has no git status yet.
+const EMPTY_GIT_ENTRIES: GitStatusEntry[] = []
 
 type PetHeroMode = 'working' | 'cooldown' | 'sleep' | 'rest'
 
@@ -43,16 +49,26 @@ export default function PetHero({ worktreeId }: { worktreeId: string }): React.J
       for (const worktrees of Object.values(state.worktreesByRepo)) {
         const worktree = worktrees.find((item) => item.id === worktreeId)
         if (worktree) {
+          const repo = state.repos.find((repo) => repo.id === worktree.repoId)
           return {
             branch: branchName(worktree.branch),
-            projectName:
-              state.repos.find((repo) => repo.id === worktree.repoId)?.displayName ?? null
+            projectName: repo?.displayName ?? null,
+            remoteUrl: repo?.gitRemoteIdentity?.remoteUrl ?? null
           }
         }
       }
       return null
     })
   )
+  const repoHost = workspace?.remoteUrl
+    ? (() => {
+        const ref = parseRemoteRepo(workspace.remoteUrl)
+        if (ref?.provider === 'github' || ref?.provider === 'gitlab') {
+          return { provider: ref.provider as 'github' | 'gitlab', url: ref.webBaseUrl }
+        }
+        return null
+      })()
+    : null
   const petMode = useAppStore((state): PetHeroMode => {
     let hasWorkingAgent = false
     let hasWaitingAgent = false
@@ -83,6 +99,23 @@ export default function PetHero({ worktreeId }: { worktreeId: string }): React.J
   const pomodoroPhase = usePomodoroStore((state) => state.phase)
   const pomodoroSecondsLeft = usePomodoroStore((state) => state.secondsLeft)
   const pomodoroRunning = usePomodoroStore((state) => state.running)
+  const gitEntries = useAppStore(
+    (state) => state.gitStatusByWorktree[worktreeId] ?? EMPTY_GIT_ENTRIES
+  )
+  const gitDiffStats = useMemo(() => {
+    let added = 0
+    let removed = 0
+    for (const entry of gitEntries) {
+      if (entry.added != null) {
+        added += entry.added
+      }
+      if (entry.removed != null) {
+        removed += entry.removed
+      }
+    }
+    return { added, removed }
+  }, [gitEntries])
+
   const [currentTime, setCurrentTime] = useState(() => formatLiveTime())
 
   useEffect(() => {
@@ -116,6 +149,17 @@ export default function PetHero({ worktreeId }: { worktreeId: string }): React.J
         <p className="pet-hero-description">Semangat kerja ya — buat nabung rumah.</p>
         <p className="pet-hero-workspace">
           {workspace?.projectName || 'Orca project'} / {workspace?.branch || 'detached'}
+          {repoHost && (
+            <a
+              className="pet-hero-repo-link"
+              href={repoHost.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              aria-label={`Open on ${repoHost.provider}`}
+            >
+              {repoHost.provider === 'github' ? <Github size={14} /> : <Gitlab size={14} />}
+            </a>
+          )}
         </p>
       </div>
       <div className="pet-hero-scene" aria-hidden="true">
@@ -145,6 +189,16 @@ export default function PetHero({ worktreeId }: { worktreeId: string }): React.J
         <span>
           {currentTime} · {modeLabel}
         </span>
+        {(gitDiffStats.added > 0 || gitDiffStats.removed > 0) && (
+          <span className="pet-hero-git-diff">
+            {gitDiffStats.added > 0 && (
+              <span className="pet-hero-git-added">+{gitDiffStats.added}</span>
+            )}
+            {gitDiffStats.removed > 0 && (
+              <span className="pet-hero-git-removed">-{gitDiffStats.removed}</span>
+            )}
+          </span>
+        )}
       </div>
       <div
         className="pet-hero-pomodoro"

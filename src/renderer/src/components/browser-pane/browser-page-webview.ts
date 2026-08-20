@@ -10,12 +10,15 @@ export function ensureBrowserPageWebview({
   container,
   inputLocked,
   webviewPartition,
+  injectCss,
   resolveContainer
 }: {
   browserTabId: string
   container: HTMLDivElement
   inputLocked: boolean
   webviewPartition: string
+  /** Guest CSS injected on load; used by app-like tabs (e.g. DeepSeek Harness). */
+  injectCss?: string
   resolveContainer: () => HTMLDivElement | null
 }): { container: HTMLDivElement; created: boolean; webview: Electron.WebviewTag } | null {
   let webview = webviewRegistry.get(browserTabId)
@@ -62,6 +65,16 @@ export function ensureBrowserPageWebview({
   registerPersistentWebview(browserTabId, webview)
   activeContainer.appendChild(webview)
   created = true
+
+  if (injectCss) {
+    // Why: hide chrome/navigation affordances the guest must not expose; SPA
+    // reloads re-inject via did-navigate.
+    const inject = (): void => {
+      void webview.insertCSS(injectCss)
+    }
+    webview.addEventListener('dom-ready', inject)
+    webview.addEventListener('did-navigate', inject)
+  }
 
   return { container: activeContainer, created, webview }
 }

@@ -1,4 +1,5 @@
 import { buildAgentStartupPlan } from '@/lib/tui-agent-startup'
+import { isWebViewTuiAgent } from '@/lib/route-web-view-tui-agent'
 import { tuiAgentToAgentKind } from '@/lib/telemetry'
 import { isTuiAgentEnabled } from '../../../shared/tui-agent-selection'
 import {
@@ -39,6 +40,11 @@ export function buildOnboardingFolderAgentStartup(
     agent === 'blank' ||
     !isTuiAgentEnabled(agent, settings.disabledTuiAgents)
   ) {
+    return undefined
+  }
+  // Why: web-view agents (DeepSeek Harness, Paseo) have no terminal TUI;
+  // the onboarding flow routes them to their in-app screen instead.
+  if (isWebViewTuiAgent(agent)) {
     return undefined
   }
 

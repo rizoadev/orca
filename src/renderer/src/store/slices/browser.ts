@@ -62,6 +62,8 @@ type CreateBrowserTabOptions = {
   targetGroupId?: string
   // Explicit "New Tab" focuses the address bar even with a real home URL; link-opened tabs leave it unset.
   focusAddressBar?: boolean
+  // App-like tabs hide the whole browser chrome (toolbar + address bar).
+  hideBrowserChrome?: boolean
   browserRuntimeEnvironmentId?: string | null
 }
 
@@ -366,13 +368,15 @@ function buildWorkspaceFromPage(
   page: BrowserPage,
   pageIds: string[],
   sessionProfileId?: string | null,
-  sessionPartition?: string | null
+  sessionPartition?: string | null,
+  hideBrowserChrome?: boolean
 ): BrowserWorkspace {
   return {
     id,
     worktreeId,
     sessionProfileId: sessionProfileId ?? null,
     sessionPartition: sessionPartition ?? null,
+    ...(hideBrowserChrome !== undefined ? { hideBrowserChrome } : {}),
     activePageId: page.id,
     pageIds,
     url: page.url,
@@ -568,7 +572,8 @@ export const createBrowserSlice: StateCreator<AppState, [], [], BrowserSlice> = 
       page,
       [page.id],
       sessionProfileId,
-      options?.sessionPartition
+      options?.sessionPartition,
+      options?.hideBrowserChrome
     )
 
     set((s) => {

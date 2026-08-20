@@ -25,6 +25,8 @@ import { closeTerminalTab } from '../terminal/terminal-tab-actions'
 import { openTabBarEntry, type TabCreateEntryArgs } from '../tab-bar/tab-create-entry-action'
 import { openMobileEmulatorTab } from '@/lib/open-mobile-emulator-tab'
 import { ensureSimulatorTab, getSimulatorTabForWorktree } from '@/lib/ensure-simulator-tab'
+import { openDeepSeekHarnessTab } from '@/lib/open-deepseek-harness-tab'
+import { openPaseoWebTab } from '@/lib/open-paseo-web-tab'
 import { buildDuplicatedBrowserTabOptions } from '@/lib/duplicate-browser-tab-options'
 import { getRuntimeEnvironmentIdForWorktree } from '@/lib/worktree-runtime-owner'
 import { browserWorkspaceHasRemoteOwner } from '@/runtime/remote-browser-tab-ownership'
@@ -569,6 +571,12 @@ export function useTabGroupWorkspaceModel({
       createSplitGroup,
       newBrowserTab: () => {
         void openNewBrowserTabInActiveWorkspace(groupId)
+      },
+      newDeepSeekHarnessTab: () => {
+        void openDeepSeekHarnessTab(worktreeId, groupId)
+      },
+      newPaseoWebTab: () => {
+        void openPaseoWebTab(worktreeId, groupId)
       },
       newSimulatorTab: worktreeState.mobileEmulatorEnabled
         ? () => {

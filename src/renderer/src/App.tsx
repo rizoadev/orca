@@ -44,6 +44,7 @@ import {
 import { useAppStore } from './store'
 import { useShallow } from 'zustand/react/shallow'
 import { isRemoteWorkspaceSnapshotApplyInProgress, useIpcEvents } from './hooks/useIpcEvents'
+import { usePaseoWorktreeFollow } from './hooks/use-paseo-worktree-follow'
 import { useAutomationDispatchEvents } from './hooks/useAutomationDispatchEvents'
 import RetainedAgentsSyncGate from './components/dashboard/RetainedAgentsSyncGate'
 import { AgentHibernationGate } from './components/AgentHibernationGate'
@@ -313,9 +314,12 @@ const Settings = lazy(() => import('./components/settings/Settings'))
 const SkillsPage = lazy(() => import('./components/skills/SkillsPage'))
 const IssueBoardPage = lazy(() => import('./components/issue-board/IssueBoardPage'))
 const AgentDashboardPage = lazy(() => import('./components/dashboard/AgentDashboardPage'))
+const PaseoPage = lazy(() => import('./components/paseo/PaseoPage'))
+const DeepSeekPage = lazy(() => import('./components/deepseek/DeepSeekPage'))
 const OrchestrationBoardPage = lazy(
   () => import('./components/orchestration-board/OrchestrationBoardPage')
 )
+const NotesPage = lazy(() => import('./components/notes/NotesPage'))
 const DockerContainersPage = lazy(() => import('./components/docker/DockerContainersPage'))
 const WorkspaceSpacePage = lazy(() => import('./components/workspace-space/WorkspaceSpacePage'))
 const MobilePage = lazy(() => import('./components/mobile/MobilePage'))
@@ -732,6 +736,8 @@ function App(): React.JSX.Element {
 
   // Subscribe to IPC push events
   useIpcEvents()
+  // Why: keep the open Paseo browser tab attached to the active worktree's directory.
+  usePaseoWorktreeFollow()
   useAutomationDispatchEvents()
   // Why: retention runs at App level (in <RetainedAgentsSyncGate />, a null leaf) so "done" agents survive card collapse and its high-churn subscriptions don't re-render App.
   // Why: git polling lives at App level (RightSidebar unmounts when closed, stranding stale Rebasing/Merging badges); gate on workspaceSessionReady so it doesn't compete with first paint.
@@ -2256,6 +2262,9 @@ function App(): React.JSX.Element {
                               {activeView === 'orchestration-board' ? (
                                 <OrchestrationBoardPage />
                               ) : null}
+                              {activeView === 'notes' ? <NotesPage /> : null}
+                              {activeView === 'paseo' ? <PaseoPage /> : null}
+                              {activeView === 'deepseek-harness' ? <DeepSeekPage /> : null}
                               {activeView === 'docker' ? <DockerContainersPage /> : null}
                               {activeView === 'terminal' &&
                               creationLayoutActive &&

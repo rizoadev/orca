@@ -297,6 +297,20 @@ export const getAgentCatalog = createLocalizedCatalog((): AgentCatalogEntry[] =>
     cmd: getTuiAgentLaunchCommand(TUI_AGENT_CONFIG.strands, getCatalogPlatform()),
     faviconDomain: 'strandsagents.com',
     homepageUrl: 'https://strandsagents.com/'
+  },
+  {
+    id: 'deepseek-harness',
+    label: translate('auto.lib.agent.catalog.deepseek_harness_label', 'DeepSeek Harness'),
+    cmd: 'dsh',
+    faviconDomain: 'deepseek.com',
+    homepageUrl: 'https://github.com/deepseek-ai/deepseek-harness'
+  },
+  {
+    id: 'paseo',
+    label: translate('auto.lib.agent.catalog.paseo_label', 'Paseo'),
+    cmd: 'paseo',
+    faviconDomain: 'paseo.sh',
+    homepageUrl: 'https://paseo.sh'
   }
 ])
 

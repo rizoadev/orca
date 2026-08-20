@@ -401,6 +401,19 @@
   white-space: nowrap;
 }
 
+.pet-hero-repo-link {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 6px;
+  vertical-align: middle;
+  color: var(--muted-foreground);
+  transition: color 0.15s ease;
+}
+
+.pet-hero-repo-link:hover {
+  color: var(--foreground);
+}
+
 .pet-hero-scene {
   position: relative;
   flex: 1;
@@ -597,6 +610,26 @@
 .pet-hero-status {
   top: 14px;
   right: 18px;
+}
+
+.pet-hero-git-diff {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: 6px;
+  padding-left: 6px;
+  border-left: 1px solid color-mix(in srgb, var(--foreground) 13%, transparent);
+  font-variant-numeric: tabular-nums;
+}
+
+.pet-hero-git-added {
+  color: var(--status-success);
+  font-weight: 600;
+}
+
+.pet-hero-git-removed {
+  color: var(--destructive);
+  font-weight: 600;
 }
 
 .pet-hero-pomodoro {

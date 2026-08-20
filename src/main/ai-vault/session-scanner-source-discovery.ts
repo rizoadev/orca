@@ -5,6 +5,7 @@ import { uniqueCodexSessionsDirs } from './session-scanner-codex-paths'
 import { SUBAGENT_DIR_NAME } from './session-scanner-subagent-transcripts'
 import { discoverFiles, discoverOpenClawFiles } from './session-scanner-discovery'
 import { droidDiscoveries, kimiDiscoveries } from './session-scanner-droid-kimi-sources'
+import { deepseekDiscoveries } from './session-scanner-deepseek-sources'
 import { opencodeDiscoveries } from './session-scanner-opencode-sources'
 import type { AiVaultScanOptions, SessionFileDiscovery } from './session-scanner-types'
 import { normalizeAgentSessionsDir } from './session-scanner-values'
@@ -79,7 +80,8 @@ export async function discoverAiVaultSessionSources(args: {
     ...standardDiscoveries(options, wslHomeDirs, limitPerAgent, issues),
     openClawDiscovery(options, wslHomeDirs, limitPerAgent, issues),
     ...droidDiscoveries(options, wslHomeDirs, limitPerAgent, issues),
-    ...kimiDiscoveries(options, wslHomeDirs, limitPerAgent, issues)
+    ...kimiDiscoveries(options, wslHomeDirs, limitPerAgent, issues),
+    ...deepseekDiscoveries(options, wslHomeDirs, limitPerAgent, issues)
   ])
 }
 

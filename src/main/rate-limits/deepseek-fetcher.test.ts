@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const netFetchMock = vi.hoisted(() => vi.fn())
 
@@ -85,10 +85,6 @@ describe('fetchDeepSeekRateLimits', () => {
     expect(result.session?.usedPercent).toBeCloseTo(20) // 10/50
     expect(result.weekly?.usedPercent).toBeCloseTo(20) // 10/50
   })
-
-  const USAGE_RESPONSE = {
-    package_usages: [{ group_id: 'deepseek-coder', left_points: '800', total_points: '1000' }]
-  }
 
   it('surfaces an error when the API key is rejected (401)', async () => {
     netFetchMock.mockResolvedValueOnce(jsonResponse({}, 401))

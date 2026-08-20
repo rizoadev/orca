@@ -17,6 +17,7 @@ import { activateAndRevealWorktree, type AgentStartedTelemetry } from '@/lib/wor
 import { runBackgroundWorktreeCreation } from '@/lib/worktree-creation-flow'
 import type { WorktreeCreationRequest } from '@/lib/pending-worktree-creation'
 import { buildAgentDraftLaunchPlan, buildAgentStartupPlan } from '@/lib/tui-agent-startup'
+import { isWebViewTuiAgent, routeWebViewTuiAgent } from '@/lib/route-web-view-tui-agent'
 import { filterEnabledTuiAgents, isTuiAgentEnabled } from '../../../shared/tui-agent-selection'
 import { repoIsRemote } from '../../../shared/agent-launch-remote'
 import { resolveLocalWindowsAgentStartupShell } from '../../../shared/windows-terminal-shell'
@@ -3471,20 +3472,25 @@ export function useComposerState(options: UseComposerStateOptions): UseComposerS
         Boolean(tuiAgent) &&
         !effectiveBranchNameOverride &&
         !createDisplayName
-      const startupPlan = buildAgentStartupPlan({
-        agent: tuiAgent,
-        prompt: submitStartupPrompt,
-        cmdOverrides: settings?.agentCmdOverrides ?? {},
-        agentArgs: resolveTuiAgentLaunchArgs(tuiAgent, settings?.agentDefaultArgs),
-        agentEnv: resolveTuiAgentLaunchEnv(tuiAgent, settings?.agentDefaultEnv),
-        sessionOptions: resolveNativeChatSessionOptionDefaults(
-          settings?.nativeChatSessionOptions,
-          tuiAgent
-        ),
-        platform: selectedRepoAgentLaunchPlatform,
-        shell: selectedRepoStartupShell,
-        isRemote: selectedRepoIsRemote
-      })
+      // Why: web-view agents (DeepSeek Harness, Paseo) have no terminal TUI;
+      // skip the spawn plan and open their in-app screen after creation.
+      const webViewRouteAgent = isWebViewTuiAgent(tuiAgent) ? tuiAgent : null
+      const startupPlan = webViewRouteAgent
+        ? null
+        : buildAgentStartupPlan({
+            agent: tuiAgent,
+            prompt: submitStartupPrompt,
+            cmdOverrides: settings?.agentCmdOverrides ?? {},
+            agentArgs: resolveTuiAgentLaunchArgs(tuiAgent, settings?.agentDefaultArgs),
+            agentEnv: resolveTuiAgentLaunchEnv(tuiAgent, settings?.agentDefaultEnv),
+            sessionOptions: resolveNativeChatSessionOptionDefaults(
+              settings?.nativeChatSessionOptions,
+              tuiAgent
+            ),
+            platform: selectedRepoAgentLaunchPlatform,
+            shell: selectedRepoStartupShell,
+            isRemote: selectedRepoIsRemote
+          })
       const shouldSeedInitialAgentStatus =
         tuiAgent === 'command-code' && submitStartupPrompt.trim().length > 0
 
@@ -3612,6 +3618,9 @@ export function useComposerState(options: UseComposerStateOptions): UseComposerS
         })
       }
       setSidebarOpen(true)
+      // Why: web-view agents open on their own screen once the new worktree
+      // is active (the DeepSeek/Paseo pages start their host for it).
+      routeWebViewTuiAgent(webViewRouteAgent)
       if (persistDraft) {
         clearNewWorkspaceDraft()
       }

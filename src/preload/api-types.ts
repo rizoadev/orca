@@ -550,6 +550,12 @@ import type {
   S3ObjectActionResult,
   S3DownloadObjectResult
 } from '../shared/s3-types'
+import type { PaseoDaemonStatus } from '../shared/paseo-types'
+import type {
+  DeepSeekAgentPreset,
+  DeepSeekSessionSummary,
+  DeepSeekWebStatus
+} from '../shared/deepseek-web-types'
 import type {
   StrandsIssueChatStartArgs,
   StrandsIssueChatSendArgs,
@@ -2239,6 +2245,25 @@ export type PreloadApi = {
     listObjects: (args: { prefix: string }) => Promise<S3ListResult>
     deleteObject: (args: { key: string }) => Promise<S3ObjectActionResult>
     downloadObject: (args: { key: string; targetPath: string }) => Promise<S3DownloadObjectResult>
+  }
+  paseo: {
+    getStatus: () => Promise<PaseoDaemonStatus>
+    start: () => Promise<PaseoDaemonStatus>
+    stop: () => Promise<PaseoDaemonStatus>
+    attachProject: (path: string | null) => Promise<{
+      ok: boolean
+      workspaceId?: string | null
+      serverId?: string | null
+    }>
+    getDaemonUrl: () => Promise<string>
+  }
+  deepseekWeb: {
+    getStatus: () => Promise<DeepSeekWebStatus>
+    start: (cwd: string | null) => Promise<DeepSeekWebStatus>
+    stop: () => Promise<DeepSeekWebStatus>
+    listAgentPresets: () => Promise<DeepSeekAgentPreset[]>
+    setDefaultAgentPreset: (id: string) => Promise<DeepSeekWebStatus>
+    listSessions: () => Promise<DeepSeekSessionSummary[]>
   }
   jira: {
     connect: (args: {

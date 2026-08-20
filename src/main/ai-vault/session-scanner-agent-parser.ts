@@ -5,6 +5,7 @@ import { parseDroidSessionFile } from './session-scanner-droid-parser'
 import { parseGrokSessionFile } from './session-scanner-grok-parser'
 import { parseMessageGraphSessionFile, parseRovoSessionFile } from './session-scanner-graph-parsers'
 import { parseKimiSessionFile } from './session-scanner-kimi-parser'
+import { parseDeepSeekSessionFile } from './session-scanner-deepseek-parser'
 import { splitOpenCodeSqliteCandidate } from './session-scanner-opencode-sqlite-paths'
 import { parseOpenCodeSqliteSessionViaWorker } from './session-scanner-opencode-sqlite-worker-spawn'
 import { parseClaudeSessionFile } from './session-scanner-primary-parsers'
@@ -76,5 +77,7 @@ export async function parseAgentSessionFile(
       return parseDevinSessionFile(candidate.file, platform)
     case 'kimi':
       return parseKimiSessionFile(candidate.file, platform)
+    case 'deepseek-harness':
+      return parseDeepSeekSessionFile(candidate.file, platform)
   }
 }

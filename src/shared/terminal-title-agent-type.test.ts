@@ -111,6 +111,11 @@ describe('resolveExplicitTerminalTitleAgentType', () => {
 })
 
 describe('resolveTerminalTitleAgentType', () => {
+  it('resolves DeepSeek Harness lifecycle titles', () => {
+    expect(resolveTerminalTitleAgentType('DeepSeek Harness working')).toBe('deepseek-harness')
+    expect(resolveTerminalTitleAgentType('DeepSeek Harness ready')).toBe('deepseek-harness')
+  })
+
   // Why: the activity facet keeps Claude's braille prefix as Claude — but only when
   // the "cursor" it mentions is task text, not Cursor's own identity title.
   it('labels cursor-mentioning agent tabs by their true agent, real Cursor as cursor', () => {

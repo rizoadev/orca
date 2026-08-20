@@ -305,6 +305,26 @@ export const TUI_AGENT_CONFIG: Record<TuiAgent, TuiAgentConfig> = {
     expectedProcess: 'orca',
     // Why: one-shot `orca strands <prompt>` exits after the turn; keep the REPL and inject after start.
     promptInjectionMode: 'stdin-after-start'
+  },
+  'deepseek-harness': {
+    detectCmd: 'dsh',
+    // Why: `dsh` resolves to the community terminal front door (dsh-terminal-plugin)
+    // — an interactive REPL over the official Harness runtime. The explicit
+    // `cli` route is required so wrapper options and positional prompts are
+    // parsed by dsh-terminal-plugin instead of delegated to the official binary.
+    launchCmd: 'dsh cli',
+    expectedProcess: 'dsh',
+    // Why: interactive REPL; headless one-shots use `dsh --profile headless <task>`.
+    promptInjectionMode: 'argv'
+  },
+  paseo: {
+    detectCmd: 'paseo',
+    // Why: Paseo is an embedded web view (daemon web UI), not a terminal TUI;
+    // launch routing redirects to the view before any spawn happens, so this
+    // config only satisfies the exhaustive Record and powers detection.
+    launchCmd: 'paseo',
+    expectedProcess: 'paseo',
+    promptInjectionMode: 'argv'
   }
 }
 

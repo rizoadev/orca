@@ -24,6 +24,7 @@ const mockStoreState = {
     kimi: null,
     antigravity: null,
     minimax: null,
+    deepseek: null,
     grok: {
       provider: 'grok',
       session: null,

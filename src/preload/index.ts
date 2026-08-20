@@ -63,6 +63,12 @@ import type {
   S3ObjectActionResult,
   S3DownloadObjectResult
 } from '../shared/s3-types'
+import type { PaseoDaemonStatus } from '../shared/paseo-types'
+import type {
+  DeepSeekAgentPreset,
+  DeepSeekSessionSummary,
+  DeepSeekWebStatus
+} from '../shared/deepseek-web-types'
 import type {
   HiveAddCredentialArgs,
   HiveDeployEnvironmentArgs,
@@ -1868,6 +1874,28 @@ const api = {
       ipcRenderer.invoke('s3:deleteObject', args),
     downloadObject: (args: { key: string; targetPath: string }): Promise<S3DownloadObjectResult> =>
       ipcRenderer.invoke('s3:downloadObject', args)
+  },
+
+  paseo: {
+    getStatus: (): Promise<PaseoDaemonStatus> => ipcRenderer.invoke('paseo:getStatus'),
+    start: (): Promise<PaseoDaemonStatus> => ipcRenderer.invoke('paseo:start'),
+    stop: (): Promise<PaseoDaemonStatus> => ipcRenderer.invoke('paseo:stop'),
+    attachProject: (path: string | null): Promise<{ ok: boolean }> =>
+      ipcRenderer.invoke('paseo:attachProject', path),
+    getDaemonUrl: (): Promise<string> => ipcRenderer.invoke('paseo:getDaemonUrl')
+  },
+
+  deepseekWeb: {
+    getStatus: (): Promise<DeepSeekWebStatus> => ipcRenderer.invoke('deepseek-web:getStatus'),
+    start: (cwd: string | null): Promise<DeepSeekWebStatus> =>
+      ipcRenderer.invoke('deepseek-web:start', cwd),
+    stop: (): Promise<DeepSeekWebStatus> => ipcRenderer.invoke('deepseek-web:stop'),
+    listAgentPresets: (): Promise<DeepSeekAgentPreset[]> =>
+      ipcRenderer.invoke('deepseek-web:listAgentPresets'),
+    setDefaultAgentPreset: (id: string): Promise<DeepSeekWebStatus> =>
+      ipcRenderer.invoke('deepseek-web:setDefaultAgentPreset', id),
+    listSessions: (): Promise<DeepSeekSessionSummary[]> =>
+      ipcRenderer.invoke('deepseek-web:listSessions')
   },
 
   jira: {

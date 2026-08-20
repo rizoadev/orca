@@ -1,5 +1,6 @@
 import { toast } from 'sonner'
 import { useAppStore } from '@/store'
+import { routeWebViewTuiAgent } from '@/lib/route-web-view-tui-agent'
 import {
   buildAgentDraftLaunchPlan,
   buildAgentStartupPlan,
@@ -55,7 +56,7 @@ export type LaunchAgentInNewTabArgs = {
 
 export type LaunchAgentInNewTabResult = {
   tabId: string | null
-  startupPlan: AgentStartupPlan
+  startupPlan: AgentStartupPlan | null
   pasteDraftAfterLaunch: boolean
   promptDeliveryResult?: Promise<{ delivered: boolean; failureNotified: boolean }>
 } | null
@@ -71,6 +72,11 @@ export type LaunchAgentInNewTabResult = {
  * Returns `null` when no startup plan can be built (e.g. a whitespace-only prompt).
  */
 export function launchAgentInNewTab(args: LaunchAgentInNewTabArgs): LaunchAgentInNewTabResult {
+  // Why: web-view agents (DeepSeek Harness, Paseo) open their screen instead of a terminal tab.
+  if (routeWebViewTuiAgent(args.agent)) {
+    // Why: non-null avoids the generic launch-command toast; the view switch already happened.
+    return { tabId: null, startupPlan: null, pasteDraftAfterLaunch: false }
+  }
   const {
     agent,
     worktreeId,

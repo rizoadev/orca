@@ -181,7 +181,8 @@ function createSettings(overrides: TestSettingsOverrides = {}): GlobalSettings {
     leftSidebarAppearanceMode: overrides.leftSidebarAppearanceMode ?? 'default',
     appFontFamily,
     agentStatusHooksEnabled,
-    tabAutoGenerateTitle
+    tabAutoGenerateTitle,
+    deepseekApiKey: ''
   }
 }
 

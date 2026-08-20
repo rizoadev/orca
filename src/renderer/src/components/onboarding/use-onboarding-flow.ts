@@ -30,6 +30,7 @@ import { STEPS, type StepNumber } from './use-onboarding-flow-types'
 import { persistStep, useCloseWith, usePersistCurrentStep } from './use-onboarding-flow-persistence'
 import { callRuntimeRpc, getActiveRuntimeTarget } from '@/runtime/runtime-rpc-client'
 import { buildOnboardingFolderAgentStartup } from '@/lib/onboarding-folder-agent-startup'
+import { routeWebViewTuiAgent } from '@/lib/route-web-view-tui-agent'
 import { resolveOnboardingSettingsHydration } from './onboarding-settings-hydration'
 import { openProjectDefaultCheckout } from '../sidebar/project-added-default-checkout'
 import { translate } from '@/i18n/i18n'
@@ -553,6 +554,12 @@ export function useOnboardingFlow(
           // Why: non-git folders skip the composer, so seed their first terminal with the chosen default agent here.
           const startup = buildOnboardingFolderAgentStartup(settings)
           activateAndRevealWorktree(worktree.id, { startup })
+          // Why: web-view defaults (DeepSeek Harness, Paseo) seed no terminal; open their in-app screen.
+          routeWebViewTuiAgent(
+            settings?.defaultTuiAgent && settings.defaultTuiAgent !== 'blank'
+              ? settings.defaultTuiAgent
+              : null
+          )
         }
       }
       // Why: next() short-circuits the repo step; emit step_completed here, gated on closeWith success so a persistence failure can't double-count.

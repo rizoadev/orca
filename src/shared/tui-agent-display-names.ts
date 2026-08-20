@@ -40,7 +40,9 @@ export const TUI_AGENT_DISPLAY_NAMES: Record<TuiAgent, string> = {
   openclaw: 'OpenClaw',
   copilot: 'GitHub Copilot',
   grok: 'Grok',
-  strands: 'Strands'
+  strands: 'Strands',
+  'deepseek-harness': 'DeepSeek Harness',
+  paseo: 'Paseo'
 }
 
 /** Canonical agent id list derived from the exhaustive display-name record,

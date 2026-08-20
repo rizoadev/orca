@@ -5,6 +5,7 @@ const mockCreateTab = vi.fn()
 const mockQueueTabStartupCommand = vi.fn()
 const mockSetActiveTabType = vi.fn()
 const mockSetTabBarOrder = vi.fn()
+const mockSetActiveView = vi.fn()
 const mockSetAgentStatus = vi.fn()
 const mockPasteDraftWhenAgentReady = vi.fn()
 const mockSeedNativeChatLaunchPrompt = vi.fn()
@@ -78,6 +79,7 @@ const store = {
   queueTabStartupCommand: mockQueueTabStartupCommand,
   setActiveTabType: mockSetActiveTabType,
   setTabBarOrder: mockSetTabBarOrder,
+  setActiveView: mockSetActiveView,
   setAgentStatus: mockSetAgentStatus,
   seedNativeChatLaunchPrompt: mockSeedNativeChatLaunchPrompt,
   markNativeChatLaunchPromptFailed: mockMarkNativeChatLaunchPromptFailed
@@ -164,6 +166,22 @@ describe('launchAgentInNewTab', () => {
     store.ptyIdsByTabId = {}
     mockCreateTab.mockReturnValue({ id: 'tab-1' })
     mockPasteDraftWhenAgentReady.mockResolvedValue(true)
+  })
+
+  it('routes Paseo and DeepSeek Harness to their embedded web views without a terminal tab', async () => {
+    const { launchAgentInNewTab } = await import('./launch-agent-in-new-tab')
+    // Why: non-null keeps TabBar/QuickLaunch from showing the generic
+    // "Could not build launch command" toast for web-view agents.
+    for (const agent of ['paseo', 'deepseek-harness'] as const) {
+      mockSetActiveView.mockClear()
+      mockCreateTab.mockClear()
+      const result = launchAgentInNewTab({ agent, worktreeId: 'wt-1', groupId: 'wt-1' })
+      expect(result).not.toBeNull()
+      expect(result?.tabId).toBeNull()
+      expect(result?.startupPlan).toBeNull()
+      expect(mockSetActiveView).toHaveBeenCalledWith(agent)
+      expect(mockCreateTab).not.toHaveBeenCalled()
+    }
   })
 
   it('stamps the launched agent on the new tab for immediate provider icon bootstrap', async () => {

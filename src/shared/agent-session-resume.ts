@@ -12,7 +12,8 @@ export const RESUMABLE_TUI_AGENTS = [
   'mimo-code',
   'droid',
   'grok',
-  'devin'
+  'devin',
+  'deepseek-harness'
 ] as const satisfies readonly TuiAgent[]
 
 export type ResumableTuiAgent = (typeof RESUMABLE_TUI_AGENTS)[number]
@@ -250,5 +251,7 @@ export function getAgentResumeArgv(
       return providerSession.key === 'session_id' ? ['grok', '--resume', id] : null
     case 'devin':
       return providerSession.key === 'session_id' ? ['devin', '--resume', id] : null
+    case 'deepseek-harness':
+      return providerSession.key === 'session_id' ? ['dsh', 'cli', '--resume', id] : null
   }
 }

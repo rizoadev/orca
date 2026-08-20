@@ -7,7 +7,8 @@ import { scanAiVaultSessions } from './session-scanner'
 import {
   isolatedScanRoots,
   jsonLines,
-  writeAntigravityScannerFixture
+  writeAntigravityScannerFixture,
+  writeDeepSeekScannerFixture
 } from './session-scanner-test-fixtures'
 
 let tempRoots: string[] = []
@@ -725,6 +726,8 @@ describe('scanAiVaultSessions', () => {
       ])
     )
 
+    const deepseekSessionId = await writeDeepSeekScannerFixture(roots.deepseekSessionsDir)
+
     const result = await scanAiVaultSessions({ ...roots, platform: 'darwin', limit: 20 })
 
     expect(result.issues).toEqual([])
@@ -767,6 +770,9 @@ describe('scanAiVaultSessions', () => {
     expect(commandByAgent.get('droid')).toBe("cd '/tmp/droid' && droid --resume 'droid-session'")
     expect(commandByAgent.get('kimi')).toBe(
       "cd '/tmp/kimi' && kimi --session 'session_kimi-session'"
+    )
+    expect(commandByAgent.get('deepseek-harness')).toBe(
+      `cd '/tmp/deepseek' && dsh cli --resume '${deepseekSessionId}'`
     )
 
     const ompSession = result.sessions.find((session) => session.agent === 'omp')

@@ -155,6 +155,19 @@ describe('agent process recognition', () => {
     expect(isRecognizedAgentType('qwen')).toBe(true)
   })
 
+  it('recognizes DeepSeek Harness by its dsh executable', () => {
+    expect(recognizeAgentProcess('/home/dev/.local/bin/dsh')).toEqual({
+      agent: 'deepseek-harness',
+      processName: 'dsh'
+    })
+    expect(recognizeAgentProcess(String.raw`C:\Users\dev\AppData\Roaming\npm\dsh.cmd`)).toEqual({
+      agent: 'deepseek-harness',
+      processName: 'dsh'
+    })
+    expect(isExpectedAgentProcess('/usr/local/bin/dsh', 'dsh')).toBe(true)
+    expect(isRecognizedAgentType('dsh')).toBe(true)
+  })
+
   it('recognizes agent CLIs launched through interpreter wrappers', () => {
     expect(
       recognizeAgentProcessFromCommandLine('node /Users/dev/.nvm/versions/node/bin/codex')

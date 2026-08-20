@@ -14,7 +14,10 @@ const TOP_LEVEL_VIEW_LOOKUP: Record<TopLevelView, true> = {
   'issues-board': true,
   'agent-dashboard': true,
   'orchestration-board': true,
-  docker: true
+  notes: true,
+  paseo: true,
+  docker: true,
+  'deepseek-harness': true
 }
 
 export function isTopLevelView(value: unknown): value is TopLevelView {

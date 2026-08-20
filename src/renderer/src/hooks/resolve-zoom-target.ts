@@ -15,7 +15,10 @@ export function resolveZoomTarget(args: {
     | 'issues-board'
     | 'agent-dashboard'
     | 'orchestration-board'
+    | 'notes'
+    | 'paseo'
     | 'docker'
+    | 'deepseek-harness'
   activeTabType: 'terminal' | 'editor' | 'browser' | 'simulator'
   activeElement: unknown
 }): 'terminal' | 'editor' | 'simulator' | 'ui' {

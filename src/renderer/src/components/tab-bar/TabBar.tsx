@@ -3,6 +3,8 @@ import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { useShallow } from 'zustand/react/shallow'
 import { SortableContext } from '@dnd-kit/sortable'
 import {
+  Bot,
+  MessageSquareText,
   ChevronLeft,
   ChevronRight,
   FilePlus,
@@ -116,6 +118,10 @@ type TabBarProps = {
   /** On Windows, opens a new terminal with a specific shell instead of the default. */
   onNewTerminalWithShell?: (shell: string) => void
   onNewBrowserTab: () => void
+  /** Opens the DeepSeek Harness web UI as a browser tab for the active worktree. */
+  onNewDeepSeekHarnessTab?: () => void
+  /** Opens the Paseo web UI as a browser tab for the active worktree. */
+  onNewPaseoWebTab?: () => void
   onNewSimulatorTab?: () => void
   onOpenEntry?: (args: TabCreateEntryArgs) => Promise<void>
   terminalOnly?: boolean
@@ -241,6 +247,8 @@ function TabBarInner({
   onNewTerminalTab,
   onNewTerminalWithShell,
   onNewBrowserTab,
+  onNewDeepSeekHarnessTab,
+  onNewPaseoWebTab,
   onNewSimulatorTab,
   onOpenEntry,
   terminalOnly = false,
@@ -688,6 +696,26 @@ function TabBarInner({
       <DropdownMenuShortcut>{newBrowserShortcut}</DropdownMenuShortcut>
     </DropdownMenuItem>
   ) : null
+  const newDeepSeekHarnessMenuItem =
+    !terminalOnly && onNewDeepSeekHarnessTab ? (
+      <DropdownMenuItem
+        onSelect={onNewDeepSeekHarnessTab}
+        className="gap-2 rounded-[7px] px-2 py-1.5 text-[12px] leading-5 font-medium"
+      >
+        <Bot className="size-4 text-muted-foreground" />
+        {translate('deepseek.view.new-tab', 'DeepSeek Harness')}
+      </DropdownMenuItem>
+    ) : null
+  const newPaseoWebMenuItem =
+    !terminalOnly && onNewPaseoWebTab ? (
+      <DropdownMenuItem
+        onSelect={onNewPaseoWebTab}
+        className="gap-2 rounded-[7px] px-2 py-1.5 text-[12px] leading-5 font-medium"
+      >
+        <MessageSquareText className="size-4 text-muted-foreground" />
+        {translate('paseo.view.new-tab', 'Paseo')}
+      </DropdownMenuItem>
+    ) : null
   const newSimulatorMenuItem =
     !terminalOnly && mobileEmulatorEnabled && onNewSimulatorTab ? (
       workspaceHasSimulatorTab ? (
@@ -759,6 +787,8 @@ function TabBarInner({
         {openMarkdownMenuItem}
         {defaultTerminalMenuItems}
         {newBrowserMenuItem}
+        {newDeepSeekHarnessMenuItem}
+        {newPaseoWebMenuItem}
         {newSimulatorMenuItem}
         {mobileEmulatorIntroMenuBlock}
       </>
@@ -766,6 +796,8 @@ function TabBarInner({
       <>
         {defaultTerminalMenuItems}
         {newBrowserMenuItem}
+        {newDeepSeekHarnessMenuItem}
+        {newPaseoWebMenuItem}
         {newMarkdownMenuItem}
         {openMarkdownMenuItem}
         {newSimulatorMenuItem}

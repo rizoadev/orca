@@ -23,7 +23,9 @@ const WELL_KNOWN_LABELS: Record<string, string> = {
   devin: 'Devin',
   ante: 'Ante',
   kimi: 'Kimi',
-  strands: 'Strands'
+  strands: 'Strands',
+  'deepseek-harness': 'DeepSeek Harness',
+  paseo: 'Paseo'
 }
 
 export function formatAgentTypeLabel(agentType: AgentType | null | undefined): string {

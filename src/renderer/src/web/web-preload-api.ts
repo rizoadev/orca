@@ -857,6 +857,34 @@ function createWebPreloadApi(): Partial<PreloadApi> {
           error: 'S3 uploads are only available in the desktop app.'
         })
     },
+    paseo: {
+      getStatus: () =>
+        Promise.resolve({
+          state: 'stopped' as const,
+          port: 6768,
+          url: null,
+          pid: null,
+          error: 'Paseo is only available in the desktop app.'
+        }),
+      start: () =>
+        Promise.resolve({
+          state: 'stopped' as const,
+          port: 6768,
+          url: null,
+          pid: null,
+          error: 'Paseo is only available in the desktop app.'
+        }),
+      stop: () =>
+        Promise.resolve({
+          state: 'stopped' as const,
+          port: 6768,
+          url: null,
+          pid: null,
+          error: null
+        }),
+      attachProject: () => Promise.resolve({ ok: false }),
+      getDaemonUrl: () => Promise.resolve('')
+    },
     hostedReview: createRuntimeNamespaceApi('hostedReview'),
     linear: createRuntimeNamespaceApi('linear'),
     hooks: createHooksApi(),
