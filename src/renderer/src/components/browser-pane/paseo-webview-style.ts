@@ -164,8 +164,17 @@ function buildPaseoWorkspaceFilterScript(worktreePath: string): string {
         }
         const keep = targetId === null || currentProject === matchedProject
         if (keep) {
-          el.style.setProperty('pointer-events', 'none', 'important')
-          el.style.cursor = 'default'
+          if (tid.startsWith('sidebar-project-row-')) {
+            // Why: the project name row is the accordion header (chevron); the
+            // pinned view must stay expanded, so collapse clicks are blocked.
+            el.style.setProperty('pointer-events', 'none', 'important')
+            el.style.cursor = 'default'
+          } else {
+            // Why: workspace rows are the session list; they stay clickable so
+            // the user can switch sessions, so pointer events are restored.
+            el.style.removeProperty('pointer-events')
+            el.style.removeProperty('cursor')
+          }
         } else {
           const wrapper = dragCellOf(el)
           if (wrapper.parentNode) wrapper.parentNode.removeChild(wrapper)
