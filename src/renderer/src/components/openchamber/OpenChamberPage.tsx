@@ -16,11 +16,10 @@ import type {
   OpenChamberWebStatus
 } from '../../../../shared/openchamber-web-types'
 import {
-  openChamberUrlForDirectory,
   prepareOpenChamberWebview,
-  queueOpenChamberDirectory,
-  stripOpenChamberQuery
+  queueOpenChamberDirectory
 } from '@/components/browser-pane/openchamber-webview-style'
+import { OPENCHAMBER_WEBVIEW_CSS } from '@/lib/openchamber-webview-css'
 
 // Why: this webview has no store page id; a fixed key addresses its pending session.
 const OPENCHAMBER_PAGE_ID = 'openchamber-page-view'
@@ -74,14 +73,11 @@ export default function OpenChamberPage(): React.JSX.Element {
       return
     }
     void window.api.openchamberWeb.attachDirectory(worktreePath)
-    // Why: the SPA hydrates its directory from localStorage on boot; a
-    // cache-busted URL forces the webview to navigate, re-firing dom-ready
-    // where the localStorage pin is written and the SPA reloads onto the new
-    // worktree.
-    if (webUrl) {
-      queueOpenChamberDirectory(OPENCHAMBER_PAGE_ID, worktreePath)
-      setWebUrl(openChamberUrlForDirectory(stripOpenChamberQuery(webUrl), worktreePath))
-    }
+    // Why: re-pin the SPA's localStorage-backed directory and reload the
+    // webview so it hydrates onto this worktree, not a stale last-loaded one.
+    // The dom-ready handler writes the pin before the SPA boots.
+    queueOpenChamberDirectory(OPENCHAMBER_PAGE_ID, worktreePath)
+    webviewRef.current?.reload()
   }, [state, activeWorktree?.path, activeWorktreeId, webUrl])
 
   const handleWebviewRef = useCallback(
@@ -107,6 +103,7 @@ export default function OpenChamberPage(): React.JSX.Element {
         if (path) {
           queueOpenChamberDirectory(OPENCHAMBER_PAGE_ID, path)
           prepareOpenChamberWebview(node, OPENCHAMBER_PAGE_ID, node.getURL())
+          node.insertCSS(OPENCHAMBER_WEBVIEW_CSS).catch(() => undefined)
         }
       }
       node.addEventListener('dom-ready', () => {

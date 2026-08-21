@@ -263,7 +263,10 @@ export class OpenChamberWebManager {
     this.port = await this.resolveFreePort()
     this.state = 'starting'
     this.error = null
-    this.cwd = cwd
+    // Why: do NOT set this.cwd here — attachDirectory() early-returns when
+    // this.cwd already equals the target, which would skip the POST that
+    // actually points the server at the worktree. cwd is committed only on a
+    // successful attach below.
 
     // Why: isolate OpenChamber's data dir so Orca-managed sessions, drafts and
     // config stay scoped to Orca instead of the user's real ~/.config/openchamber.
@@ -316,7 +319,6 @@ export class OpenChamberWebManager {
     // Why: connect the active worktree to the server's directory scope once the
     // listener is up, matching how DeepSeek registers the worktree as a workspace.
     if (this.isRunning() && ready && cwd) {
-      this.cwd = cwd
       await this.attachDirectory(cwd)
     }
     return this.getStatus()

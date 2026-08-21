@@ -6,6 +6,7 @@
  */
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Layers, LoaderCircle, RefreshCw } from 'lucide-react'
+import { useAppStore } from '@/store'
 import { useActiveWorktree, useActiveWorktreeId } from '@/store/selectors'
 import { Button } from '@/components/ui/button'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
@@ -19,6 +20,7 @@ import {
 import { translate } from '@/i18n/i18n'
 import { DEEPSEEK_WEBVIEW_CSS } from '@/lib/deepseek-webview-css'
 import {
+  alertDeepSeekCwdMismatch,
   prepareDeepSeekWebview,
   queueDeepSeekSession
 } from '@/components/browser-pane/deepseek-webview-style'
@@ -91,6 +93,18 @@ export default function DeepSeekPage(): React.JSX.Element {
     node.addEventListener('dom-ready', () => {
       prepareDeepSeekWebview(node, DEEPSEEK_PAGE_ID, node.getURL())
       injectCss()
+      // Why: after the SPA hydrates, surface a banner + force-sync button if
+      // the pinned session is still on a different cwd than the active worktree
+      // (the pin+reload can fail silently).
+      const path = useAppStore
+        .getState()
+        .getKnownWorktreeById(useAppStore.getState().activeWorktreeId ?? '')?.path
+      const worktreeId = useAppStore.getState().activeWorktreeId
+      if (path && worktreeId) {
+        window.setTimeout(() => {
+          alertDeepSeekCwdMismatch(node, DEEPSEEK_PAGE_ID, path, worktreeId)
+        }, 1_200)
+      }
     })
     node.addEventListener('did-navigate', injectCss)
   }, [])

@@ -46,6 +46,7 @@ import { useShallow } from 'zustand/react/shallow'
 import { isRemoteWorkspaceSnapshotApplyInProgress, useIpcEvents } from './hooks/useIpcEvents'
 import { usePaseoWorktreeFollow } from './hooks/use-paseo-worktree-follow'
 import { useOpenChamberWorktreeFollow } from './hooks/use-openchamber-worktree-follow'
+import { useDeepSeekWorktreeFollow } from './hooks/use-deepseek-worktree-follow'
 import { useAutomationDispatchEvents } from './hooks/useAutomationDispatchEvents'
 import RetainedAgentsSyncGate from './components/dashboard/RetainedAgentsSyncGate'
 import { AgentHibernationGate } from './components/AgentHibernationGate'
@@ -343,6 +344,9 @@ const AddProjectFromFolderDialog = lazy(
   () => import('./components/sidebar/AddProjectFromFolderDialog')
 )
 const ProjectAddedDialog = lazy(() => import('./components/sidebar/ProjectAddedDialog'))
+const DeepSeekCwdMismatchDialog = lazy(
+  () => import('./components/deepseek/DeepSeekCwdMismatchDialog')
+)
 const DeleteWorktreeDialog = lazy(() => import('./components/sidebar/DeleteWorktreeDialog'))
 const DictationController = lazy(() =>
   import('./components/dictation/DictationController').then((module) => ({
@@ -741,6 +745,7 @@ function App(): React.JSX.Element {
   // Why: keep the open Paseo browser tab attached to the active worktree's directory.
   usePaseoWorktreeFollow()
   useOpenChamberWorktreeFollow()
+  useDeepSeekWorktreeFollow()
   useAutomationDispatchEvents()
   // Why: retention runs at App level (in <RetainedAgentsSyncGate />, a null leaf) so "done" agents survive card collapse and its high-churn subscriptions don't re-render App.
   // Why: git polling lives at App level (RightSidebar unmounts when closed, stranding stale Rebasing/Merging badges); gate on workspaceSessionReady so it doesn't compete with first paint.
@@ -2413,6 +2418,16 @@ function App(): React.JSX.Element {
                   compact
                 >
                   <ProjectAddedDialog />
+                </RecoverableRenderErrorBoundary>
+              ) : null}
+              {activeModal === 'deepseek-cwd-mismatch' ? (
+                <RecoverableRenderErrorBoundary
+                  boundaryId="modal.deepseek-cwd-mismatch"
+                  surface="modal"
+                  resetKey
+                  compact
+                >
+                  <DeepSeekCwdMismatchDialog />
                 </RecoverableRenderErrorBoundary>
               ) : null}
             </Suspense>

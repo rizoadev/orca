@@ -6,6 +6,7 @@ const store = vi.hoisted(() => ({
 }))
 
 const deepseek = vi.hoisted(() => ({
+  getStatus: vi.fn(),
   start: vi.fn(),
   listSessions: vi.fn()
 }))
@@ -30,6 +31,13 @@ vi.mock('@/i18n/i18n', () => ({
   translate: (_key: string, fallback: string) => fallback
 }))
 
+// Why: the helper calls window.api.deepseekWeb.* directly.
+vi.stubGlobal('window', {
+  api: {
+    deepseekWeb: deepseek
+  }
+})
+
 const browserTabsByWorktree: Record<string, { id: string; title: string; url: string }[]> = {}
 
 describe('openDeepSeekHarnessTab idempotency', () => {
@@ -37,7 +45,7 @@ describe('openDeepSeekHarnessTab idempotency', () => {
     vi.clearAllMocks()
   })
 
-  it('re-focuses an existing DeepSeek tab without spawning a duplicate', async () => {
+  it('re-focuses an existing DeepSeek tab without spawning a duplicate, re-pointing the host cwd', async () => {
     const existingTab = {
       id: 'ws-deepseek',
       title: 'DeepSeek Harness',
@@ -45,6 +53,8 @@ describe('openDeepSeekHarnessTab idempotency', () => {
     }
     browserTabsByWorktree['wt-1'] = [existingTab]
     const createBrowserTab = vi.fn()
+    deepseek.start.mockResolvedValue({ state: 'running', url: 'http://127.0.0.1:88/' })
+    deepseek.getStatus.mockResolvedValue({ cwd: '/repo' })
     store.getState.mockReturnValue({
       browserTabsByWorktree,
       getKnownWorktreeById: vi.fn(() => ({ path: '/repo' })),
@@ -56,8 +66,8 @@ describe('openDeepSeekHarnessTab idempotency', () => {
 
     await openDeepSeekHarnessTab('wt-1', 'main')
 
+    expect(deepseek.start).toHaveBeenCalledWith('/repo')
     expect(store.setActiveBrowserTab).toHaveBeenCalledWith('ws-deepseek')
-    expect(deepseek.start).not.toHaveBeenCalled()
     expect(createBrowserTab).not.toHaveBeenCalled() // no duplicate tab spawned
   })
 })

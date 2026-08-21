@@ -154,6 +154,8 @@ export type BrowserSlice = {
   ) => void
   setBrowserTabUrl: (pageId: string, url: string) => void
   setBrowserPageUrl: (pageId: string, url: string) => void
+  /** Force the guest webview for a page to reload without changing its URL. */
+  reloadBrowserPage: (pageId: string) => void
   setRemoteBrowserPageHandle: (pageId: string, handle: RemoteBrowserPageHandle) => void
   removeRemoteBrowserPageHandle: (
     pageId: string,
@@ -1444,6 +1446,35 @@ export const createBrowserSlice: StateCreator<AppState, [], [], BrowserSlice> = 
   },
 
   setBrowserTabUrl: (pageId, url) => get().setBrowserPageUrl(pageId, url),
+
+  reloadBrowserPage: (pageId) => {
+    set((s) => {
+      const page = findPage(s.browserPagesByWorkspace, pageId)
+      if (!page) {
+        return s
+      }
+      const workspace = findWorkspace(s.browserTabsByWorktree, page.workspaceId)
+      if (!workspace) {
+        return s
+      }
+      const nextPages = (s.browserPagesByWorkspace[workspace.id] ?? []).map((entry) =>
+        entry.id === pageId ? { ...entry, reloadToken: (entry.reloadToken ?? 0) + 1 } : entry
+      )
+      const nextWorkspace = mirrorWorkspaceFromActivePage(workspace, nextPages)
+      return {
+        browserPagesByWorkspace: {
+          ...s.browserPagesByWorkspace,
+          [workspace.id]: nextPages
+        },
+        browserTabsByWorktree: {
+          ...s.browserTabsByWorktree,
+          [workspace.worktreeId]: (s.browserTabsByWorktree[workspace.worktreeId] ?? []).map((tab) =>
+            tab.id === workspace.id ? nextWorkspace : tab
+          )
+        }
+      }
+    })
+  },
 
   setBrowserPageUrl: (pageId, url) => {
     const nextUrl = normalizeUrl(url)

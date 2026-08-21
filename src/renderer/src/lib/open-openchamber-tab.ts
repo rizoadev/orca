@@ -1,10 +1,7 @@
 import { toast } from 'sonner'
 import { useAppStore } from '@/store'
 import { translate } from '@/i18n/i18n'
-import {
-  openChamberUrlForDirectory,
-  queueOpenChamberDirectory
-} from '@/components/browser-pane/openchamber-webview-style'
+import { queueOpenChamberDirectory } from '@/components/browser-pane/openchamber-webview-style'
 import { isWebViewAgentTab } from '@/components/sidebar/worktree-available-webview-agent-rows'
 
 /**
@@ -44,18 +41,13 @@ export async function openOpenChamberTab(worktreeId: string, groupId: string): P
   // Why: point the server's OpenCode working directory at this worktree so the
   // web app's session list targets the project the tab was opened from.
   await window.api.openchamberWeb.attachDirectory(worktree.path).catch(() => undefined)
-  // Why: cache-busted URL so the dom-ready handler pins localStorage to this
-  // worktree; the query is ignored by the SPA but forces the navigation that
-  // re-fires dom-ready with the pin queued.
-  const created = useAppStore
-    .getState()
-    .createBrowserTab(worktreeId, openChamberUrlForDirectory(status.url, worktree.path), {
-      activate: true,
-      targetGroupId: groupId,
-      title: 'OpenChamber',
-      hideBrowserChrome: true,
-      webViewAgentType: 'openchamber'
-    })
+  const created = useAppStore.getState().createBrowserTab(worktreeId, status.url, {
+    activate: true,
+    targetGroupId: groupId,
+    title: 'OpenChamber',
+    hideBrowserChrome: true,
+    webViewAgentType: 'openchamber'
+  })
   // Why: pin the web app's persisted directory so it hydrates onto this
   // worktree (the server-side attach alone does not re-target the SPA's
   // localStorage-backed directory store).

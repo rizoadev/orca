@@ -960,6 +960,10 @@ export type BrowserPage = {
   browserRuntimeEnvironmentId?: string | null
   /** Active CDP viewport emulation preset. null = default (fill pane, no CDP override) */
   viewportPresetId?: BrowserViewportPresetId | null
+  /** Bumped by reloadBrowserPage() to force the guest webview to reload without
+   *  changing its URL (used to re-target embedded web-view SPAs like OpenChamber
+   *  whose boot state lives in localStorage). */
+  reloadToken?: number
 }
 
 export type BrowserWorkspace = {

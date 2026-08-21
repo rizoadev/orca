@@ -87,6 +87,7 @@ import { rememberLiveBrowserUrl } from './browser-runtime'
 import { ensureBrowserPageWebview } from './browser-page-webview'
 import { maybeHidePaseoWorkspaceList, preparePaseoWebview } from './paseo-webview-style'
 import { prepareDeepSeekWebview } from './deepseek-webview-style'
+import { OPENCHAMBER_WEBVIEW_CSS } from '@/lib/openchamber-webview-css'
 import { prepareOpenChamberWebview } from './openchamber-webview-style'
 import {
   destroyPersistentWebview,
@@ -3564,6 +3565,18 @@ function BrowserPagePane({
     })
   }, [isActive])
 
+  // Why: reloadBrowserPage() bumps reloadToken to re-target embedded web-view
+  // SPAs (e.g. OpenChamber) whose boot state lives in localStorage, without
+  // touching the URL. Skip the first mount — a fresh token must not double-load.
+  const firstReloadTokenRef = useRef(true)
+  useEffect(() => {
+    if (firstReloadTokenRef.current) {
+      firstReloadTokenRef.current = false
+      return
+    }
+    webviewRef.current?.reload()
+  }, [browserTab.reloadToken])
+
   useEffect(() => {
     if (!isActive) {
       return
@@ -3749,7 +3762,12 @@ function BrowserPagePane({
       // Why: the DeepSeek Harness SPA must also hide its toolbar / workspace
       // list in a browser tab (the screen-side webview already does this).
       const url = webview.getURL()
-      if (/^http:\/\/127\.0\.0\.1:\d+\/?$/.test(url)) {
+      const webViewAgentType = useAppStore
+        .getState()
+        .browserTabsByWorktree[worktreeId]?.find((t) => t.id === workspaceId)?.webViewAgentType
+      if (webViewAgentType === 'openchamber') {
+        webview.insertCSS(OPENCHAMBER_WEBVIEW_CSS).catch(() => undefined)
+      } else if (/^http:\/\/127\.0\.0\.1:\d+\/?$/.test(url)) {
         webview.insertCSS(DEEPSEEK_WEBVIEW_CSS).catch(() => undefined)
       }
       const queuedAnnotationViewportBridgeSync =
