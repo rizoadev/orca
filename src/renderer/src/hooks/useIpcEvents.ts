@@ -53,6 +53,9 @@ import {
 } from './ipc-tab-switch'
 import { ensureSimulatorTab } from '@/lib/ensure-simulator-tab'
 import { openMobileEmulatorTab } from '@/lib/open-mobile-emulator-tab'
+import { openOpenChamberTab } from '@/lib/open-openchamber-tab'
+import { openDeepSeekHarnessTab } from '@/lib/open-deepseek-harness-tab'
+import { openPaseoWebTab } from '@/lib/open-paseo-web-tab'
 import {
   isManualSimulatorLaunchPending,
   rememberPrelaunchedSimulatorSession
@@ -2239,6 +2242,57 @@ export function useIpcEvents(): void {
     })
     if (unsubscribeNewSimulatorTab) {
       unsubs.push(unsubscribeNewSimulatorTab)
+    }
+
+    const unsubscribeNewOpenChamberTab = window.api.ui.onNewOpenChamberTab?.(() => {
+      if (isRuntimeEnvironmentActive()) {
+        return
+      }
+      const store = useAppStore.getState()
+      const worktreeId = store.activeWorktreeId
+      if (!worktreeId) {
+        return
+      }
+      const targetGroupId =
+        store.activeGroupIdByWorktree[worktreeId] ?? store.groupsByWorktree[worktreeId]?.[0]?.id
+      void openOpenChamberTab(worktreeId, targetGroupId ?? worktreeId)
+    })
+    if (unsubscribeNewOpenChamberTab) {
+      unsubs.push(unsubscribeNewOpenChamberTab)
+    }
+
+    const unsubscribeNewDeepSeekHarnessTab = window.api.ui.onNewDeepSeekHarnessTab?.(() => {
+      if (isRuntimeEnvironmentActive()) {
+        return
+      }
+      const store = useAppStore.getState()
+      const worktreeId = store.activeWorktreeId
+      if (!worktreeId) {
+        return
+      }
+      const targetGroupId =
+        store.activeGroupIdByWorktree[worktreeId] ?? store.groupsByWorktree[worktreeId]?.[0]?.id
+      void openDeepSeekHarnessTab(worktreeId, targetGroupId ?? worktreeId)
+    })
+    if (unsubscribeNewDeepSeekHarnessTab) {
+      unsubs.push(unsubscribeNewDeepSeekHarnessTab)
+    }
+
+    const unsubscribeNewPaseoTab = window.api.ui.onNewPaseoTab?.(() => {
+      if (isRuntimeEnvironmentActive()) {
+        return
+      }
+      const store = useAppStore.getState()
+      const worktreeId = store.activeWorktreeId
+      if (!worktreeId) {
+        return
+      }
+      const targetGroupId =
+        store.activeGroupIdByWorktree[worktreeId] ?? store.groupsByWorktree[worktreeId]?.[0]?.id
+      void openPaseoWebTab(worktreeId, targetGroupId ?? worktreeId)
+    })
+    if (unsubscribeNewPaseoTab) {
+      unsubs.push(unsubscribeNewPaseoTab)
     }
 
     const unsubscribeEmulatorAutoAttach = window.api.emulator?.onAutoAttach(

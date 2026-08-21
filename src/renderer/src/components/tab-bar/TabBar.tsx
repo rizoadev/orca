@@ -3,8 +3,6 @@ import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { useShallow } from 'zustand/react/shallow'
 import { SortableContext } from '@dnd-kit/sortable'
 import {
-  Bot,
-  MessageSquareText,
   ChevronLeft,
   ChevronRight,
   FilePlus,
@@ -73,6 +71,7 @@ import { buildTabCreateMenuOptions, type TabCreateMenuOption } from './tab-creat
 import { MobileEmulatorTabIntroCallout } from '../emulator-pane/MobileEmulatorTabIntroCallout'
 import { shouldShowMobileEmulatorTabIntro } from '../emulator-pane/mobile-emulator-tab-intro-visibility'
 import { translate } from '@/i18n/i18n'
+import { AgentIcon } from '@/lib/agent-catalog'
 import { TabStripScrollIndicator } from './TabStripScrollIndicator'
 import { getTabStripScrollMaskClassName } from './tab-strip-scroll-metrics'
 import { useTabStripOverflowNavigation } from './tab-strip-overflow-navigation'
@@ -286,6 +285,9 @@ function TabBarInner({
   const newSimulatorShortcut = useShortcutLabel('tab.newSimulator')
   const newFileShortcut = useShortcutLabel('tab.newMarkdown')
   const openMarkdownShortcut = useOptionalShortcutLabel('tab.openMarkdown')
+  const newOpenChamberShortcut = useOptionalShortcutLabel('tab.newOpenChamber')
+  const newDeepSeekHarnessShortcut = useOptionalShortcutLabel('tab.newDeepSeekHarness')
+  const newPaseoShortcut = useOptionalShortcutLabel('tab.newPaseo')
   const generatedTabTitlesEnabled = useAppStore((s) => s.settings?.tabAutoGenerateTitle === true)
   const mobileEmulatorEnabled = useAppStore((s) => s.settings?.mobileEmulatorEnabled !== false)
   const persistedUIReady = useAppStore((s) => s.persistedUIReady)
@@ -705,8 +707,11 @@ function TabBarInner({
         onSelect={onNewDeepSeekHarnessTab}
         className="gap-2 rounded-[7px] px-2 py-1.5 text-[12px] leading-5 font-medium"
       >
-        <Bot className="size-4 text-muted-foreground" />
+        <AgentIcon agent="deepseek-harness" size={16} />
         {translate('deepseek.view.new-tab', 'DeepSeek Harness')}
+        {newDeepSeekHarnessShortcut ? (
+          <DropdownMenuShortcut>{newDeepSeekHarnessShortcut}</DropdownMenuShortcut>
+        ) : null}
       </DropdownMenuItem>
     ) : null
   const newPaseoWebMenuItem =
@@ -715,8 +720,9 @@ function TabBarInner({
         onSelect={onNewPaseoWebTab}
         className="gap-2 rounded-[7px] px-2 py-1.5 text-[12px] leading-5 font-medium"
       >
-        <MessageSquareText className="size-4 text-muted-foreground" />
+        <AgentIcon agent="paseo" size={16} />
         {translate('paseo.view.new-tab', 'Paseo')}
+        {newPaseoShortcut ? <DropdownMenuShortcut>{newPaseoShortcut}</DropdownMenuShortcut> : null}
       </DropdownMenuItem>
     ) : null
   const newOpenChamberMenuItem =
@@ -725,8 +731,11 @@ function TabBarInner({
         onSelect={onNewOpenChamberTab}
         className="gap-2 rounded-[7px] px-2 py-1.5 text-[12px] leading-5 font-medium"
       >
-        <Bot className="size-4 text-muted-foreground" />
+        <AgentIcon agent="openchamber" size={16} />
         {translate('openchamber.view.new-tab', 'OpenChamber')}
+        {newOpenChamberShortcut ? (
+          <DropdownMenuShortcut>{newOpenChamberShortcut}</DropdownMenuShortcut>
+        ) : null}
       </DropdownMenuItem>
     ) : null
   const newSimulatorMenuItem =

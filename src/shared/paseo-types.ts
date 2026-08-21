@@ -9,3 +9,11 @@ export type PaseoDaemonStatus = {
   pid: number | null
   error: string | null
 }
+
+/** One project's Paseo workspace row for the in-app overview table. */
+export type PaseoProjectStatus = {
+  projectPath: string
+  workspaceId: string | null
+  serverId: string | null
+  attached: boolean
+}

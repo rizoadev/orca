@@ -374,6 +374,16 @@ export function setupGuestShortcutForwarding(args: {
       renderer.send('ui:newSimulatorTab')
     } else if (keybindingMatchesAction('tab.newMarkdown', input, process.platform, keybindings)) {
       renderer.send('ui:newMarkdownTab')
+    } else if (
+      keybindingMatchesAction('tab.newOpenChamber', input, process.platform, keybindings)
+    ) {
+      renderer.send('ui:newOpenChamberTab')
+    } else if (
+      keybindingMatchesAction('tab.newDeepSeekHarness', input, process.platform, keybindings)
+    ) {
+      renderer.send('ui:newDeepSeekHarnessTab')
+    } else if (keybindingMatchesAction('tab.newPaseo', input, process.platform, keybindings)) {
+      renderer.send('ui:newPaseoTab')
     } else if (keybindingMatchesAction('tab.newTerminal', input, process.platform, keybindings)) {
       // Why: Cmd/Ctrl+T opens a terminal even when a browser guest is focused (Shift+B is the new-browser-tab shortcut).
       renderer.send('ui:newTerminalTab')

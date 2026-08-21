@@ -26,8 +26,12 @@ const PASEO_WEBVIEW_URL_PATTERN = /^http:\/\/127\.0\.0\.1:\d+\/h\//
 
 // Why: AsyncStorage (web) stores this key verbatim in localStorage; setting it
 // pins the app to a specific workspace, clearing it lets the URL route win.
-const PASEO_LAST_WORKSPACE_KEY = 'paseo:last-workspace-route-selection'
+export const PASEO_LAST_WORKSPACE_KEY = 'paseo:last-workspace-route-selection'
 const PASEO_RESET_MARKER_KEY = 'paseo:selection-reset'
+// Why: the web app's own replica cache resolves a pinned workspace id back to
+// its directory; the match overlay checks this to decide whether the SPA
+// matches Orca's active worktree.
+export const PASEO_REPLICA_CACHE_KEY = '@paseo:replica-cache'
 
 // Why: renderer flows (open tab, worktree-follow, sidebar page) resolve the
 // workspace for Orca's active worktree asynchronously; queue it here keyed by

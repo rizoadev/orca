@@ -1,19 +1,14 @@
 /**
  * Keeps Paseo's project list in sync with Orca's active worktree. Sends
- * project.add.request to the daemon WebSocket whenever the active worktree
+ * open_project_request to the daemon WebSocket whenever the active worktree
  * path changes (or on startup), so the in-app Paseo web chat is always
  * attached to the project the user is looking at.
  */
 import WebSocket from 'ws'
 import type { PaseoDaemonManager } from './daemon-manager'
+import type { PaseoProjectStatus } from '../../shared/paseo-types'
 
-type ProjectAddResponse = {
-  requestId?: string
-  project?: { projectId?: string } | null
-  error?: string | null
-}
-
-type WorkspaceCreateResponse = {
+type OpenProjectResponse = {
   requestId?: string
   workspace?: { id?: string } | null
   error?: string | null
@@ -28,8 +23,7 @@ type SessionEnvelope = {
   type: 'session'
   message:
     | { type: 'status'; payload?: ServerInfoPayload }
-    | { type: 'project.add.response'; payload?: ProjectAddResponse }
-    | { type: 'workspace.create.response'; payload?: WorkspaceCreateResponse }
+    | { type: 'open_project_response'; payload?: OpenProjectResponse }
 }
 
 export type PaseoAttachResult = {
@@ -43,15 +37,17 @@ const REQUEST_TIMEOUT_MS = 10_000
 // Why: the daemon silently drops a session request sent in the same beat as
 // its server_info greeting; a short beat keeps the attach reliable.
 const ATTACH_DELAY_MS = 300
+// Why: attaching every Orca project up front must not hammer the daemon's WS;
+// a small worker pool keeps the creates serialized enough to stay reliable.
+const ATTACH_CONCURRENCY = 5
 
 export class PaseoAutoAttach {
   private lastAttachedPath: string | null = null
   private lastResult: PaseoAttachResult = { workspaceId: null, serverId: null }
   private attachInFlight: Promise<PaseoAttachResult> | null = null
   private daemon: PaseoDaemonManager
-  // Why: the daemon drops the request after fetch_workspaces, so we can't list
-  // to reuse. Cache path→workspace in-process instead; a fresh create always
-  // returns a valid workspace id.
+  // Why: the daemon dedupes by cwd (open_project reuses an active workspace),
+  // so this cache only skips a redundant WS round trip per path.
   private workspaceByPath = new Map<string, PaseoAttachResult>()
 
   constructor(daemon: PaseoDaemonManager) {
@@ -105,14 +101,47 @@ export class PaseoAutoAttach {
     }
   }
 
+  /**
+   * Attach every Orca worktree up front so each project has a workspace ready
+   * in the daemon — mirrors the OpenChamber per-project allocation pattern.
+   * Idempotent: already-attached paths resolve from the in-process cache.
+   */
+  async attachAllWorktrees(worktreePaths: string[]): Promise<PaseoProjectStatus[]> {
+    const results: PaseoProjectStatus[] = []
+    const queue = [...worktreePaths]
+    const workers = Array.from(
+      { length: Math.min(ATTACH_CONCURRENCY, Math.max(queue.length, 1)) },
+      async () => {
+        while (queue.length > 0) {
+          const path = queue.shift()
+          if (!path) {
+            return
+          }
+          try {
+            const result = await this.attachWorktree(path)
+            results.push({
+              projectPath: path,
+              workspaceId: result.workspaceId,
+              serverId: result.serverId,
+              attached: Boolean(result.workspaceId)
+            })
+          } catch {
+            results.push({ projectPath: path, workspaceId: null, serverId: null, attached: false })
+          }
+        }
+      }
+    )
+    await Promise.all(workers)
+    return results
+  }
+
   private async doAttach(worktreePath: string): Promise<PaseoAttachResult> {
     const url = `ws://127.0.0.1:${portOf(this.daemon)}${WS_PATH}`
     const stamp = Date.now()
     // Why: unique ids keep the daemon from resuming a stale session (it keys
     // reconnectable sessions by clientId) and let us correlate responses.
     const clientId = `orca-${stamp}`
-    const projectRequestId = `orca-project-${stamp}`
-    const workspaceRequestId = `orca-workspace-${stamp}`
+    const openProjectRequestId = `orca-open-project-${stamp}`
     let ws: WebSocket | null = null
     const send = (message: Record<string, unknown>): void => {
       ws?.send(JSON.stringify({ type: 'session', message }))
@@ -121,7 +150,6 @@ export class PaseoAutoAttach {
     return await new Promise<PaseoAttachResult>((resolve) => {
       let settled = false
       let serverId: string | null = null
-      let attachedProjectId: string | null = null
       const timer = setTimeout(() => {
         if (!settled) {
           settled = true
@@ -175,7 +203,7 @@ export class PaseoAutoAttach {
         }
         const message = envelope.message
         console.info(
-          `[paseo] ws msg=${message.type} req=${(message as { payload?: { requestId?: string } }).payload?.requestId ?? 'none'} wks=${workspaceRequestId}`
+          `[paseo] ws msg=${message.type} req=${(message as { payload?: { requestId?: string } }).payload?.requestId ?? 'none'}`
         )
         // Why: business messages only flow after the daemon's server_info
         // greeting; a same-beat request is silently dropped, so wait a beat.
@@ -184,10 +212,15 @@ export class PaseoAutoAttach {
             serverId = message.payload.serverId ?? null
             setTimeout(() => {
               if (!settled) {
+                // Why: open_project is the daemon's idempotent attach — it
+                // finds/creates the project and reuses an active workspace for
+                // the cwd (unarchiving an archived one) instead of creating a
+                // duplicate workspace per attach. workspace.create would be
+                // wrong here: it always makes a fresh workspace.
                 send({
-                  type: 'project.add.request',
+                  type: 'open_project_request',
                   cwd: worktreePath,
-                  requestId: projectRequestId
+                  requestId: openProjectRequestId
                 })
               }
             }, ATTACH_DELAY_MS)
@@ -195,32 +228,8 @@ export class PaseoAutoAttach {
           return
         }
         if (
-          message.type === 'project.add.response' &&
-          message.payload?.requestId === projectRequestId
-        ) {
-          if (message.payload.error) {
-            fail(message.payload.error)
-            return
-          }
-          attachedProjectId = message.payload.project?.projectId ?? null
-          // Why: a bare project has no active workspace; create one so the web
-          // UI shows the folder (file manager) instead of "Workspace unavailable".
-          // NOTE: do NOT list workspaces here — the daemon drops the request
-          // that follows fetch_workspaces; in-process cache handles reuse.
-          send({
-            type: 'workspace.create.request',
-            requestId: workspaceRequestId,
-            source: {
-              kind: 'directory',
-              path: worktreePath,
-              ...(attachedProjectId ? { projectId: attachedProjectId } : {})
-            }
-          })
-          return
-        }
-        if (
-          message.type === 'workspace.create.response' &&
-          message.payload?.requestId === workspaceRequestId
+          message.type === 'open_project_response' &&
+          message.payload?.requestId === openProjectRequestId
         ) {
           if (message.payload.error) {
             fail(message.payload.error)

@@ -63,13 +63,14 @@ import type {
   S3ObjectActionResult,
   S3DownloadObjectResult
 } from '../shared/s3-types'
-import type { PaseoDaemonStatus } from '../shared/paseo-types'
+import type { PaseoDaemonStatus, PaseoProjectStatus } from '../shared/paseo-types'
 import type {
   DeepSeekAgentPreset,
   DeepSeekSessionSummary,
   DeepSeekWebStatus
 } from '../shared/deepseek-web-types'
 import type {
+  OpenChamberProjectStatus,
   OpenChamberSessionSummary,
   OpenChamberWebStatus
 } from '../shared/openchamber-web-types'
@@ -1886,7 +1887,8 @@ const api = {
     stop: (): Promise<PaseoDaemonStatus> => ipcRenderer.invoke('paseo:stop'),
     attachProject: (path: string | null): Promise<{ ok: boolean }> =>
       ipcRenderer.invoke('paseo:attachProject', path),
-    getDaemonUrl: (): Promise<string> => ipcRenderer.invoke('paseo:getDaemonUrl')
+    getDaemonUrl: (): Promise<string> => ipcRenderer.invoke('paseo:getDaemonUrl'),
+    listProjects: (): Promise<PaseoProjectStatus[]> => ipcRenderer.invoke('paseo:listProjects')
   },
 
   deepseekWeb: {
@@ -1910,7 +1912,13 @@ const api = {
     attachDirectory: (directory: string | null): Promise<void> =>
       ipcRenderer.invoke('openchamber-web:attachDirectory', directory),
     listSessions: (): Promise<OpenChamberSessionSummary[]> =>
-      ipcRenderer.invoke('openchamber-web:listSessions')
+      ipcRenderer.invoke('openchamber-web:listSessions'),
+    listProjects: (): Promise<OpenChamberProjectStatus[]> =>
+      ipcRenderer.invoke('openchamber-web:listProjects'),
+    stopProject: (projectPath: string): Promise<void> =>
+      ipcRenderer.invoke('openchamber-web:stopProject', projectPath),
+    clearStorage: (projectPath: string): Promise<void> =>
+      ipcRenderer.invoke('openchamber-web:clearStorage', projectPath)
   },
 
   jira: {
@@ -3571,6 +3579,21 @@ const api = {
       const listener = (_event: Electron.IpcRendererEvent) => callback()
       ipcRenderer.on('ui:newMarkdownTab', listener)
       return () => ipcRenderer.removeListener('ui:newMarkdownTab', listener)
+    },
+    onNewOpenChamberTab: (callback: () => void): (() => void) => {
+      const listener = (_event: Electron.IpcRendererEvent) => callback()
+      ipcRenderer.on('ui:newOpenChamberTab', listener)
+      return () => ipcRenderer.removeListener('ui:newOpenChamberTab', listener)
+    },
+    onNewDeepSeekHarnessTab: (callback: () => void): (() => void) => {
+      const listener = (_event: Electron.IpcRendererEvent) => callback()
+      ipcRenderer.on('ui:newDeepSeekHarnessTab', listener)
+      return () => ipcRenderer.removeListener('ui:newDeepSeekHarnessTab', listener)
+    },
+    onNewPaseoTab: (callback: () => void): (() => void) => {
+      const listener = (_event: Electron.IpcRendererEvent) => callback()
+      ipcRenderer.on('ui:newPaseoTab', listener)
+      return () => ipcRenderer.removeListener('ui:newPaseoTab', listener)
     },
     onNewSimulatorTab: (callback: () => void): (() => void) => {
       const listener = (_event: Electron.IpcRendererEvent) => callback()

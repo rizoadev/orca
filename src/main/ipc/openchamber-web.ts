@@ -4,8 +4,9 @@
  */
 import { ipcMain } from 'electron'
 import type { OpenChamberWebManager } from '../openchamber/openchamber-web-manager'
+import type { OpenChamberSessionSummary } from '../../shared/openchamber-web-types'
 import type {
-  OpenChamberSessionSummary,
+  OpenChamberProjectStatus,
   OpenChamberWebStatus
 } from '../openchamber/openchamber-web-manager'
 
@@ -14,7 +15,12 @@ export function registerOpenChamberWebHandlers(manager: OpenChamberWebManager): 
   ipcMain.removeHandler('openchamber-web:start')
   ipcMain.removeHandler('openchamber-web:stop')
   ipcMain.removeHandler('openchamber-web:attachDirectory')
+  ipcMain.removeHandler('openchamber-web:listProjects')
   ipcMain.removeHandler('openchamber-web:listSessions')
+
+  ipcMain.handle('openchamber-web:listProjects', async (): Promise<OpenChamberProjectStatus[]> => {
+    return manager.listProjects()
+  })
 
   ipcMain.handle('openchamber-web:getStatus', async (): Promise<OpenChamberWebStatus> => {
     return manager.getStatus()
@@ -42,4 +48,18 @@ export function registerOpenChamberWebHandlers(manager: OpenChamberWebManager): 
   ipcMain.handle('openchamber-web:listSessions', async (): Promise<OpenChamberSessionSummary[]> => {
     return manager.listSessions()
   })
+
+  ipcMain.handle(
+    'openchamber-web:stopProject',
+    async (_event, projectPath: string): Promise<void> => {
+      manager.stopProject(projectPath)
+    }
+  )
+
+  ipcMain.handle(
+    'openchamber-web:clearStorage',
+    async (_event, projectPath: string): Promise<void> => {
+      await manager.clearProjectStorage(projectPath)
+    }
+  )
 }

@@ -904,6 +904,78 @@ describe('keybindings', () => {
     }
   })
 
+  it('gives OpenChamber a Mod+Alt+O default on macOS and Linux but keeps Windows unbound (AltGr)', () => {
+    expect(getEffectiveKeybindingsForAction('tab.newOpenChamber', 'darwin')).toEqual(['Mod+Alt+O'])
+    expect(getEffectiveKeybindingsForAction('tab.newOpenChamber', 'linux')).toEqual(['Mod+Alt+O'])
+    expect(getEffectiveKeybindingsForAction('tab.newOpenChamber', 'win32')).toEqual([])
+    expect(
+      keybindingMatchesAction(
+        'tab.newOpenChamber',
+        { key: 'o', code: 'KeyO', meta: true, control: false, alt: true, shift: false },
+        'darwin'
+      )
+    ).toBe(true)
+    expect(
+      keybindingMatchesAction(
+        'tab.newOpenChamber',
+        { key: 'o', code: 'KeyO', meta: false, control: true, alt: true, shift: false },
+        'linux'
+      )
+    ).toBe(true)
+    // Why: Mod+Shift+O is tab.openMarkdown, so the Alt chord must not collide with it.
+    expect(
+      keybindingMatchesAction(
+        'tab.openMarkdown',
+        { key: 'o', code: 'KeyO', meta: true, control: false, alt: true, shift: false },
+        'darwin'
+      )
+    ).toBe(false)
+  })
+
+  it('gives DeepSeek Harness a Mod+Alt+D default on macOS/Linux and keeps Windows unbound (AltGr)', () => {
+    expect(getEffectiveKeybindingsForAction('tab.newDeepSeekHarness', 'darwin')).toEqual([
+      'Mod+Alt+D'
+    ])
+    expect(getEffectiveKeybindingsForAction('tab.newDeepSeekHarness', 'linux')).toEqual([
+      'Mod+Alt+D'
+    ])
+    expect(getEffectiveKeybindingsForAction('tab.newDeepSeekHarness', 'win32')).toEqual([])
+    expect(
+      keybindingMatchesAction(
+        'tab.newDeepSeekHarness',
+        { key: 'd', code: 'KeyD', meta: true, control: false, alt: true, shift: false },
+        'darwin'
+      )
+    ).toBe(true)
+    expect(
+      keybindingMatchesAction(
+        'tab.newDeepSeekHarness',
+        { key: 'd', code: 'KeyD', meta: false, control: true, alt: true, shift: false },
+        'linux'
+      )
+    ).toBe(true)
+  })
+
+  it('gives Paseo a Mod+Alt+P default on macOS/Linux and keeps Windows unbound (AltGr)', () => {
+    expect(getEffectiveKeybindingsForAction('tab.newPaseo', 'darwin')).toEqual(['Mod+Alt+P'])
+    expect(getEffectiveKeybindingsForAction('tab.newPaseo', 'linux')).toEqual(['Mod+Alt+P'])
+    expect(getEffectiveKeybindingsForAction('tab.newPaseo', 'win32')).toEqual([])
+    expect(
+      keybindingMatchesAction(
+        'tab.newPaseo',
+        { key: 'p', code: 'KeyP', meta: true, control: false, alt: true, shift: false },
+        'darwin'
+      )
+    ).toBe(true)
+    expect(
+      keybindingMatchesAction(
+        'tab.newPaseo',
+        { key: 'p', code: 'KeyP', meta: false, control: true, alt: true, shift: false },
+        'linux'
+      )
+    ).toBe(true)
+  })
+
   it('matches per-agent tab actions only through user overrides', () => {
     const binding = { key: 'k', code: 'KeyK', meta: true, control: false, alt: true, shift: true }
     expect(keybindingMatchesAction(agentTabActionId('claude'), binding, 'darwin')).toBe(false)

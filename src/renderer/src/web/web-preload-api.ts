@@ -883,7 +883,8 @@ function createWebPreloadApi(): Partial<PreloadApi> {
           error: null
         }),
       attachProject: () => Promise.resolve({ ok: false }),
-      getDaemonUrl: () => Promise.resolve('')
+      getDaemonUrl: () => Promise.resolve(''),
+      listProjects: () => Promise.resolve([])
     },
     hostedReview: createRuntimeNamespaceApi('hostedReview'),
     linear: createRuntimeNamespaceApi('linear'),
@@ -2709,6 +2710,9 @@ function createWebUiApi(): NonNullable<Partial<PreloadApi>['ui']> {
     onWorktreeHistoryNavigate: () => noopUnsubscribe,
     onNewBrowserTab: () => noopUnsubscribe,
     onNewMarkdownTab: () => noopUnsubscribe,
+    onNewOpenChamberTab: () => noopUnsubscribe,
+    onNewDeepSeekHarnessTab: () => noopUnsubscribe,
+    onNewPaseoTab: () => noopUnsubscribe,
     onNewSimulatorTab: () => noopUnsubscribe,
     onRequestTabCreate: () => noopUnsubscribe,
     replyTabCreate: () => {},

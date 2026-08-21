@@ -5,7 +5,14 @@
  * enables the built-in web UI (PASEO_WEB_UI_ENABLED=1), and stops it on quit.
  */
 import { spawn, type ChildProcess } from 'node:child_process'
-import { existsSync } from 'node:fs'
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+  unlinkSync,
+  writeFileSync
+} from 'node:fs'
 import { createServer } from 'node:net'
 import { join } from 'node:path'
 import { homedir } from 'node:os'
@@ -65,6 +72,89 @@ export class PaseoDaemonManager {
     return `http://127.0.0.1:${this.port}`
   }
 
+  private paseoHome(): string {
+    return join(app.getPath('userData'), 'paseo-home', 'orca')
+  }
+
+  private orphanPidFile(): string {
+    return join(this.paseoHome(), 'orca-daemon.pid')
+  }
+
+  private isPidAlive(pid: number): boolean {
+    try {
+      process.kill(pid, 0)
+      return true
+    } catch {
+      return false
+    }
+  }
+
+  /** True when the pid is a Paseo daemon/worker (Linux /proc check). */
+  private isPaseoProcess(pid: number): boolean {
+    if (process.platform !== 'linux') {
+      return false
+    }
+    try {
+      const cmdline = readFileSync(`/proc/${pid}/cmdline`, 'utf8')
+      return cmdline.includes('paseo') || cmdline.includes('supervisor-entrypoint')
+    } catch {
+      return false
+    }
+  }
+
+  /**
+   * Force-kill a Paseo daemon orphaned by a main-process restart. The daemon
+   * holds a pid-lock per PASEO_HOME (`paseo.pid`) plus the preferred loopback
+   * port; a live orphan makes every retry fail with "Failed to start daemon".
+   * Kills the recorded supervisor AND its paseo workers, then waits a beat so
+   * the port and lock release before the fresh spawn.
+   */
+  private async reapOrphanPaseo(): Promise<void> {
+    const pidFile = this.orphanPidFile()
+    let recordedPid: number | null = null
+    try {
+      if (existsSync(pidFile)) {
+        recordedPid = Number.parseInt(readFileSync(pidFile, 'utf8'), 10)
+      }
+    } catch {
+      // Best-effort — a corrupt pid file must not block starting.
+    }
+    if (!recordedPid || !Number.isFinite(recordedPid)) {
+      return
+    }
+    if (this.isPidAlive(recordedPid) && this.isPaseoProcess(recordedPid)) {
+      process.kill(recordedPid, 'SIGKILL')
+    }
+    if (process.platform === 'linux') {
+      // Why: supervisor workers (terminal-worker-process) survive the parent's
+      // SIGKILL; sweep any process still pointing at the paseo entrypoint.
+      try {
+        for (const entry of readdirSync('/proc')) {
+          if (!/^\d+$/.test(entry)) {
+            continue
+          }
+          const pid = Number.parseInt(entry, 10)
+          if (pid === recordedPid || !this.isPaseoProcess(pid)) {
+            continue
+          }
+          try {
+            process.kill(pid, 'SIGKILL')
+          } catch {
+            // Already gone.
+          }
+        }
+      } catch {
+        // /proc unavailable — the supervisor kill above still frees the port.
+      }
+    }
+    await new Promise((resolve) => setTimeout(resolve, 500))
+    try {
+      unlinkSync(pidFile)
+    } catch {
+      // Already gone.
+    }
+  }
+
   getStatus(): PaseoDaemonStatus {
     return {
       state: this.state,
@@ -88,6 +178,10 @@ export class PaseoDaemonManager {
     if (this.isRunning()) {
       return this.getStatus()
     }
+    // Why: a daemon orphaned by a main-process restart still holds the
+    // PASEO_HOME pid-lock and the preferred port; force-kill it so the fresh
+    // spawn is not rejected ("Failed to start daemon").
+    await this.reapOrphanPaseo()
     this.port = await this.resolveFreePort()
     const repo = resolvePaseoRepo()
     const entrypoint = resolveEntrypoint(repo)
@@ -126,6 +220,14 @@ export class PaseoDaemonManager {
       stdio: ['ignore', 'pipe', 'pipe'],
       detached: false
     })
+    // Why: record the spawned supervisor so the next start can force-kill it
+    // if this main process dies without running stop() (dev restarts, crashes).
+    try {
+      mkdirSync(paseoHome, { recursive: true })
+      writeFileSync(this.orphanPidFile(), String(child.pid ?? ''))
+    } catch {
+      // Best-effort — pid recording is a cleanup aid, not a requirement.
+    }
     // Why: capture stderr so a failed spawn surfaces the real daemon error
     // (e.g. missing node, bad env) instead of a bare exit code.
     let stderrTail = ''
@@ -146,6 +248,13 @@ export class PaseoDaemonManager {
       if (this.child === child) {
         this.state = 'errored'
         this.error = err.message
+      }
+    })
+    // Why: a clean exit releases the lock; drop the reap record so a recycled
+    // pid is never misidentified as our daemon.
+    child.once('exit', () => {
+      if (this.child === child) {
+        this.clearOrphanRecord()
       }
     })
 
@@ -190,6 +299,17 @@ export class PaseoDaemonManager {
     if (child && child.exitCode === null) {
       child.kill()
     }
+    this.clearOrphanRecord()
     this.state = 'stopped'
+  }
+
+  private clearOrphanRecord(): void {
+    try {
+      if (existsSync(this.orphanPidFile())) {
+        unlinkSync(this.orphanPidFile())
+      }
+    } catch {
+      // Best-effort.
+    }
   }
 }

@@ -1,9 +1,13 @@
 /**
- * Manages the OpenChamber web server for the in-app OpenChamber view.
- * Spawns the OpenChamber web server (from the OpenChamber repo) as a child
- * process with an isolated data dir and the active worktree as its OpenCode
- * working directory, waits for the HTTP listener, and stops the server on quit
- * or when the workspace changes.
+ * Manages OpenChamber web servers, one per project (worktree).
+ *
+ * Each project gets its own server child pinned to a DETERMINISTIC loopback
+ * port derived from the project path. A per-project origin isolates the SPA's
+ * localStorage (its `lastDirectory` pin) so switching worktrees can never boot
+ * the UI into another project, a crash can restart on the same port, and
+ * several projects can be worked on side by side. Servers spawn lazily, are
+ * reaped via a per-project pid file when a previous run died without cleanup,
+ * and stop on Orca quit.
  *
  * Shape mirrors `DeepSeekWebManager`: a loopback web host owned by Orca, with
  * the difference that OpenChamber additionally requires an OpenCode binary
@@ -12,276 +16,272 @@
  */
 import { spawn, type ChildProcess } from 'node:child_process'
 import { existsSync } from 'node:fs'
-import { createServer } from 'node:net'
-import { homedir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { app } from 'electron'
 import type {
+  OpenChamberProjectStatus,
   OpenChamberSessionSummary,
   OpenChamberWebState,
   OpenChamberWebStatus
 } from '../../shared/openchamber-web-types'
+import {
+  clearServerPid,
+  projectKey,
+  reapOrphanServer,
+  recordServerPid
+} from './openchamber-server-pid'
+import { fetchSessionCount, fetchSessionSummaries } from './openchamber-server-api'
+import { clearProjectStorage as clearOriginStorage } from './openchamber-server-storage'
+import {
+  resolveNodeBin,
+  resolveOpenChamberServerEntrypoint,
+  resolveOpencodeBin
+} from './openchamber-server-resolver'
+import { resolveFreeLoopbackPort, waitForHttpListener } from '../web-hosts/loopback-listener'
 
-// Why: bind port 0 and let the OS pick a free one is what DeepSeek does, but
-// OpenChamber's readiness is signalled over IPC which a plain stream spawn
-// cannot capture. Instead we resolve a free loopback port ourselves, spawn the
-// server pinned to it, and probe the HTTP listener. Default preferred port.
+// Why: a stable base plus a per-project offset keeps ports predictable (and
+// restart-reusable) while leaving room for many projects without colliding.
 const PREFERRED_PORT = 3210
+const PORT_RANGE = 256
 
-// Why: Electron may launch with a bare PATH (e.g. desktop launcher) that omits
-// the OpenCode CLI install locations. Resolve the binary explicitly rather
-// than relying on the inherited environment, mirroring DeepSeek's dsh lookup.
-function resolveOpencodeBin(): string | null {
-  const override = process.env.OPENCODE_BIN?.trim() || process.env.OPENCODE_BINARY?.trim()
-  if (override && existsSync(override)) {
-    return override
-  }
-  const pathDirs = (process.env.PATH ?? '').split(':').filter(Boolean)
-  for (const dir of pathDirs) {
-    for (const name of ['opencode', 'opencode.cmd', 'opencode.exe']) {
-      const candidate = join(dir, name)
-      if (existsSync(candidate)) {
-        return candidate
-      }
-    }
-  }
-  // Why: `bun add -g @opencode-ai/cli` installs into the global bin; probe the
-  // common locations directly so a PATH-less Electron process still finds it.
-  const npmGlobalCandidates = [
-    process.env.NPM_CONFIG_PREFIX,
-    process.env.BUN_INSTALL ? join(process.env.BUN_INSTALL, 'bin') : null,
-    join(homedir(), '.npm-global'),
-    join(homedir(), '.bun', 'bin')
-  ]
-  for (const prefix of npmGlobalCandidates) {
-    if (!prefix) {
-      continue
-    }
-    for (const name of ['opencode', 'opencode.cmd', 'opencode.exe']) {
-      const candidate = join(prefix, 'bin', name)
-      if (existsSync(candidate)) {
-        return candidate
-      }
-    }
-  }
-  return null
+type OpenChamberInstance = {
+  projectPath: string
+  key: string
+  child: ChildProcess | null
+  state: OpenChamberWebState
+  error: string | null
+  /** Resolved port — the deterministic one, or the next free on collision. */
+  port: number
+  cwd: string | null
+  opencodeBinary: string | null
+  stderrTail: string
 }
 
-/** Resolve a real node binary: Orca's own process.execPath is the Electron
- * binary, which cannot run a plain Node ESM entrypoint. Pick `node` from PATH
- * (or an explicit override) instead, mirroring PaseoDaemonManager. */
-function resolveNodeBin(): string {
-  const override = process.env.OPENCHAMBER_NODE_BIN?.trim()
-  if (override && existsSync(override)) {
-    return override
-  }
-  return (
-    (process.env.PATH ?? '')
-      .split(':')
-      .map((dir) => join(dir, 'node'))
-      .find((candidate) => existsSync(candidate)) || 'node'
-  )
-}
+export type { OpenChamberProjectStatus, OpenChamberWebState, OpenChamberWebStatus }
 
-/** Resolve the OpenChamber web package root from env or the known sandbox path. */
-function resolveOpenChamberRepo(): string | null {
-  const override = process.env.OPENCHAMBER_REPO_DIR?.trim()
-  if (override && existsSync(override)) {
-    return override
-  }
-  const defaultRepo = join(homedir(), 'PROJECTS', 'SANDBOX', 'openchamber')
-  return existsSync(defaultRepo) ? defaultRepo : null
+export type OpenChamberWebManagerOptions = {
+  /** Enumerate every known Orca worktree path (for the auto-scan overview). */
+  listWorktreePaths?: () => string[]
 }
-
-/** Resolve the server entrypoint file under the repo, preferring a built one. */
-function resolveServerEntrypoint(repo: string): string | null {
-  const candidates = [
-    join(repo, 'packages', 'web', 'server', 'index.js'),
-    join(repo, 'packages', 'web', 'dist', 'server', 'index.js')
-  ]
-  for (const candidate of candidates) {
-    if (existsSync(candidate)) {
-      return candidate
-    }
-  }
-  return null
-}
-
-export type { OpenChamberSessionSummary, OpenChamberWebState, OpenChamberWebStatus }
 
 export class OpenChamberWebManager {
-  private child: ChildProcess | null = null
-  private state: OpenChamberWebState = 'stopped'
-  private error: string | null = null
-  private port = PREFERRED_PORT
-  private cwd: string | null = null
-  private opencodeBinary: string | null = null
+  private instances = new Map<string, OpenChamberInstance>()
+  private activePath: string | null = null
+  private readonly listWorktreePaths: () => string[]
 
-  getUrl(): string {
-    return `http://127.0.0.1:${this.port}`
+  constructor(options: OpenChamberWebManagerOptions = {}) {
+    this.listWorktreePaths = options.listWorktreePaths ?? (() => [])
+  }
+
+  private dataDir(): string {
+    return join(app.getPath('userData'), 'openchamber', 'orca')
+  }
+
+  private instanceFor(projectPath: string): OpenChamberInstance {
+    const existing = this.instances.get(projectPath)
+    if (existing) {
+      return existing
+    }
+    const key = projectKey(projectPath)
+    const instance: OpenChamberInstance = {
+      projectPath,
+      key,
+      child: null,
+      state: 'stopped',
+      error: null,
+      port: PREFERRED_PORT + (Number.parseInt(key, 36) % PORT_RANGE),
+      cwd: null,
+      opencodeBinary: null,
+      stderrTail: ''
+    }
+    this.instances.set(projectPath, instance)
+    return instance
+  }
+
+  private activeInstance(): OpenChamberInstance | null {
+    return this.activePath ? (this.instances.get(this.activePath) ?? null) : null
+  }
+
+  private instanceUrl(instance: OpenChamberInstance): string {
+    return `http://127.0.0.1:${instance.port}`
+  }
+
+  private isChildAlive(instance: OpenChamberInstance): boolean {
+    return (
+      instance.child !== null &&
+      instance.child.exitCode === null &&
+      instance.child.signalCode === null
+    )
+  }
+
+  private isRunning(instance: OpenChamberInstance): boolean {
+    return instance.state === 'running' && this.isChildAlive(instance)
   }
 
   getStatus(): OpenChamberWebStatus {
+    const instance = this.activeInstance()
+    if (!instance) {
+      return {
+        state: 'stopped',
+        port: PREFERRED_PORT,
+        url: null,
+        pid: null,
+        opencodeBinary: null,
+        cwd: null,
+        error: null
+      }
+    }
     return {
-      state: this.state,
-      port: this.port,
-      url: this.state === 'running' ? this.getUrl() : null,
-      pid: this.child?.pid ?? null,
-      opencodeBinary: this.opencodeBinary,
-      cwd: this.cwd,
-      error: this.error
+      state: instance.state,
+      port: instance.port,
+      url: instance.state === 'running' ? this.instanceUrl(instance) : null,
+      pid: instance.child?.pid ?? null,
+      opencodeBinary: instance.opencodeBinary,
+      cwd: instance.cwd,
+      error: instance.error
     }
   }
 
-  /** Resolve a free loopback port, preferring the default. */
-  private async resolveFreePort(): Promise<number> {
-    return new Promise((resolve) => {
-      const probe = (candidate: number): void => {
-        const server = createServer()
-        server.once('error', () => {
-          server.close()
-          probe(candidate + 1)
-        })
-        server.listen(candidate, '127.0.0.1', () => {
-          const { port } = server.address() as { port: number }
-          server.close(() => resolve(port))
-        })
-      }
-      probe(PREFERRED_PORT)
-    })
-  }
-
-  /** The spawned child is alive regardless of the reported state (which is 'starting' while the listener comes up). */
-  private isChildAlive(): boolean {
-    return this.child !== null && this.child.exitCode === null && this.child.signalCode === null
-  }
-
-  isRunning(): boolean {
-    return this.state === 'running' && this.isChildAlive()
-  }
-
-  /** All sessions on the running server (slim projection for the in-app list). */
   async listSessions(): Promise<OpenChamberSessionSummary[]> {
-    if (!this.isRunning()) {
+    const instance = this.activeInstance()
+    if (!instance || !this.isRunning(instance)) {
       return []
     }
-    try {
-      const res = await fetch(`${this.getUrl()}/api/session`, {
-        signal: AbortSignal.timeout(5_000)
-      })
-      if (!res.ok) {
-        return []
+    return fetchSessionSummaries(this.instanceUrl(instance), instance.cwd ?? '')
+  }
+
+  /**
+   * Drop instances whose project directory no longer exists (removed worktree)
+   * and whose server is stopped; live servers stay so they can be killed.
+   */
+  private pruneOrphanedInstances(): void {
+    const worktreePaths = new Set(this.listWorktreePaths())
+    for (const [path, instance] of this.instances) {
+      const running = instance.child && instance.child.exitCode === null
+      if (running || worktreePaths.has(path) || existsSync(path)) {
+        continue
       }
-      const body = (await res.json()) as unknown[] | { data?: unknown[] }
-      const items = Array.isArray(body) ? body : Array.isArray(body.data) ? body.data : []
-      return items.map((item) => {
-        const session = (item ?? {}) as {
-          id?: unknown
-          directory?: unknown
-          time?: { updated?: unknown; created?: unknown }
-          title?: unknown
-        }
-        return {
-          sessionId: typeof session.id === 'string' ? session.id : '',
-          directory: typeof session.directory === 'string' ? session.directory : (this.cwd ?? ''),
-          title: typeof session.title === 'string' ? session.title : null,
-          updatedAt:
-            ((typeof session.time?.updated === 'number' ? session.time.updated : 0) ||
-              (typeof session.time?.created === 'number' ? session.time.created : 0)) ??
-            0
-        }
-      })
-    } catch {
-      return []
+      this.instances.delete(path)
+      if (this.activePath === path) {
+        this.activePath = null
+      }
     }
   }
 
   /**
-   * Attach the active worktree as the server's working directory. The server's
-   * OpenCode instance is directory-scoped; pointing it at the active worktree
-   * is how the web UI's session flow auto-targets the project the user is
-   * looking at. No-op when already attached to that directory.
+   * Every known Orca worktree plus every spawned server instance, each with
+   * its (deterministic) port and live state — feeds the in-app overview table.
+   * Orphaned instances (path no longer on disk) whose server is stopped are
+   * pruned automatically so a removed worktree does not linger in the table
+   * forever; live ones stay so the user can kill them and clean up.
    */
-  async attachDirectory(directory: string | null): Promise<void> {
-    if (!this.isRunning() || !directory) {
-      return
-    }
-    if (this.cwd === directory) {
-      return
-    }
-    try {
-      const res = await fetch(`${this.getUrl()}/api/opencode/directory`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ path: directory, create: false }),
-        signal: AbortSignal.timeout(10_000)
-      })
-      // Why: only commit cwd on success; a failed attach must not pretend the
-      // server is scoped to a directory it could not activate.
-      if (res.ok) {
-        this.cwd = directory
+  async listProjects(): Promise<OpenChamberProjectStatus[]> {
+    this.pruneOrphanedInstances()
+    const seen = new Set<string>()
+    const rows: OpenChamberProjectStatus[] = []
+    const emit = (projectPath: string): void => {
+      if (seen.has(projectPath)) {
+        return
       }
-    } catch {
-      // Best-effort — the webview session list drives the project selection.
+      seen.add(projectPath)
+      const instance = this.instances.get(projectPath)
+      rows.push({
+        projectPath,
+        port:
+          instance?.port ??
+          PREFERRED_PORT + (Number.parseInt(projectKey(projectPath), 36) % PORT_RANGE),
+        state: instance?.state ?? 'stopped',
+        pid: instance?.child?.pid ?? null,
+        sessionCount: 0,
+        error: instance?.error ?? null
+      })
     }
+    for (const path of this.listWorktreePaths()) {
+      emit(path)
+    }
+    // Why: servers for projects no longer in Orca (deleted/removed) still
+    // surface so the user can kill or clear them; stopped orphans were pruned
+    // above so they do not linger.
+    for (const path of this.instances.keys()) {
+      emit(path)
+    }
+    await Promise.all(
+      rows.map(async (row) => {
+        const instance = this.instances.get(row.projectPath)
+        if (instance && this.isRunning(instance)) {
+          row.sessionCount = await fetchSessionCount(this.instanceUrl(instance))
+        }
+      })
+    )
+    return rows
   }
 
-  async start(cwd: string | null): Promise<OpenChamberWebStatus> {
-    // Why: the web server reads its OpenCode working directory from the repo's
-    // setDirectory; switching the active worktree restarts the server so the
-    // session list follows Orca.
-    if (this.isRunning() && this.cwd === cwd) {
+  /**
+   * Point the active project's server at that project. Because servers are
+   * project-scoped, this is effectively "ensure the server for this directory
+   * is running and make it the active one".
+   */
+  async attachDirectory(directory: string | null): Promise<void> {
+    if (!directory) {
+      return
+    }
+    await this.start(directory)
+  }
+
+  /**
+   * Ensure the server for a project is running (spawning lazily) and make it
+   * the active one. A live server is reused; a crashed one is reaped via its
+   * pid file and restarted on the SAME resolved port.
+   */
+  async start(projectPath: string | null): Promise<OpenChamberWebStatus> {
+    if (!projectPath) {
       return this.getStatus()
     }
-    this.stop()
-    if (!cwd) {
+    const instance = this.instanceFor(projectPath)
+    this.activePath = projectPath
+    if (this.isRunning(instance)) {
       return this.getStatus()
     }
-    const repo = resolveOpenChamberRepo()
-    if (!repo) {
-      this.state = 'errored'
-      this.error =
-        'OpenChamber repo not found. Install it or set OPENCHAMBER_REPO_DIR to the openchamber checkout.'
-      return this.getStatus()
-    }
-    const entrypoint = resolveServerEntrypoint(repo)
+    // Why: reap a previous run's child for THIS project before binding, so a
+    // dev-mode main restart or a crash cannot leak a zombie on its port.
+    await reapOrphanServer(this.dataDir(), instance.key)
+
+    const entrypoint = resolveOpenChamberServerEntrypoint()
     if (!entrypoint) {
-      this.state = 'errored'
-      this.error = `OpenChamber server build not found under ${repo}. Build @openchamber/web first.`
+      instance.state = 'errored'
+      instance.error =
+        'OpenChamber server not found. Install @openchamber/web globally or set OPENCHAMBER_REPO_DIR to the openchamber checkout.'
       return this.getStatus()
     }
+    const serverRoot = dirname(entrypoint)
     const opencodeBin = resolveOpencodeBin()
     if (!opencodeBin) {
-      this.state = 'errored'
-      this.error =
+      instance.state = 'errored'
+      instance.error =
         'opencode CLI not found in PATH. Install it with: bun add -g @opencode-ai/cli (or set OPENCODE_BIN), then retry.'
       return this.getStatus()
     }
-    this.opencodeBinary = opencodeBin
-    // Why: OpenChamber's readiness is signalled over IPC; a plain stream spawn
-    // cannot capture it, so pin the server to a port we own and probe it.
-    this.port = await this.resolveFreePort()
-    this.state = 'starting'
-    this.error = null
-    // Why: do NOT set this.cwd here — attachDirectory() early-returns when
-    // this.cwd already equals the target, which would skip the POST that
-    // actually points the server at the worktree. cwd is committed only on a
-    // successful attach below.
+    instance.opencodeBinary = opencodeBin
+    // Why: pin the server to the project's port — the deterministic one, or
+    // the previously resolved port on a restart, so a crash reuses the same
+    // URL and the tab does not need re-pointing.
+    instance.port = await resolveFreeLoopbackPort(instance.port)
+    instance.state = 'starting'
+    instance.error = null
+    instance.stderrTail = ''
 
     // Why: isolate OpenChamber's data dir so Orca-managed sessions, drafts and
     // config stay scoped to Orca instead of the user's real ~/.config/openchamber.
-    const dataDir = join(app.getPath('userData'), 'openchamber', 'orca')
+    const dataDir = this.dataDir()
 
     const child = spawn(
       resolveNodeBin(),
-      [entrypoint, '--port', String(this.port), '--host', '127.0.0.1'],
+      [entrypoint, '--port', String(instance.port), '--host', '127.0.0.1'],
       {
-        // Why: spawn from the repo root so node_modules resolves (the server
-        // imports reflect-metadata and other package deps). The data dir is
-        // isolated via OPENCHAMBER_DATA_DIR; the worktree is pinned separately
-        // via attachDirectory, so a project .env at the worktree can never take
-        // the server down.
-        cwd: repo,
+        // Why: spawn from the server package dir so its deps resolve; the data
+        // dir is isolated and the project attached via API, so a project .env
+        // at the worktree can never take the server down.
+        cwd: serverRoot,
         env: {
           ...process.env,
           OPENCHAMBER_DATA_DIR: dataDir,
@@ -293,79 +293,110 @@ export class OpenChamberWebManager {
         detached: false
       }
     )
-    let stderrTail = ''
     child.stderr?.on('data', (chunk: Buffer) => {
-      stderrTail = (stderrTail + chunk.toString()).slice(-2_000)
+      instance.stderrTail = (instance.stderrTail + chunk.toString()).slice(-2_000)
     })
-    this.child = child
+    instance.child = child
+    // Why: record the child so the next spawn can reap it if this main process
+    // dies without running stop() (dev-mode restarts, crashes).
+    recordServerPid(dataDir, instance.key, child.pid ?? 0, entrypoint)
     child.once('exit', (code) => {
-      if (this.child === child) {
-        this.state = 'stopped'
+      if (instance.child === child) {
+        instance.state = 'stopped'
         if (code !== 0) {
-          this.state = 'errored'
-          this.error = `OpenChamber server exited with code ${code}${stderrTail ? `: ${stderrTail.trim().split('\n').slice(-4).join(' | ')}` : ''}`
+          instance.state = 'errored'
+          instance.error = `OpenChamber server exited with code ${code}${instance.stderrTail ? `: ${instance.stderrTail.trim().split('\n').slice(-4).join(' | ')}` : ''}`
         }
       }
     })
     child.once('error', (err) => {
-      if (this.child === child) {
-        this.state = 'errored'
-        this.error = err.message
+      if (instance.child === child) {
+        instance.state = 'errored'
+        instance.error = err.message
       }
     })
 
     // Why: wait for the HTTP listener so the webview load doesn't race the server.
-    const ready = await this.waitUntilListening(45_000)
-    // Why: connect the active worktree to the server's directory scope once the
-    // listener is up, matching how DeepSeek registers the worktree as a workspace.
-    if (this.isRunning() && ready && cwd) {
-      await this.attachDirectory(cwd)
+    await waitForHttpListener({
+      url: this.instanceUrl(instance),
+      timeoutMs: 45_000,
+      isChildAlive: () => this.isChildAlive(instance)
+    })
+    if (!this.isChildAlive(instance)) {
+      return this.getStatus()
     }
+    // Why: a live child past the wait counts as up even if probes never
+    // answered (listener may reject the probe path); the webview retries.
+    instance.state = 'running'
+    // Why: point the server's opencode directory at the project once the
+    // listener is up, matching how DeepSeek registers the worktree.
+    await this.attachInstanceDirectory(instance)
     return this.getStatus()
   }
 
-  private async waitUntilListening(timeoutMs: number): Promise<boolean> {
-    const startedAt = Date.now()
-    const probe = async (): Promise<boolean> => {
-      try {
-        const res = await fetch(this.getUrl(), {
-          // Why: a listener that accepts but never responds must not hang the
-          // webview load; abort each probe so the loop keeps moving.
-          signal: AbortSignal.timeout(2_000)
-        })
-        return res.status < 500
-      } catch {
-        return false
+  /** POST the project path to the server's directory endpoint (commit on ok). */
+  private async attachInstanceDirectory(instance: OpenChamberInstance): Promise<void> {
+    try {
+      const res = await fetch(`${this.instanceUrl(instance)}/api/opencode/directory`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ path: instance.projectPath, create: false }),
+        signal: AbortSignal.timeout(10_000)
+      })
+      // Why: only commit cwd on success; a failed attach must not pretend the
+      // server is scoped to a directory it could not activate.
+      if (res.ok) {
+        instance.cwd = instance.projectPath
       }
+    } catch {
+      // Best-effort — the webview session list drives the project selection.
     }
-    while (Date.now() - startedAt < timeoutMs) {
-      // Why: child liveness, not isRunning() — the state is still 'starting'
-      // until the first successful probe flips it to 'running'.
-      if (!this.isChildAlive()) {
-        return false
-      }
-      if (await probe()) {
-        this.state = 'running'
-        return true
-      }
-      await new Promise((resolve) => setTimeout(resolve, 500))
-    }
-    if (this.isChildAlive()) {
-      // Why: the listener may accept connections but reject the probe path;
-      // treat the process being alive as enough for the webview to retry.
-      this.state = 'running'
-      return true
-    }
-    return false
   }
 
-  stop(): void {
-    const child = this.child
-    this.child = null
+  /** Stop one project's server (frees its port for the next spawn). */
+  stopProject(projectPath: string): void {
+    const instance = this.instances.get(projectPath)
+    if (!instance) {
+      return
+    }
+    const child = instance.child
+    instance.child = null
     if (child && child.exitCode === null) {
       child.kill()
     }
-    this.state = 'stopped'
-    this.cwd = null
+    clearServerPid(this.dataDir(), instance.key)
+    instance.state = 'stopped'
+    instance.error = null
+    instance.cwd = null
+    if (this.activePath === projectPath) {
+      this.activePath = null
+    }
+  }
+
+  /** Wipe a project's SPA storage (localStorage + cookies) for its origin. */
+  async clearProjectStorage(projectPath: string): Promise<void> {
+    const instance = this.instances.get(projectPath)
+    if (!instance) {
+      return
+    }
+    await clearOriginStorage(this.instanceUrl(instance))
+  }
+
+  /** Stop every project server (Orca quit / explicit stop). */
+  stop(): void {
+    const dataDir = this.dataDir()
+    for (const instance of this.instances.values()) {
+      const child = instance.child
+      instance.child = null
+      if (child && child.exitCode === null) {
+        child.kill()
+      }
+      // Why: drop the reap record so a long-idle stale pid is never
+      // misidentified after the OS recycled the number.
+      clearServerPid(dataDir, instance.key)
+      instance.state = 'stopped'
+      instance.cwd = null
+    }
+    this.activePath = null
   }
 }

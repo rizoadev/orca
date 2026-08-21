@@ -550,13 +550,14 @@ import type {
   S3ObjectActionResult,
   S3DownloadObjectResult
 } from '../shared/s3-types'
-import type { PaseoDaemonStatus } from '../shared/paseo-types'
+import type { PaseoDaemonStatus, PaseoProjectStatus } from '../shared/paseo-types'
 import type {
   DeepSeekAgentPreset,
   DeepSeekSessionSummary,
   DeepSeekWebStatus
 } from '../shared/deepseek-web-types'
 import type {
+  OpenChamberProjectStatus,
   OpenChamberSessionSummary,
   OpenChamberWebStatus
 } from '../shared/openchamber-web-types'
@@ -2260,6 +2261,7 @@ export type PreloadApi = {
       serverId?: string | null
     }>
     getDaemonUrl: () => Promise<string>
+    listProjects: () => Promise<PaseoProjectStatus[]>
   }
   deepseekWeb: {
     getStatus: () => Promise<DeepSeekWebStatus>
@@ -2275,6 +2277,9 @@ export type PreloadApi = {
     stop: () => Promise<OpenChamberWebStatus>
     attachDirectory: (directory: string | null) => Promise<void>
     listSessions: () => Promise<OpenChamberSessionSummary[]>
+    listProjects: () => Promise<OpenChamberProjectStatus[]>
+    stopProject: (projectPath: string) => Promise<void>
+    clearStorage: (projectPath: string) => Promise<void>
   }
   jira: {
     connect: (args: {
@@ -3117,6 +3122,9 @@ export type PreloadApi = {
     onWorktreeHistoryNavigate: (callback: (direction: 'back' | 'forward') => void) => () => void
     onNewBrowserTab: (callback: () => void) => () => void
     onNewMarkdownTab: (callback: () => void) => () => void
+    onNewOpenChamberTab: (callback: () => void) => () => void
+    onNewDeepSeekHarnessTab: (callback: () => void) => () => void
+    onNewPaseoTab: (callback: () => void) => () => void
     onNewSimulatorTab: (callback: () => void) => () => void
     onRequestTabCreate: (
       callback: (data: {

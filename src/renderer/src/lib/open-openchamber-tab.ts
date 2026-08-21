@@ -1,7 +1,11 @@
 import { toast } from 'sonner'
 import { useAppStore } from '@/store'
 import { translate } from '@/i18n/i18n'
-import { queueOpenChamberDirectory } from '@/components/browser-pane/openchamber-webview-style'
+import { webviewRegistry } from '@/components/browser-pane/webview-registry'
+import {
+  pollOpenChamberDirectorySync,
+  queueOpenChamberDirectory
+} from '@/components/browser-pane/openchamber-webview-style'
 import { isWebViewAgentTab } from '@/components/sidebar/worktree-available-webview-agent-rows'
 
 /**
@@ -45,6 +49,9 @@ export async function openOpenChamberTab(worktreeId: string, groupId: string): P
     activate: true,
     targetGroupId: groupId,
     title: 'OpenChamber',
+    // Why: hide the embedded browser chrome — the URL is stable/deterministic
+    // per project and shown in the OpenChamber screen's Projects/ports table,
+    // so the toolbar only eats vertical space.
     hideBrowserChrome: true,
     webViewAgentType: 'openchamber'
   })
@@ -54,4 +61,12 @@ export async function openOpenChamberTab(worktreeId: string, groupId: string): P
   if (created.activePageId) {
     queueOpenChamberDirectory(created.activePageId, worktree.path)
   }
+  // Why: the initial pin+reload can fail silently in packaged builds; poll
+  // until the SPA actually shows the attached directory.
+  window.setTimeout(() => {
+    const webview = webviewRegistry.get(created.id)
+    if (webview) {
+      void pollOpenChamberDirectorySync(webview, worktreeId, worktree.path)
+    }
+  }, 500)
 }

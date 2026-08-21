@@ -185,7 +185,7 @@ import { maybeAutoRenameBranchOnFirstWork } from './agent-hooks/first-work-branc
 import { rememberBranchRenameFailureOutput } from './agent-hooks/branch-rename-failure-output'
 import { renameWorktreeFolderOnFirstWork } from './agent-hooks/first-work-folder-rename'
 import { moveWorktree } from './git/worktree'
-import { getRepoIdFromWorktreeId } from '../shared/worktree-id'
+import { getRepoIdFromWorktreeId, splitWorktreeId } from '../shared/worktree-id'
 import { parseWorkspaceKey } from '../shared/workspace-scope'
 import { setMigrationUnsupportedPtyListener } from './agent-hooks/migration-unsupported-pty-state'
 import {
@@ -257,6 +257,24 @@ let mainWindow: BrowserWindow | null = null
 /** Whether a manual app.quit() (Cmd+Q) is in progress; lets the close handler skip the running-process confirmation and go straight to close. */
 let isQuitting = false
 let store: Store | null = null
+
+/**
+ * Every known Orca worktree path whose directory still exists on disk (ids
+ * embed the path; metadata drives the list). Shared by the OpenChamber and
+ * Paseo up-front allocation tables — stale/deleted worktree metadata is
+ * filtered so attach/create calls never hit a missing directory.
+ */
+function listAllWorktreePaths(): string[] {
+  const metas = store?.getAllWorktreeMeta() ?? {}
+  const paths: string[] = []
+  for (const worktreeId of Object.keys(metas)) {
+    const parsed = splitWorktreeId(worktreeId)
+    if (parsed && existsSync(parsed.worktreePath)) {
+      paths.push(parsed.worktreePath)
+    }
+  }
+  return paths
+}
 let stats: StatsCollector | null = null
 let claudeUsage: ClaudeUsageStore | null = null
 let codexUsage: CodexUsageStore | null = null
@@ -1187,14 +1205,19 @@ function openMainWindow(): BrowserWindow {
   if (!paseoDaemon) {
     paseoDaemon = new PaseoDaemonManager()
     paseoAutoAttach = new PaseoAutoAttach(paseoDaemon)
-    registerPaseoHandlers(paseoDaemon, paseoAutoAttach)
+    registerPaseoHandlers(paseoDaemon, paseoAutoAttach, { listWorktreePaths: listAllWorktreePaths })
   }
   if (!deepSeekWeb) {
     deepSeekWeb = new DeepSeekWebManager()
     registerDeepSeekWebHandlers(deepSeekWeb)
   }
   if (!openChamberWeb) {
-    openChamberWeb = new OpenChamberWebManager()
+    openChamberWeb = new OpenChamberWebManager({
+      // Why: the overview table auto-scans every Orca worktree so each project
+      // shows its allocated (deterministic) port up front, even before its
+      // server has ever been spawned. Worktree ids embed the path.
+      listWorktreePaths: listAllWorktreePaths
+    })
     registerOpenChamberWebHandlers(openChamberWeb)
   }
   attachMainWindowServices(

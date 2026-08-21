@@ -6,18 +6,31 @@
  * browsing. Mirrors DeepSeekPage / PaseoPage.
  */
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Layers, LoaderCircle, RefreshCw } from 'lucide-react'
+import {
+  ChevronDown,
+  ChevronUp,
+  Eraser,
+  Layers,
+  LoaderCircle,
+  Power,
+  RefreshCw,
+  RotateCcw
+} from 'lucide-react'
 import { useActiveWorktree, useActiveWorktreeId } from '@/store/selectors'
 import { Button } from '@/components/ui/button'
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { translate } from '@/i18n/i18n'
 import type {
-  OpenChamberSessionSummary,
+  OpenChamberProjectStatus,
   OpenChamberWebStatus
 } from '../../../../shared/openchamber-web-types'
 import {
+  hideOpenChamberOtherWorkspaces,
+  injectOpenChamberMatchOverlay,
+  listenForOpenChamberForceRecover,
+  pollOpenChamberDirectorySync,
   prepareOpenChamberWebview,
-  queueOpenChamberDirectory
+  queueOpenChamberDirectory,
+  reloadOpenChamberWebview
 } from '@/components/browser-pane/openchamber-webview-style'
 import { OPENCHAMBER_WEBVIEW_CSS } from '@/lib/openchamber-webview-css'
 
@@ -29,11 +42,22 @@ export default function OpenChamberPage(): React.JSX.Element {
   const [error, setError] = useState<string | null>(null)
   const [webUrl, setWebUrl] = useState<string>('')
   const [port, setPort] = useState<number | null>(null)
-  const [sessions, setSessions] = useState<OpenChamberSessionSummary[]>([])
+  const [projects, setProjects] = useState<OpenChamberProjectStatus[]>([])
   const [retryKey, setRetryKey] = useState(0)
+  const [tableExpanded, setTableExpanded] = useState(true)
   const activeWorktree = useActiveWorktree()
   const activeWorktreeId = useActiveWorktreeId()
   const webviewRef = useRef<Electron.WebviewTag | null>(null)
+  // Why: Electron's webview.reload() throws before the guest emits dom-ready;
+  // the follow effect must defer to the dom-ready pin in that window.
+  const webviewReadyRef = useRef(false)
+  // Why: re-apply injected UI after the pin+reload settles; the dom-ready pass
+  // can run on a page the reload is tearing down, so a couple of late passes
+  // on the settled document make the pill/filter stick.
+  const reinjectTimersRef = useRef<number[]>([])
+  // Why: the directory poll runs 10×1.5s; the follow effect re-runs on every
+  // state/webUrl change, so the guard keeps a single poll in flight.
+  const pollInFlightRef = useRef(false)
 
   const startHost = useCallback(async (cwd: string | null): Promise<void> => {
     setState('starting')
@@ -75,15 +99,29 @@ export default function OpenChamberPage(): React.JSX.Element {
     void window.api.openchamberWeb.attachDirectory(worktreePath)
     // Why: re-pin the SPA's localStorage-backed directory and reload the
     // webview so it hydrates onto this worktree, not a stale last-loaded one.
-    // The dom-ready handler writes the pin before the SPA boots.
+    // The dom-ready handler writes the pin before the SPA boots, and reload()
+    // before the guest is ready throws in Electron — deferring to the dom-ready
+    // pin on the initial mount covers that window.
     queueOpenChamberDirectory(OPENCHAMBER_PAGE_ID, worktreePath)
-    webviewRef.current?.reload()
+    reloadOpenChamberWebview(webviewRef.current, webviewReadyRef.current)
+    // Why: the pin+reload can fail silently; keep re-attaching and reloading
+    // until the SPA actually shows the expected directory (also re-injects the
+    // pill/filter on each pass).
+    const webview = webviewRef.current
+    if (webview && activeWorktreeId && !pollInFlightRef.current) {
+      pollInFlightRef.current = true
+      void pollOpenChamberDirectorySync(webview, activeWorktreeId, worktreePath).finally(() => {
+        pollInFlightRef.current = false
+      })
+    }
   }, [state, activeWorktree?.path, activeWorktreeId, webUrl])
 
   const handleWebviewRef = useCallback(
     (node: Electron.WebviewTag | null) => {
       webviewRef.current = node
       if (!node) {
+        reinjectTimersRef.current.forEach((timer) => window.clearTimeout(timer))
+        reinjectTimersRef.current = []
         return
       }
       // Why: shared partition so the web app's local storage / auth persist
@@ -101,13 +139,31 @@ export default function OpenChamberPage(): React.JSX.Element {
       const injectDirectory = (): void => {
         const path = activeWorktree?.path
         if (path) {
-          queueOpenChamberDirectory(OPENCHAMBER_PAGE_ID, path)
+          // Why: only consume a pin queued by the follow effect on a worktree
+          // switch — never re-queue here. Re-queuing on every dom-ready makes
+          // prepareOpenChamberWebview reload every time, a loop that destroys
+          // the just-injected pill and makes the pin look flaky.
           prepareOpenChamberWebview(node, OPENCHAMBER_PAGE_ID, node.getURL())
+          hideOpenChamberOtherWorkspaces(node, node.getURL(), path)
+          injectOpenChamberMatchOverlay(node, node.getURL(), path)
+          listenForOpenChamberForceRecover(node, path)
           node.insertCSS(OPENCHAMBER_WEBVIEW_CSS).catch(() => undefined)
         }
       }
       node.addEventListener('dom-ready', () => {
+        webviewReadyRef.current = true
         injectDirectory()
+        // Why: the pin reload can land between dom-ready and these calls; the
+        // idempotent guards in the guest make late re-application harmless.
+        ;[800, 2_500].forEach((delay) => {
+          const timer = window.setTimeout(injectDirectory, delay)
+          reinjectTimersRef.current.push(timer)
+        })
+      })
+      node.addEventListener('did-start-loading', () => {
+        webviewReadyRef.current = false
+        reinjectTimersRef.current.forEach((timer) => window.clearTimeout(timer))
+        reinjectTimersRef.current = []
       })
     },
     [activeWorktree?.path]
@@ -117,28 +173,46 @@ export default function OpenChamberPage(): React.JSX.Element {
     setRetryKey((value) => value + 1)
   }, [])
 
-  const refreshSessions = useCallback((): void => {
-    void window.api.openchamberWeb.listSessions().then((list) => {
-      setSessions(list)
+  const refreshProjects = useCallback((): void => {
+    // Why: per-project overview rows (project, port, status, session count)
+    // come from the manager; re-fetch after start/stop/restart cycles.
+    void window.api.openchamberWeb.listProjects().then((list) => {
+      setProjects(list)
     })
   }, [])
 
-  // Why: keep the session list in sync with the server; the web app also
-  // reconnects on (re)start, so re-fetch whenever the URL changes.
+  // Why: keep the overview table in sync with start/restart cycles.
   useEffect(() => {
-    if (state !== 'running') {
-      return
-    }
-    let cancelled = false
-    void window.api.openchamberWeb.listSessions().then((list) => {
-      if (!cancelled) {
-        setSessions(list)
-      }
-    })
-    return () => {
-      cancelled = true
-    }
-  }, [state, webUrl])
+    refreshProjects()
+  }, [state, webUrl, retryKey, refreshProjects])
+  // Why: keep session counts / statuses live while the view is open.
+  useEffect(() => {
+    const timer = window.setInterval(refreshProjects, 15_000)
+    return () => window.clearInterval(timer)
+  }, [refreshProjects])
+
+  const handleClearStorage = useCallback(
+    (projectPath: string): void => {
+      void window.api.openchamberWeb.clearStorage(projectPath).then(() => {
+        refreshProjects()
+        // Why: clearing wipes lastDirectory; re-pin + reload the active webview
+        // so the SPA rehydrates onto the worktree right away instead of waiting
+        // for the pill's auto-repin (4s) to notice.
+        if (projectPath === activeWorktree?.path && webviewReadyRef.current) {
+          queueOpenChamberDirectory(OPENCHAMBER_PAGE_ID, projectPath)
+          reloadOpenChamberWebview(webviewRef.current, true)
+        }
+      })
+    },
+    [activeWorktree?.path, refreshProjects]
+  )
+
+  const handleKillProject = useCallback(
+    (projectPath: string): void => {
+      void window.api.openchamberWeb.stopProject(projectPath).then(refreshProjects)
+    },
+    [refreshProjects]
+  )
 
   const loading = state === 'starting' || state === 'stopped'
   const noWorktree = !activeWorktree?.path
@@ -164,66 +238,134 @@ export default function OpenChamberPage(): React.JSX.Element {
           </span>
         )}
         <div className="ml-auto flex items-center gap-2">
-          {state === 'running' ? (
-            <Popover>
-              <PopoverTrigger asChild>
-                <Button variant="ghost" size="sm" className="h-7 gap-1.5 px-2 text-[11px]">
-                  <Layers className="size-3.5" />
-                  <span className="font-mono text-[10px]">:{port ?? '?'}</span>
-                  <span className="rounded-full bg-muted px-1.5 py-px font-mono text-[10px]">
-                    {sessions.length}
-                  </span>
-                </Button>
-              </PopoverTrigger>
-              <PopoverContent align="end" className="w-80 p-0">
-                <div className="flex items-center gap-2 border-b border-border/60 px-3 py-2 text-[11px] font-semibold text-muted-foreground">
-                  <span>{translate('openchamber.view.sessions', 'Sessions')}</span>
-                  <span className="truncate font-normal text-[10px] text-muted-foreground/70">
-                    {webUrl}
-                  </span>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="ml-auto h-5 w-5"
-                    onClick={refreshSessions}
-                    title={translate('openchamber.view.refresh', 'Refresh')}
-                  >
-                    <RefreshCw className="size-3" />
-                  </Button>
-                </div>
-                <div className="flex max-h-64 flex-col gap-1 overflow-y-auto p-2">
-                  {sessions.length === 0 ? (
-                    <span className="px-2 py-1 text-[11px] text-muted-foreground">
-                      {translate('openchamber.view.no-sessions', 'No sessions yet')}
-                    </span>
-                  ) : (
-                    sessions.map((session) => (
-                      <div
-                        key={session.sessionId}
-                        className="flex items-center gap-2 rounded-md px-2 py-1 text-[11px] leading-4 hover:bg-muted/50"
-                      >
-                        <span className="shrink-0 font-mono text-muted-foreground">
-                          {session.sessionId.slice(0, 13)}
-                        </span>
-                        <span className="truncate">{session.title ?? session.directory}</span>
-                      </div>
-                    ))
-                  )}
-                </div>
-              </PopoverContent>
-            </Popover>
+          {state === 'running' && port ? (
+            <span className="font-mono text-[10px] text-muted-foreground">:{port}</span>
           ) : null}
           {activeWorktree ? (
             <span className="max-w-[280px] truncate font-mono text-[11px] text-muted-foreground">
               {activeWorktree.path}
             </span>
           ) : null}
-          <Button variant="ghost" size="icon" className="h-7 w-7" onClick={handleRetry}>
-            <RefreshCw className="size-3.5" />
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-7 w-7"
+            onClick={handleRetry}
+            title={translate('openchamber.view.restart', 'Restart engine')}
+          >
+            <RotateCcw className="size-3.5" />
           </Button>
         </div>
       </div>
-      <div className="flex min-h-0 flex-1 flex-col">
+      <div className="flex items-center gap-2 border-b border-border/60 px-4 py-1.5">
+        <Layers className="size-3.5 text-muted-foreground" />
+        <span className="text-[11px] font-semibold">
+          {translate('openchamber.view.projects', 'Projects / ports')}
+        </span>
+        <span className="text-[10px] text-muted-foreground/70">
+          {projects.length} server{projects.length === 1 ? '' : 's'}
+        </span>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="ml-auto h-5 w-5"
+          onClick={refreshProjects}
+          title={translate('openchamber.view.refresh', 'Refresh')}
+        >
+          <RefreshCw className="size-3" />
+        </Button>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-5 w-5"
+          onClick={() => setTableExpanded((expanded) => !expanded)}
+          title={
+            tableExpanded
+              ? translate('openchamber.view.collapse', 'Collapse table')
+              : translate('openchamber.view.expand', 'Expand table')
+          }
+        >
+          {tableExpanded ? <ChevronUp className="size-3" /> : <ChevronDown className="size-3" />}
+        </Button>
+      </div>
+      <div className="grid grid-cols-[1fr_auto_auto_auto_auto] gap-x-3 border-b border-border/40 px-4 py-1.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground/80">
+        <span>{translate('openchamber.view.project', 'Project')}</span>
+        <span>{translate('openchamber.view.port', 'Port')}</span>
+        <span>{translate('openchamber.view.status', 'Status')}</span>
+        <span className="text-right">{translate('openchamber.view.sessions', 'Sessions')}</span>
+        <span className="text-right">{translate('openchamber.view.actions', 'Actions')}</span>
+      </div>
+      <div
+        className={`flex-col overflow-y-auto border-b border-border/60 ${
+          tableExpanded ? 'min-h-0 flex-1' : 'max-h-32'
+        }`}
+      >
+        {projects.length === 0 ? (
+          <span className="block px-4 py-2 text-[11px] text-muted-foreground">
+            {translate('openchamber.view.no-projects', 'No OpenChamber servers yet')}
+          </span>
+        ) : (
+          projects.map((project) => {
+            const isActive = project.projectPath === activeWorktree?.path
+            return (
+              <div
+                key={project.projectPath}
+                title={project.error ?? project.projectPath}
+                className={`grid grid-cols-[1fr_auto_auto_auto_auto] items-center gap-x-3 border-b border-border/30 px-4 py-1 text-[11px] last:border-b-0 ${
+                  isActive ? 'bg-muted/40' : 'hover:bg-muted/30'
+                }`}
+              >
+                <span className="flex min-w-0 items-center gap-1.5">
+                  {isActive ? (
+                    <span className="size-1.5 shrink-0 rounded-full bg-status-success" />
+                  ) : null}
+                  <span className="truncate font-mono">{project.projectPath}</span>
+                </span>
+                <span className="font-mono text-muted-foreground">:{project.port}</span>
+                <span
+                  className={
+                    {
+                      running: 'text-status-success',
+                      starting: 'text-muted-foreground',
+                      stopped: 'text-muted-foreground/70',
+                      errored: 'text-destructive'
+                    }[project.state]
+                  }
+                >
+                  {project.state}
+                </span>
+                <span className="text-right font-mono text-muted-foreground">
+                  {project.sessionCount}
+                </span>
+                <span className="flex items-center justify-end gap-1">
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-5 w-5"
+                    onClick={() => handleClearStorage(project.projectPath)}
+                    title={translate(
+                      'openchamber.view.clear-storage',
+                      'Clear storage (localStorage & cookies)'
+                    )}
+                  >
+                    <Eraser className="size-3" />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-5 w-5 text-destructive/80 hover:text-destructive"
+                    onClick={() => handleKillProject(project.projectPath)}
+                    title={translate('openchamber.view.kill', 'Kill server')}
+                  >
+                    <Power className="size-3" />
+                  </Button>
+                </span>
+              </div>
+            )
+          })
+        )}
+      </div>
+      <div className={tableExpanded ? 'hidden' : 'flex min-h-0 flex-1 flex-col'}>
         {noWorktree ? (
           <div className="flex flex-1 flex-col items-center justify-center gap-2 px-6 text-center text-xs text-muted-foreground">
             <p>
@@ -247,7 +389,7 @@ export default function OpenChamberPage(): React.JSX.Element {
           </div>
         ) : webUrl ? (
           <webview
-            key={webUrl}
+            key={`${webUrl}|${state}`}
             ref={handleWebviewRef}
             src={webUrl}
             style={{ flex: 1, width: '100%', height: '100%', border: 'none', display: 'flex' }}

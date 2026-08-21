@@ -6,16 +6,24 @@ import { ipcMain } from 'electron'
 import type { PaseoDaemonManager } from '../paseo/daemon-manager'
 import type { PaseoAutoAttach } from '../paseo/auto-attach'
 import type { PaseoDaemonStatus } from '../paseo/daemon-manager'
+import type { PaseoProjectStatus } from '../../shared/paseo-types'
+
+export type PaseoHandlersOptions = {
+  /** Enumerate every known Orca worktree path (for the up-front allocation). */
+  listWorktreePaths?: () => string[]
+}
 
 export function registerPaseoHandlers(
   daemon: PaseoDaemonManager,
-  autoAttach: PaseoAutoAttach
+  autoAttach: PaseoAutoAttach,
+  options: PaseoHandlersOptions = {}
 ): void {
   ipcMain.removeHandler('paseo:getStatus')
   ipcMain.removeHandler('paseo:start')
   ipcMain.removeHandler('paseo:stop')
   ipcMain.removeHandler('paseo:attachProject')
   ipcMain.removeHandler('paseo:getDaemonUrl')
+  ipcMain.removeHandler('paseo:listProjects')
 
   ipcMain.handle('paseo:getStatus', async (): Promise<PaseoDaemonStatus> => {
     return daemon.getStatus()
@@ -37,5 +45,12 @@ export function registerPaseoHandlers(
 
   ipcMain.handle('paseo:getDaemonUrl', async (): Promise<string> => {
     return daemon.getUrl()
+  })
+
+  // Why: mirrors the OpenChamber pattern — list every Orca project and attach
+  // (allocate) a Paseo workspace for each up front, so the overview table shows
+  // all projects with their workspace ids without waiting for a visit.
+  ipcMain.handle('paseo:listProjects', async (): Promise<PaseoProjectStatus[]> => {
+    return autoAttach.attachAllWorktrees(options.listWorktreePaths?.() ?? [])
   })
 }

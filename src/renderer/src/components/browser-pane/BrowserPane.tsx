@@ -85,10 +85,20 @@ import {
 } from '../../../../shared/browser-viewport-presets'
 import { rememberLiveBrowserUrl } from './browser-runtime'
 import { ensureBrowserPageWebview } from './browser-page-webview'
-import { maybeHidePaseoWorkspaceList, preparePaseoWebview } from './paseo-webview-style'
+import { injectPaseoMatchOverlay, listenForPaseoForceRecover } from './paseo-webview-match'
+import {
+  isPaseoWebviewUrl,
+  maybeHidePaseoWorkspaceList,
+  preparePaseoWebview
+} from './paseo-webview-style'
 import { prepareDeepSeekWebview } from './deepseek-webview-style'
 import { OPENCHAMBER_WEBVIEW_CSS } from '@/lib/openchamber-webview-css'
-import { prepareOpenChamberWebview } from './openchamber-webview-style'
+import {
+  hideOpenChamberOtherWorkspaces,
+  injectOpenChamberMatchOverlay,
+  listenForOpenChamberForceRecover,
+  prepareOpenChamberWebview
+} from './openchamber-webview-style'
 import {
   destroyPersistentWebview,
   moveFocusToRendererBeforeWebviewDetach,
@@ -3758,6 +3768,22 @@ function BrowserPagePane({
       preparePaseoWebview(webview, browserTab.id, webview.getURL())
       prepareDeepSeekWebview(webview, browserTab.id, webview.getURL())
       prepareOpenChamberWebview(webview, browserTab.id, webview.getURL())
+      const worktreePath = useAppStore.getState().getKnownWorktreeById(worktreeId)?.path
+      // Why: the Paseo web app gets the same match-dir overlay + force-recover
+      // as OpenChamber; it re-pins the workspace for Orca's active worktree
+      // and heals a dead daemon or a stale workspace selection.
+      if (worktreePath) {
+        const currentUrl = webview.getURL()
+        if (isPaseoWebviewUrl(currentUrl)) {
+          injectPaseoMatchOverlay(webview, currentUrl, worktreePath)
+          listenForPaseoForceRecover(webview, worktreePath)
+        }
+        // Why: keep only the Recent section plus the workspace of the active
+        // worktree in the OpenChamber sidebar (same filter as the in-app page).
+        hideOpenChamberOtherWorkspaces(webview, webview.getURL(), worktreePath)
+        injectOpenChamberMatchOverlay(webview, webview.getURL(), worktreePath)
+        listenForOpenChamberForceRecover(webview, worktreePath)
+      }
       maybeHidePaseoWorkspaceList(webview, webview.getURL())
       // Why: the DeepSeek Harness SPA must also hide its toolbar / workspace
       // list in a browser tab (the screen-side webview already does this).

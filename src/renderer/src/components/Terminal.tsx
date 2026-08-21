@@ -112,6 +112,9 @@ import {
 } from '@/runtime/web-runtime-session'
 import { openMobileEmulatorTab } from '@/lib/open-mobile-emulator-tab'
 import { launchAgentInNewTab } from '@/lib/launch-agent-in-new-tab'
+import { openOpenChamberTab } from '@/lib/open-openchamber-tab'
+import { openDeepSeekHarnessTab } from '@/lib/open-deepseek-harness-tab'
+import { openPaseoWebTab } from '@/lib/open-paseo-web-tab'
 import { resumeSleepingAgentSessionsForWorktree } from '@/lib/resume-sleeping-agent-session'
 import { listBoundAgentTabActions, resolveDefaultAgentForNewTab } from '@/lib/agent-tab-shortcuts'
 import { terminalProviderHasAuthoritativeSnapshot } from './terminal/terminal-provider-snapshot-capability'
@@ -1257,6 +1260,36 @@ function Terminal(): React.JSX.Element | null {
     })
   }, [activeWorktreeId])
 
+  const handleNewOpenChamberTab = useCallback(() => {
+    if (!activeWorktreeId) {
+      return
+    }
+    const targetGroupId =
+      useAppStore.getState().activeGroupIdByWorktree[activeWorktreeId] ??
+      useAppStore.getState().groupsByWorktree[activeWorktreeId]?.[0]?.id
+    void openOpenChamberTab(activeWorktreeId, targetGroupId ?? activeWorktreeId)
+  }, [activeWorktreeId])
+
+  const handleNewDeepSeekHarnessTab = useCallback(() => {
+    if (!activeWorktreeId) {
+      return
+    }
+    const targetGroupId =
+      useAppStore.getState().activeGroupIdByWorktree[activeWorktreeId] ??
+      useAppStore.getState().groupsByWorktree[activeWorktreeId]?.[0]?.id
+    void openDeepSeekHarnessTab(activeWorktreeId, targetGroupId ?? activeWorktreeId)
+  }, [activeWorktreeId])
+
+  const handleNewPaseoTab = useCallback(() => {
+    if (!activeWorktreeId) {
+      return
+    }
+    const targetGroupId =
+      useAppStore.getState().activeGroupIdByWorktree[activeWorktreeId] ??
+      useAppStore.getState().groupsByWorktree[activeWorktreeId]?.[0]?.id
+    void openPaseoWebTab(activeWorktreeId, targetGroupId ?? activeWorktreeId)
+  }, [activeWorktreeId])
+
   const handleNewBrowserTab = useCallback(() => {
     if (!activeWorktreeId) {
       return
@@ -1735,6 +1768,36 @@ function Terminal(): React.JSX.Element | null {
         return
       }
 
+      // Mod+Alt+O — new OpenChamber tab (macOS/Linux default)
+      if (!e.repeat && matchShortcut('tab.newOpenChamber')) {
+        e.preventDefault()
+        notifyTerminalCapture('tab.newOpenChamber')
+        if (!floatingWorkspaceFocused) {
+          handleNewOpenChamberTab()
+        }
+        return
+      }
+
+      // Mod+Alt+D — new DeepSeek Harness tab (macOS/Linux default)
+      if (!e.repeat && matchShortcut('tab.newDeepSeekHarness')) {
+        e.preventDefault()
+        notifyTerminalCapture('tab.newDeepSeekHarness')
+        if (!floatingWorkspaceFocused) {
+          handleNewDeepSeekHarnessTab()
+        }
+        return
+      }
+
+      // Mod+Alt+P — new Paseo tab (macOS/Linux default)
+      if (!e.repeat && matchShortcut('tab.newPaseo')) {
+        e.preventDefault()
+        notifyTerminalCapture('tab.newPaseo')
+        if (!floatingWorkspaceFocused) {
+          handleNewPaseoTab()
+        }
+        return
+      }
+
       // Save active editor file — fallback for when focus is outside the editor (tab bar/sidebar); editor-local handlers own save when the editor is focused.
       if (!e.repeat && matchShortcut('editor.save')) {
         const target = e.target as HTMLElement | null
@@ -1883,6 +1946,9 @@ function Terminal(): React.JSX.Element | null {
     activeWorktreeId,
     handleNewBrowserTab,
     handleNewSimulatorTab,
+    handleNewOpenChamberTab,
+    handleNewDeepSeekHarnessTab,
+    handleNewPaseoTab,
     handleNewFile,
     handleNewTab,
     handleNewAgentTab,

@@ -60,6 +60,9 @@ export type KeybindingActionId =
   | 'tab.newAgent'
   | AgentTabActionId
   | 'tab.newBrowser'
+  | 'tab.newOpenChamber'
+  | 'tab.newDeepSeekHarness'
+  | 'tab.newPaseo'
   | 'tab.newSimulator'
   | 'tab.newMarkdown'
   | 'tab.openMarkdown'
@@ -561,6 +564,45 @@ export const KEYBINDING_DEFINITIONS: readonly KeybindingDefinition[] = [
     defaultBindings: {
       darwin: ['Mod+Alt+Shift+E'],
       linux: [],
+      win32: []
+    }
+  },
+  {
+    id: 'tab.newOpenChamber',
+    title: 'New OpenChamber tab',
+    group: 'Tabs',
+    scope: 'tabs',
+    searchKeywords: ['shortcut', 'tab', 'openchamber', 'open', 'chamber', 'new'],
+    // Why: Mod+Alt+O mirrors tab.newAgent/tab.newSimulator (macOS); Linux gets Ctrl+Alt+O (not a common desktop chord like Ctrl+Alt+T). Windows stays unbound: Ctrl+Alt is AltGr there.
+    defaultBindings: {
+      darwin: ['Mod+Alt+O'],
+      linux: ['Mod+Alt+O'],
+      win32: []
+    }
+  },
+  {
+    id: 'tab.newDeepSeekHarness',
+    title: 'New DeepSeek Harness tab',
+    group: 'Tabs',
+    scope: 'tabs',
+    searchKeywords: ['shortcut', 'tab', 'deepseek', 'harness', 'new'],
+    // Why: D for DeepSeek; same AltGr policy as tab.newOpenChamber (Windows Ctrl+Alt is AltGr).
+    defaultBindings: {
+      darwin: ['Mod+Alt+D'],
+      linux: ['Mod+Alt+D'],
+      win32: []
+    }
+  },
+  {
+    id: 'tab.newPaseo',
+    title: 'New Paseo tab',
+    group: 'Tabs',
+    scope: 'tabs',
+    searchKeywords: ['shortcut', 'tab', 'paseo', 'new'],
+    // Why: P for Paseo; same AltGr policy as tab.newOpenChamber (Windows Ctrl+Alt is AltGr).
+    defaultBindings: {
+      darwin: ['Mod+Alt+P'],
+      linux: ['Mod+Alt+P'],
       win32: []
     }
   },

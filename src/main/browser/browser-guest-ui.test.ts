@@ -769,4 +769,84 @@ describe('setupGuestShortcutForwarding', () => {
     expect(nextDownPreventDefault).not.toHaveBeenCalled()
     expect(rendererSendMock).not.toHaveBeenCalledWith('ui:openQuickOpen')
   })
+
+  it('forwards the OpenChamber tab shortcut from focused guest pages', () => {
+    setupGuestShortcutForwarding({
+      browserTabId,
+      guest: makeGuest(),
+      resolveRenderer: () => makeRenderer(),
+      getKeybindings: () => ({
+        'tab.newOpenChamber': ['Mod+Alt+O']
+      })
+    })
+
+    // Why: Mod resolves to meta on macOS and control elsewhere; the guest handler matches the host platform's mapping.
+    const openChamberPreventDefault =
+      process.platform === 'darwin'
+        ? triggerBeforeInput({
+            code: 'KeyO',
+            key: 'o',
+            meta: true,
+            control: false,
+            alt: true,
+            shift: false
+          })
+        : triggerBeforeInput({
+            code: 'KeyO',
+            key: 'o',
+            meta: false,
+            control: true,
+            alt: true,
+            shift: false
+          })
+
+    expect(openChamberPreventDefault).toHaveBeenCalledTimes(1)
+    expect(rendererSendMock).toHaveBeenCalledWith('ui:newOpenChamberTab')
+  })
+
+  it('forwards the DeepSeek Harness tab shortcut from focused guest pages', () => {
+    setupGuestShortcutForwarding({
+      browserTabId,
+      guest: makeGuest(),
+      resolveRenderer: () => makeRenderer(),
+      getKeybindings: () => ({
+        'tab.newDeepSeekHarness': ['Mod+Alt+D']
+      })
+    })
+
+    const deepSeekPreventDefault = triggerBeforeInput({
+      code: 'KeyD',
+      key: 'd',
+      meta: process.platform === 'darwin',
+      control: process.platform !== 'darwin',
+      alt: true,
+      shift: false
+    })
+
+    expect(deepSeekPreventDefault).toHaveBeenCalledTimes(1)
+    expect(rendererSendMock).toHaveBeenCalledWith('ui:newDeepSeekHarnessTab')
+  })
+
+  it('forwards the Paseo tab shortcut from focused guest pages', () => {
+    setupGuestShortcutForwarding({
+      browserTabId,
+      guest: makeGuest(),
+      resolveRenderer: () => makeRenderer(),
+      getKeybindings: () => ({
+        'tab.newPaseo': ['Mod+Alt+P']
+      })
+    })
+
+    const paseoPreventDefault = triggerBeforeInput({
+      code: 'KeyP',
+      key: 'p',
+      meta: process.platform === 'darwin',
+      control: process.platform !== 'darwin',
+      alt: true,
+      shift: false
+    })
+
+    expect(paseoPreventDefault).toHaveBeenCalledTimes(1)
+    expect(rendererSendMock).toHaveBeenCalledWith('ui:newPaseoTab')
+  })
 })

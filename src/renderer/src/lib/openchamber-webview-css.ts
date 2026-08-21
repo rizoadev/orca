@@ -10,11 +10,16 @@
  * Falls back to the "Add project" button when the sidebar marker is absent
  * (e.g. different OpenChamber build), so the switch entry point is still
  * hidden.
+ *
+ * COMMENTED OUT on purpose: workspace & session should stay visible while
+ * debugging. Uncomment the rules below to re-hide the sidebar.
  */
 export const OPENCHAMBER_WEBVIEW_CSS = `
+  /*
   .oc-sidebar-scroller,
   [aria-label="Add project"],
   [aria-label="Add workspace"] {
     display: none !important;
   }
+  */
 `

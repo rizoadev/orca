@@ -1,7 +1,11 @@
 import { useEffect, useRef } from 'react'
 import { useAppStore } from '@/store'
 import { useActiveWorktree, useActiveWorktreeId } from '@/store/selectors'
-import { queueOpenChamberDirectory } from '@/components/browser-pane/openchamber-webview-style'
+import { webviewRegistry } from '@/components/browser-pane/webview-registry'
+import {
+  pollOpenChamberDirectorySync,
+  queueOpenChamberDirectory
+} from '@/components/browser-pane/openchamber-webview-style'
 
 /**
  * Keeps the OpenChamber web server's OpenCode working directory pointed at
@@ -64,6 +68,12 @@ export function useOpenChamberWorktreeFollow(): void {
           if (lastTargetedPathRef.current !== path) {
             lastTargetedPathRef.current = path
             state.reloadBrowserPage(pageId)
+          }
+          // Why: the pin+reload can fail silently; keep re-attaching and
+          // reloading until the SPA actually shows the expected directory.
+          const webview = webviewRegistry.get(tab.id)
+          if (webview) {
+            void pollOpenChamberDirectorySync(webview, activeWorktreeId, path)
           }
         }
       } catch {
