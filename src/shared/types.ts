@@ -982,6 +982,10 @@ export type BrowserWorkspace = {
   // the browser chrome (toolbar, address bar); navigation stays on the host's
   // own UI.
   hideBrowserChrome?: boolean
+  // Why: the web-view agent this tab hosts (e.g. 'paseo', 'deepseek-harness').
+  // Stamped at creation so session detection survives SPA title overwrites and
+  // can distinguish app-like tabs that share hideBrowserChrome.
+  webViewAgentType?: string
   activePageId?: string | null
   pageIds?: string[]
   // Why: the active page owns real browser chrome state now, but the top-level
@@ -2517,6 +2521,7 @@ export type TuiAgent =
   | 'strands' // Strands Agents SDK via `orca strands`
   | 'deepseek-harness' // DeepSeek Harness (dsh)
   | 'paseo' // Paseo (embedded daemon web UI)
+  | 'openchamber' // OpenChamber (embedded OpenCode web UI)
 // DeepSeek Harness (dsh)
 
 export type TaskViewPresetId = 'all' | 'issues' | 'review' | 'my-issues' | 'my-prs' | 'prs'
@@ -3253,6 +3258,7 @@ export type TopLevelView =
   | 'paseo'
   | 'docker'
   | 'deepseek-harness'
+  | 'openchamber'
 
 export type PersistedUIState = {
   lastActiveRepoId: string | null

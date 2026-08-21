@@ -43,6 +43,16 @@ export type TuiAgentConfig = {
   windowsShiftEnterEncoding?: 'csi-u'
 }
 
+export // Why: embedded web-view agents (Paseo, OpenChamber) are routed to their
+// in-app screen before any spawn happens; this config only satisfies the
+// exhaustive Record and powers detection, so all three fields share the id.
+const webViewAgentConfig = (id: string): TuiAgentConfig => ({
+  detectCmd: id,
+  launchCmd: id,
+  expectedProcess: id,
+  promptInjectionMode: 'argv'
+})
+
 export const TUI_AGENT_CONFIG: Record<TuiAgent, TuiAgentConfig> = {
   claude: {
     detectCmd: 'claude',
@@ -309,23 +319,15 @@ export const TUI_AGENT_CONFIG: Record<TuiAgent, TuiAgentConfig> = {
   'deepseek-harness': {
     detectCmd: 'dsh',
     // Why: `dsh` resolves to the community terminal front door (dsh-terminal-plugin)
-    // — an interactive REPL over the official Harness runtime. The explicit
-    // `cli` route is required so wrapper options and positional prompts are
-    // parsed by dsh-terminal-plugin instead of delegated to the official binary.
+    // — an interactive REPL; the explicit `cli` route keeps wrapper options in
+    // the plugin instead of the official binary.
     launchCmd: 'dsh cli',
     expectedProcess: 'dsh',
     // Why: interactive REPL; headless one-shots use `dsh --profile headless <task>`.
     promptInjectionMode: 'argv'
   },
-  paseo: {
-    detectCmd: 'paseo',
-    // Why: Paseo is an embedded web view (daemon web UI), not a terminal TUI;
-    // launch routing redirects to the view before any spawn happens, so this
-    // config only satisfies the exhaustive Record and powers detection.
-    launchCmd: 'paseo',
-    expectedProcess: 'paseo',
-    promptInjectionMode: 'argv'
-  }
+  paseo: webViewAgentConfig('paseo'),
+  openchamber: webViewAgentConfig('openchamber')
 }
 
 export function isTuiAgent(value: unknown): value is TuiAgent {

@@ -1,6 +1,9 @@
 import type React from 'react'
 import { ClaudeIcon, DroidIcon, OpenAIIcon } from '@/components/status-bar/icons'
 import openClaudeLogoUrl from '../../../../resources/openclaude-logo.png?url'
+import deepSeekIconUrl from '../../../../resources/deepseek-icon.svg?url'
+import paseoIconUrl from '../../../../resources/paseo-icon.svg?url'
+import openChamberIconUrl from '../../../../resources/openchamber-icon.svg?url'
 import type { TuiAgent } from '../../../shared/types'
 import { getTuiAgentLaunchCommand, TUI_AGENT_CONFIG } from '../../../shared/tui-agent-config'
 import {
@@ -302,6 +305,8 @@ export const getAgentCatalog = createLocalizedCatalog((): AgentCatalogEntry[] =>
     id: 'deepseek-harness',
     label: translate('auto.lib.agent.catalog.deepseek_harness_label', 'DeepSeek Harness'),
     cmd: 'dsh',
+    iconUrl: deepSeekIconUrl,
+    // Why: keep the faviconDomain as the read-the-docs/open fallback; iconUrl wins for the identity glyph.
     faviconDomain: 'deepseek.com',
     homepageUrl: 'https://github.com/deepseek-ai/deepseek-harness'
   },
@@ -309,8 +314,17 @@ export const getAgentCatalog = createLocalizedCatalog((): AgentCatalogEntry[] =>
     id: 'paseo',
     label: translate('auto.lib.agent.catalog.paseo_label', 'Paseo'),
     cmd: 'paseo',
+    iconUrl: paseoIconUrl,
     faviconDomain: 'paseo.sh',
     homepageUrl: 'https://paseo.sh'
+  },
+  {
+    id: 'openchamber',
+    label: translate('auto.lib.agent.catalog.openchamber_label', 'OpenChamber'),
+    cmd: 'openchamber',
+    iconUrl: openChamberIconUrl,
+    faviconDomain: 'openchamber.ai',
+    homepageUrl: 'https://github.com/openchamber/openchamber'
   }
 ])
 

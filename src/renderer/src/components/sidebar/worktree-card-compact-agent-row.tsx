@@ -58,6 +58,10 @@ function getCompactAgentSecondary(agent: DashboardAgentRowData): string {
 }
 
 function getCompactAgentTime(agent: DashboardAgentRowData, now: number): string | null {
+  // Why: available web-view rows have no session start; a relative time reads as stale launch time.
+  if (agent.rowSource === 'available') {
+    return null
+  }
   const doneAt = lastEnteredDoneAt(agent)
   if (doneAt !== null) {
     return formatShortTimeAgo(doneAt, now)
@@ -128,9 +132,9 @@ export const CompactAgentRow = React.memo(function CompactAgentRow({
       e.stopPropagation()
       // Why: subagent child rows have no pane of their own; they focus the
       // parent pane whose session spawned them.
-      onActivate(agent.tab.id, agent.activationPaneKey ?? agent.paneKey)
+      onActivate(agent.tab?.id ?? '', agent.activationPaneKey ?? agent.paneKey)
     },
-    [agent.activationPaneKey, agent.paneKey, agent.tab.id, onActivate]
+    [agent.activationPaneKey, agent.paneKey, agent.tab?.id, onActivate]
   )
   const handleSendTargetClickCapture = useCallback(
     (e: React.MouseEvent) => {

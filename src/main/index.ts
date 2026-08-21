@@ -209,6 +209,8 @@ import { PaseoAutoAttach } from './paseo/auto-attach'
 import { registerPaseoHandlers } from './ipc/paseo'
 import { DeepSeekWebManager } from './deepseek/deepseek-web-manager'
 import { registerDeepSeekWebHandlers } from './ipc/deepseek-web'
+import { OpenChamberWebManager } from './openchamber/openchamber-web-manager'
+import { registerOpenChamberWebHandlers } from './ipc/openchamber-web'
 import { createHeadlessAutomationOutputSnapshotBuffer } from './automations/headless-dispatch'
 import { buildHeadlessAutomationWorktreeCreateArgs } from './automations/headless-workspace-create'
 import { AgentAwakeService } from './agent-awake-service'
@@ -291,6 +293,7 @@ let paseoAutoAttach: PaseoAutoAttach | null = null
 // Why: the DeepSeek Harness web host is lazy like Paseo — spawned on first
 // view open via IPC, so users who never open the view pay no process cost.
 let deepSeekWeb: DeepSeekWebManager | null = null
+let openChamberWeb: OpenChamberWebManager | null = null
 // Why: a reload intent must not leak to a later load; the recovery reload re-fires did-finish-load, so its flag spares live PTYs from the orphan sweep (#5787).
 const expectedRendererReload = createWebContentsTimedFlag()
 const recoveryReloadInFlight = createWebContentsTimedFlag()
@@ -1189,6 +1192,10 @@ function openMainWindow(): BrowserWindow {
   if (!deepSeekWeb) {
     deepSeekWeb = new DeepSeekWebManager()
     registerDeepSeekWebHandlers(deepSeekWeb)
+  }
+  if (!openChamberWeb) {
+    openChamberWeb = new OpenChamberWebManager()
+    registerOpenChamberWebHandlers(openChamberWeb)
   }
   attachMainWindowServices(
     window,

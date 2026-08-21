@@ -3,6 +3,10 @@ import { useShallow } from 'zustand/react/shallow'
 import { useAppStore } from '@/store'
 import { activateAndRevealWorktree } from '@/lib/worktree-activation'
 import { activateTabAndFocusPane } from '@/lib/activate-tab-and-focus-pane'
+import { openDeepSeekHarnessTab } from '@/lib/open-deepseek-harness-tab'
+import { openOpenChamberTab } from '@/lib/open-openchamber-tab'
+import { openPaseoWebTab } from '@/lib/open-paseo-web-tab'
+import type { TuiAgent } from '../../../../shared/types'
 import DashboardAgentRow from '@/components/dashboard/DashboardAgentRow'
 import { useNow } from '@/components/dashboard/useNow'
 import { deriveRunningAgentSendTargets } from '@/lib/running-agent-targets'
@@ -94,8 +98,10 @@ const WorktreeCardAgentsBody = React.memo(function WorktreeCardAgentsBody({
   const unvisitedByPaneKey = useMemo(() => {
     const out: Record<string, boolean> = {}
     for (const a of agents) {
-      const ackAt = acknowledgedAgentsByPaneKey[a.paneKey] ?? 0
-      out[a.paneKey] = ackAt < a.entry.stateStartedAt
+      // Why: available rows have no session to visit; never bold them.
+      out[a.paneKey] =
+        a.rowSource !== 'available' &&
+        (acknowledgedAgentsByPaneKey[a.paneKey] ?? 0) < a.entry.stateStartedAt
     }
     return out
   }, [agents, acknowledgedAgentsByPaneKey])
@@ -188,6 +194,25 @@ const WorktreeCardAgentsBody = React.memo(function WorktreeCardAgentsBody({
     // Why: hibernation-retained rows are passive completion evidence; activating would resume sleeping sessions, so the row is inert.
   }, [])
 
+  // Why: web-view agents have no terminal pane; clicking opens their embedded UI scoped to this worktree.
+  const handleActivateAvailableAgent = useCallback(
+    (agentType: TuiAgent) => {
+      activateAndRevealWorktree(worktreeId)
+      const groupId =
+        useAppStore.getState().activeGroupIdByWorktree[worktreeId] ??
+        useAppStore.getState().groupsByWorktree[worktreeId]?.[0]?.id ??
+        'main'
+      const open =
+        {
+          'deepseek-harness': openDeepSeekHarnessTab,
+          openchamber: openOpenChamberTab,
+          paseo: openPaseoWebTab
+        }[agentType] ?? openPaseoWebTab
+      void open(worktreeId, groupId)
+    },
+    [worktreeId]
+  )
+
   // Why: one 30s tick per non-empty inline list; zero-agent cards never mount this (see WorktreeCardAgents), so idle worktrees pay no timer cost.
   const now = useNow(30_000)
   const { rootRows: rootAgents, childrenByParentPaneKey } = useMemo(
@@ -245,24 +270,27 @@ const WorktreeCardAgentsBody = React.memo(function WorktreeCardAgentsBody({
     }
     const childAgents = childrenByParentPaneKey.get(agent.paneKey) ?? []
     const hasChildAgents = childAgents.length > 0
-    const isRootAgent = ancestorPaneKeys.size === 0
-    // Why: spawned child agents are actionable work, so show them as soon as the parent appears (disclosure still folds noise).
-    const expanded = !collapsedLineageParents.has(agent.paneKey)
-    const sendTarget = isAgentSendTargetModeActive
-      ? (sendTargetsByPaneKey.get(agent.paneKey) ?? {
-          status: 'disabled' as const,
-          disabledReason: 'Agent is not available'
-        })
-      : undefined
-    const descendantAncestorPaneKeys = new Set(ancestorPaneKeys)
-    descendantAncestorPaneKeys.add(agent.paneKey)
+    // Why: available web-view rows are not terminal panes; never a send target.
+    const isAvailableRow = agent.rowSource === 'available'
+    const sendTarget =
+      isAgentSendTargetModeActive && !isAvailableRow
+        ? (sendTargetsByPaneKey.get(agent.paneKey) ?? {
+            status: 'disabled' as const,
+            disabledReason: 'Agent is not available'
+          })
+        : undefined
+    const descendantAncestorPaneKeys = new Set([...ancestorPaneKeys, agent.paneKey])
     return (
       <React.Fragment key={agent.paneKey}>
         <DashboardAgentRow
           agent={agent}
           onDismiss={handleDismissAgent}
           onActivate={
-            agent.rowSource === 'retained' ? handleActivateRetainedAgent : handleActivateAgentTab
+            isAvailableRow
+              ? () => handleActivateAvailableAgent(agent.agentType as TuiAgent)
+              : agent.rowSource === 'retained'
+                ? handleActivateRetainedAgent
+                : handleActivateAgentTab
           }
           now={now}
           // Why: bold the row until the user visits its tab (useAutoAckViewedAgent auto-acks on focus, muting it).
@@ -273,12 +301,14 @@ const WorktreeCardAgentsBody = React.memo(function WorktreeCardAgentsBody({
           hideExpand
           // Why: fold children under the parent row's leading chevron so a parent reads as a tree node (Variant B in the mockups).
           childAgentCount={hasChildAgents ? childAgents.length : undefined}
-          childAgentsExpanded={expanded}
+          childAgentsExpanded={!collapsedLineageParents.has(agent.paneKey)}
           onToggleChildAgents={
             hasChildAgents ? () => toggleLineageParent(agent.paneKey) : undefined
           }
           // Why: keep leaf rows aligned with parent rows — see anyRootHasChildren above.
-          reserveDisclosureGutter={isRootAgent && anyRootHasChildren && !hasChildAgents}
+          reserveDisclosureGutter={
+            ancestorPaneKeys.size === 0 && anyRootHasChildren && !hasChildAgents
+          }
           isFocusedPane={agent.paneKey === focusedAgentPaneKey}
           sendTargetStatus={sendTarget?.status}
           sendTargetDisabledReason={sendTarget?.disabledReason}
@@ -286,7 +316,7 @@ const WorktreeCardAgentsBody = React.memo(function WorktreeCardAgentsBody({
           // Why: hierarchy shows via chevron + indent; legacy L-connectors use a fixed offset that mismatches the column and reads as floating fragments.
           hideLineageConnectors
         />
-        {hasChildAgents && expanded ? (
+        {hasChildAgents && !collapsedLineageParents.has(agent.paneKey) ? (
           <div className="worktree-agent-lineage-children">
             {childAgents.map((childAgent) =>
               renderAgentBranch(childAgent, descendantAncestorPaneKeys)
@@ -307,44 +337,49 @@ const WorktreeCardAgentsBody = React.memo(function WorktreeCardAgentsBody({
     }
     const childAgents = childrenByParentPaneKey.get(agent.paneKey) ?? []
     const hasChildAgents = childAgents.length > 0
-    const isRootAgent = ancestorPaneKeys.size === 0
-    const expanded = !collapsedLineageParents.has(agent.paneKey)
-    const sendTarget = isAgentSendTargetModeActive
-      ? (sendTargetsByPaneKey.get(agent.paneKey) ?? {
-          status: 'disabled' as const,
-          disabledReason: 'Agent is not available'
-        })
-      : undefined
-    const descendantAncestorPaneKeys = new Set(ancestorPaneKeys)
-    descendantAncestorPaneKeys.add(agent.paneKey)
+    const isAvailableRow = agent.rowSource === 'available'
+    const sendTarget =
+      isAgentSendTargetModeActive && !isAvailableRow
+        ? (sendTargetsByPaneKey.get(agent.paneKey) ?? {
+            status: 'disabled' as const,
+            disabledReason: 'Agent is not available'
+          })
+        : undefined
+    const descendantAncestorPaneKeys = new Set([...ancestorPaneKeys, agent.paneKey])
     return (
       <React.Fragment key={agent.paneKey}>
         <CompactAgentRow
           agent={agent}
           now={now}
           onActivate={
-            agent.rowSource === 'retained' ? handleActivateRetainedAgent : handleActivateAgentTab
+            isAvailableRow
+              ? () => handleActivateAvailableAgent(agent.agentType as TuiAgent)
+              : agent.rowSource === 'retained'
+                ? handleActivateRetainedAgent
+                : handleActivateAgentTab
           }
           sendTargetStatus={sendTarget?.status}
           sendTargetDisabledReason={sendTarget?.disabledReason}
           onSendTargetClick={isAgentSendTargetModeActive ? handleSendTargetClick : undefined}
           childAgentCount={hasChildAgents ? childAgents.length : undefined}
-          childAgentsExpanded={expanded}
+          childAgentsExpanded={!collapsedLineageParents.has(agent.paneKey)}
           onToggleChildAgents={
             hasChildAgents ? () => toggleLineageParent(agent.paneKey) : undefined
           }
-          reserveDisclosureGutter={isRootAgent && anyRootHasChildren && !hasChildAgents}
+          reserveDisclosureGutter={
+            ancestorPaneKeys.size === 0 && anyRootHasChildren && !hasChildAgents
+          }
           isFocusedPane={agent.paneKey === focusedAgentPaneKey}
           cacheTimerActive={cacheTimerActive}
         />
         {hasChildAgents ? (
-          <CompactAgentExpansion expanded={expanded}>
+          <CompactAgentExpansion expanded={!collapsedLineageParents.has(agent.paneKey)}>
             <div className="worktree-agent-lineage-children flex flex-col gap-0.5">
               {childAgents.map((childAgent) =>
                 renderCompactAgentBranch(
                   childAgent,
                   descendantAncestorPaneKeys,
-                  cacheTimerActive && expanded
+                  cacheTimerActive && !collapsedLineageParents.has(agent.paneKey)
                 )
               )}
             </div>

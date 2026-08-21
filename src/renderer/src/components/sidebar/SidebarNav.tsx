@@ -1,16 +1,19 @@
 import React from 'react'
+import paseoIconUrl from '../../../../../resources/paseo-icon.svg?url'
+import deepSeekIconUrl from '../../../../../resources/deepseek-icon.svg?url'
+import openChamberIconUrl from '../../../../../resources/openchamber-icon.svg?url'
 import {
   Bell,
-  Bot,
   CalendarClock,
+  ChevronRight,
   EyeOff,
   LayoutDashboard,
   MessageCircleQuestion,
-  MessageSquareText,
   Search,
   Smartphone
 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import { useAppStore } from '@/store'
 import { cn } from '@/lib/utils'
 import type { GlobalSettings } from '../../../../shared/types'
@@ -136,59 +139,74 @@ function AgentDashboardSidebarEntry(): React.JSX.Element {
   )
 }
 
-// Why: Paseo is always available on desktop (no settings gate); the entry
-// routes to the embedded web chat view.
-function PaseoSidebarEntry(): React.JSX.Element {
+// Why: always-on desktop web views share one collapsible group to save sidebar height.
+const WEB_VIEW_SIDEBAR_ENTRIES = [
+  { view: 'paseo', iconUrl: paseoIconUrl, labelKey: 'paseo.sidebar.label', label: 'Paseo' },
+  {
+    view: 'deepseek-harness',
+    iconUrl: deepSeekIconUrl,
+    labelKey: 'deepseek.sidebar.label',
+    label: 'DeepSeek Harness'
+  },
+  {
+    view: 'openchamber',
+    iconUrl: openChamberIconUrl,
+    labelKey: 'openchamber.sidebar.label',
+    label: 'OpenChamber'
+  }
+] as const
+
+function WebViewAgentsSidebarGroup(): React.JSX.Element {
   const setActiveView = useAppStore((s) => s.setActiveView)
   const activeView = useAppStore((s) => s.activeView)
-  const active = activeView === 'paseo'
+  // Why: collapsed by default so the three web-view entries don't eat sidebar height.
+  const [open, setOpen] = React.useState(false)
 
   return (
-    <button
-      type="button"
-      onClick={() => setActiveView('paseo')}
-      aria-current={active ? 'page' : undefined}
-      className={cn(
-        'flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[13px] font-medium tracking-tight transition-colors',
-        active
-          ? 'bg-worktree-sidebar-accent text-worktree-sidebar-accent-foreground'
-          : 'text-worktree-sidebar-foreground/60 hover:bg-worktree-sidebar-foreground/8'
-      )}
-    >
-      <MessageSquareText
-        className={cn('size-4 shrink-0', !active && 'text-worktree-sidebar-foreground/30')}
-        strokeWidth={active ? 2.25 : 1.75}
-      />
-      <span className="flex-1">{translate('paseo.sidebar.label', 'Paseo')}</span>
-    </button>
-  )
-}
-
-// Why: the DeepSeek Harness web UI is always available on desktop; the entry
-// routes to the embedded web host view scoped to the active worktree.
-function DeepSeekSidebarEntry(): React.JSX.Element {
-  const setActiveView = useAppStore((s) => s.setActiveView)
-  const activeView = useAppStore((s) => s.activeView)
-  const active = activeView === 'deepseek-harness'
-
-  return (
-    <button
-      type="button"
-      onClick={() => setActiveView('deepseek-harness')}
-      aria-current={active ? 'page' : undefined}
-      className={cn(
-        'flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[13px] font-medium tracking-tight transition-colors',
-        active
-          ? 'bg-worktree-sidebar-accent text-worktree-sidebar-accent-foreground'
-          : 'text-worktree-sidebar-foreground/60 hover:bg-worktree-sidebar-foreground/8'
-      )}
-    >
-      <Bot
-        className={cn('size-4 shrink-0', !active && 'text-worktree-sidebar-foreground/30')}
-        strokeWidth={active ? 2.25 : 1.75}
-      />
-      <span className="flex-1">{translate('deepseek.sidebar.label', 'DeepSeek Harness')}</span>
-    </button>
+    <Collapsible open={open} onOpenChange={setOpen} className="flex flex-col gap-0.5">
+      <CollapsibleTrigger asChild>
+        <button
+          type="button"
+          className="flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-left text-[13px] font-medium tracking-tight text-worktree-sidebar-foreground/45 transition-colors hover:bg-worktree-sidebar-foreground/8 hover:text-worktree-sidebar-foreground/60"
+        >
+          <ChevronRight
+            className={cn('size-3.5 shrink-0 transition-transform', open && 'rotate-90')}
+            strokeWidth={1.75}
+          />
+          <span className="flex-1">
+            {translate('auto.components.sidebar.SidebarNav.webAppsGroupLabel', 'Engines')}
+          </span>
+        </button>
+      </CollapsibleTrigger>
+      <CollapsibleContent className="flex flex-col gap-0.5 pl-2">
+        {WEB_VIEW_SIDEBAR_ENTRIES.map((entry) => {
+          const active = activeView === entry.view
+          return (
+            <button
+              key={entry.view}
+              type="button"
+              onClick={() => setActiveView(entry.view)}
+              aria-current={active ? 'page' : undefined}
+              className={cn(
+                'flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[13px] font-medium tracking-tight transition-colors',
+                active
+                  ? 'bg-worktree-sidebar-accent text-worktree-sidebar-accent-foreground'
+                  : 'text-worktree-sidebar-foreground/60 hover:bg-worktree-sidebar-foreground/8'
+              )}
+            >
+              <img
+                src={entry.iconUrl}
+                alt=""
+                aria-hidden="true"
+                className={cn('size-4 shrink-0', !active && 'opacity-60')}
+                draggable={false}
+              />
+              <span className="flex-1">{translate(entry.labelKey, entry.label)}</span>
+            </button>
+          )
+        })}
+      </CollapsibleContent>
+    </Collapsible>
   )
 }
 
@@ -289,8 +307,7 @@ const SidebarNav = React.memo(function SidebarNav() {
         </ContextMenu>
       ) : null}
       {showAgentDashboardButton ? <AgentDashboardSidebarEntry /> : null}
-      <PaseoSidebarEntry />
-      <DeepSeekSidebarEntry />
+      <WebViewAgentsSidebarGroup />
       {showAgentsButton ? (
         <button
           type="button"

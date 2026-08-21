@@ -5,16 +5,25 @@ import {
   queuePaseoCwd,
   queuePaseoWorkspaceSelection
 } from '@/components/browser-pane/paseo-webview-style'
+import { isWebViewAgentTab } from '@/components/sidebar/worktree-available-webview-agent-rows'
 
 /**
  * Ensure the Paseo daemon is running for the given worktree, attach the
  * project (auto-creating its workspace), then open the workspace directly in
  * a browser tab — landing on the chat composer instead of the home screen's
- * "+ New workspace" flow. Falls back to the sessions list when the attach did
- * not yield a workspace id yet.
+ * "+ New workspace" flow. If a Paseo tab already exists for the worktree,
+ * focus it instead of spawning a duplicate. Falls back to the sessions list
+ * when the attach did not yield a workspace id yet.
  */
 export async function openPaseoWebTab(worktreeId: string, groupId: string): Promise<void> {
   const state = useAppStore.getState()
+  const existing = (state.browserTabsByWorktree[worktreeId] ?? []).find((tab) =>
+    isWebViewAgentTab('paseo', tab)
+  )
+  if (existing) {
+    state.setActiveBrowserTab(existing.id)
+    return
+  }
   const worktree = state.getKnownWorktreeById(worktreeId)
   if (!worktree?.path) {
     toast.error(translate('paseo.view.no-worktree', 'Open a project first to start Paseo there.'))
@@ -54,7 +63,8 @@ export async function openPaseoWebTab(worktreeId: string, groupId: string): Prom
     activate: true,
     targetGroupId: groupId,
     title: 'Paseo',
-    hideBrowserChrome: true
+    hideBrowserChrome: true,
+    webViewAgentType: 'paseo'
   })
   // Why: pin the web app's persisted selection so it hydrates onto this
   // workspace (the URL alone can still fall back to a stale last-loaded one).

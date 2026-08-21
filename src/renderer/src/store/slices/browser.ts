@@ -64,6 +64,8 @@ type CreateBrowserTabOptions = {
   focusAddressBar?: boolean
   // App-like tabs hide the whole browser chrome (toolbar + address bar).
   hideBrowserChrome?: boolean
+  // The web-view agent this tab hosts; stamped so session detection survives SPA title overwrites.
+  webViewAgentType?: string
   browserRuntimeEnvironmentId?: string | null
 }
 
@@ -369,7 +371,8 @@ function buildWorkspaceFromPage(
   pageIds: string[],
   sessionProfileId?: string | null,
   sessionPartition?: string | null,
-  hideBrowserChrome?: boolean
+  hideBrowserChrome?: boolean,
+  webViewAgentType?: string
 ): BrowserWorkspace {
   return {
     id,
@@ -377,6 +380,7 @@ function buildWorkspaceFromPage(
     sessionProfileId: sessionProfileId ?? null,
     sessionPartition: sessionPartition ?? null,
     ...(hideBrowserChrome !== undefined ? { hideBrowserChrome } : {}),
+    ...(webViewAgentType !== undefined ? { webViewAgentType } : {}),
     activePageId: page.id,
     pageIds,
     url: page.url,
@@ -573,7 +577,8 @@ export const createBrowserSlice: StateCreator<AppState, [], [], BrowserSlice> = 
       [page.id],
       sessionProfileId,
       options?.sessionPartition,
-      options?.hideBrowserChrome
+      options?.hideBrowserChrome,
+      options?.webViewAgentType
     )
 
     set((s) => {

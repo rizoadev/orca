@@ -354,7 +354,7 @@ describe('buildWorktreeAgentRows', () => {
 
     // Why: both rows originally started together. A later working -> terminal
     // transition must not make fallback tab createdAt outrank paneKey order.
-    expect(rows.map((row) => [row.paneKey, row.startedAt, row.tab.createdAt])).toEqual([
+    expect(rows.map((row) => [row.paneKey, row.startedAt, row.tab?.createdAt])).toEqual([
       [PANE_KEY_1, 1000, 1000],
       [PANE_KEY_2, 1000, 1000]
     ])
@@ -387,7 +387,7 @@ describe('buildWorktreeAgentRows', () => {
       now: 2500
     })
 
-    expect(rows.map((row) => [row.paneKey, row.startedAt, row.tab.createdAt])).toEqual([
+    expect(rows.map((row) => [row.paneKey, row.startedAt, row.tab?.createdAt])).toEqual([
       [PANE_KEY_1, 1000, 1000],
       [PANE_KEY_2, 1000, 1000]
     ])

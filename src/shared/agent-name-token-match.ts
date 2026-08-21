@@ -30,7 +30,8 @@ export const AGENT_NAMES = [
   'strands',
   // Why: two-word product name; token-match still guards both words as a phrase.
   'deepseek harness',
-  'paseo'
+  'paseo',
+  'openchamber'
 ]
 
 // Why: Windows agent titles can surface launcher process names such as

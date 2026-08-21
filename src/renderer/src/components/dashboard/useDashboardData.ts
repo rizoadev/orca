@@ -19,9 +19,11 @@ export type DashboardAgentRow = {
    *  no PTY) — unique for React/lineage maps but never parsed as a pane key. */
   paneKey: string
   entry: AgentStatusEntry
-  tab: TerminalTab
+  /** Terminal tab backing this row. Absent for 'available' rows, which are
+   *  always-on web-view agents with no terminal session. */
+  tab?: TerminalTab
   agentType: AgentType
-  rowSource?: 'live' | 'retained' | 'subagent'
+  rowSource?: 'live' | 'retained' | 'subagent' | 'available'
   state: AgentStatusState | 'idle'
   /** Pane to focus when the row is activated, when it differs from paneKey.
    *  Subagent rows have no pane of their own and activate their parent's. */

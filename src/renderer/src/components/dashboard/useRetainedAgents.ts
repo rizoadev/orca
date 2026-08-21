@@ -193,10 +193,14 @@ export function collectRetainedAgentsOnDisappear(args: {
     if (lastState !== 'done' || wasInterrupted) {
       continue
     }
+    // Why: available web-view rows are never retained — they have no session.
+    if (prev.row.rowSource === 'available') {
+      continue
+    }
     toRetain.push({
       entry: prev.row.entry,
       worktreeId: prev.worktreeId,
-      tab: prev.row.tab,
+      tab: prev.row.tab!,
       agentType: prev.row.agentType,
       startedAt: prev.row.startedAt
     })

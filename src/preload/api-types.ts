@@ -557,6 +557,10 @@ import type {
   DeepSeekWebStatus
 } from '../shared/deepseek-web-types'
 import type {
+  OpenChamberSessionSummary,
+  OpenChamberWebStatus
+} from '../shared/openchamber-web-types'
+import type {
   StrandsIssueChatStartArgs,
   StrandsIssueChatSendArgs,
   StrandsIssueChatSessionSnapshot,
@@ -2264,6 +2268,13 @@ export type PreloadApi = {
     listAgentPresets: () => Promise<DeepSeekAgentPreset[]>
     setDefaultAgentPreset: (id: string) => Promise<DeepSeekWebStatus>
     listSessions: () => Promise<DeepSeekSessionSummary[]>
+  }
+  openchamberWeb: {
+    getStatus: () => Promise<OpenChamberWebStatus>
+    start: (cwd: string | null) => Promise<OpenChamberWebStatus>
+    stop: () => Promise<OpenChamberWebStatus>
+    attachDirectory: (directory: string | null) => Promise<void>
+    listSessions: () => Promise<OpenChamberSessionSummary[]>
   }
   jira: {
     connect: (args: {

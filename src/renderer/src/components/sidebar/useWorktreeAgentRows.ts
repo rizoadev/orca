@@ -20,6 +20,10 @@ import {
   createWorktreeAgentFreshnessSelector,
   EMPTY_WORKTREE_AGENT_FRESHNESS_SIGNATURE
 } from './worktree-agent-freshness-selector'
+import {
+  buildAvailableWebViewAgentRows,
+  openWebViewAgentTypes
+} from './worktree-available-webview-agent-rows'
 
 export { buildWorktreeAgentRows } from './worktree-agent-rows'
 export {
@@ -30,13 +34,10 @@ export {
 } from './worktree-agent-row-selectors'
 
 /**
- * Narrow per-worktree agent row hook used by the WorktreeCard inline agents
- * list. Produces live hook-reported agents plus retained "done" snapshots,
- * stale-decayed to 'idle' when the hook stream has gone quiet.
- *
+ * Narrow per-worktree agent row hook used by the WorktreeCard inline agents list.
  * Uses indexed per-worktree selectors rather than reusing useDashboardData's
- * cross-worktree aggregate. The index is rebuilt once per relevant immutable
- * store slice and then shared by every visible card, avoiding O(cards × agents)
+ * cross-worktree aggregate — the index is rebuilt once per relevant immutable
+ * store slice and shared by every visible card, avoiding O(cards × agents)
  * selector work on high-frequency agent status pings.
  */
 export function useWorktreeAgentRows(worktreeId: string, active = true): DashboardAgentRow[] {
@@ -45,6 +46,17 @@ export function useWorktreeAgentRows(worktreeId: string, active = true): Dashboa
     [worktreeId]
   )
   const tabs = useAppStore((s) => (active ? s.tabsByWorktree[worktreeId] : undefined))
+  // Why: web-view agents (Paseo/DeepSeek) live in browser tabs; only agents
+  // with an open tab get a launcher row, so idle worktrees show neither.
+  // Why: keep the selector to a stable stored reference (no `?? []` fallback) —
+  // a fresh array each render would trip zustand's shallow-equality re-render.
+  const browserTabs = useAppStore((s) =>
+    active ? s.browserTabsByWorktree?.[worktreeId] : undefined
+  )
+  const openWebViewAgents = useMemo(
+    () => (browserTabs ? openWebViewAgentTypes(browserTabs) : []),
+    [browserTabs]
+  )
   // Why: narrow the subscriptions to only THIS worktree's entries via
   // useShallow. Subscribing to the whole agentStatusByPaneKey map would make
   // every on-screen card re-render on any agent-status update anywhere —
@@ -95,22 +107,30 @@ export function useWorktreeAgentRows(worktreeId: string, active = true): Dashboa
             })
           ]
         : liveEntries
-    return applyAgentRowLineage(
-      buildWorktreeAgentRows({
-        tabs: tabs ?? [],
-        entries,
-        retained,
-        runtimePaneTitlesByTabId,
-        ptyIdsByTabId,
-        terminalLayoutsByTabId,
-        runtimeAgentOrchestrationByPaneKey,
-        now
-      })
-    )
+    return [
+      ...applyAgentRowLineage(
+        buildWorktreeAgentRows({
+          tabs: tabs ?? [],
+          entries,
+          retained,
+          runtimePaneTitlesByTabId,
+          ptyIdsByTabId,
+          terminalLayoutsByTabId,
+          runtimeAgentOrchestrationByPaneKey,
+          now
+        })
+      ),
+      // Why: launcher rows exist only while a browser-tab session for that
+      // agent is open in the worktree (see openWebViewAgentTypes).
+      ...(openWebViewAgents.length > 0
+        ? buildAvailableWebViewAgentRows(worktreeId, now, openWebViewAgents)
+        : [])
+    ]
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     active,
     tabs,
+    openWebViewAgents,
     liveEntries,
     migrationUnsupported,
     retained,

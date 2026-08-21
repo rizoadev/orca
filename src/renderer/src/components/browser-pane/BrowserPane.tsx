@@ -87,6 +87,7 @@ import { rememberLiveBrowserUrl } from './browser-runtime'
 import { ensureBrowserPageWebview } from './browser-page-webview'
 import { maybeHidePaseoWorkspaceList, preparePaseoWebview } from './paseo-webview-style'
 import { prepareDeepSeekWebview } from './deepseek-webview-style'
+import { prepareOpenChamberWebview } from './openchamber-webview-style'
 import {
   destroyPersistentWebview,
   moveFocusToRendererBeforeWebviewDetach,
@@ -3743,7 +3744,14 @@ function BrowserPagePane({
       // worktree — pin its persisted last-workspace selection in localStorage.
       preparePaseoWebview(webview, browserTab.id, webview.getURL())
       prepareDeepSeekWebview(webview, browserTab.id, webview.getURL())
+      prepareOpenChamberWebview(webview, browserTab.id, webview.getURL())
       maybeHidePaseoWorkspaceList(webview, webview.getURL())
+      // Why: the DeepSeek Harness SPA must also hide its toolbar / workspace
+      // list in a browser tab (the screen-side webview already does this).
+      const url = webview.getURL()
+      if (/^http:\/\/127\.0\.0\.1:\d+\/?$/.test(url)) {
+        webview.insertCSS(DEEPSEEK_WEBVIEW_CSS).catch(() => undefined)
+      }
       const queuedAnnotationViewportBridgeSync =
         registeredWebContentsIds.get(browserTab.id) !== webview.getWebContentsId()
       if (queuedAnnotationViewportBridgeSync) {

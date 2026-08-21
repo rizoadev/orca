@@ -129,9 +129,9 @@ const DashboardAgentRow = React.memo(function DashboardAgentRow({
     (e: React.MouseEvent) => {
       e.stopPropagation()
       // Why: subagent rows have no pane of their own, so focus the spawning parent's pane.
-      onActivate(agent.tab.id, agent.activationPaneKey ?? agent.paneKey)
+      onActivate(agent.tab?.id ?? '', agent.activationPaneKey ?? agent.paneKey)
     },
-    [onActivate, agent.tab.id, agent.activationPaneKey, agent.paneKey]
+    [onActivate, agent.tab?.id, agent.activationPaneKey, agent.paneKey]
   )
   const handleSendTargetClickCapture = useCallback(
     (e: React.MouseEvent) => {
@@ -156,8 +156,11 @@ const DashboardAgentRow = React.memo(function DashboardAgentRow({
   const startedAt = agent.startedAt > 0 ? agent.startedAt : null
   const doneAt = lastEnteredDoneAt(agent)
   const prompt = getAgentRowPrimaryText(agent.entry)
-  // Why: prompt is '' when unknown, so fall back to the state label to keep the row labeled.
-  const displayLabel = prompt || agentStateLabel(asDotState(agent.state))
+  // Why: available rows have no live prompt; show the agent name as the label.
+  const displayLabel =
+    agent.rowSource === 'available'
+      ? formatAgentTypeLabel(agent.agentType)
+      : prompt || agentStateLabel(asDotState(agent.state))
   const model = agent.entry.model?.trim() ?? ''
   // Why: gate tool fields on 'working' — a stale tool line on a done row reads as still-running.
   const isWorking = agent.state === 'working'
@@ -306,7 +309,7 @@ const DashboardAgentRow = React.memo(function DashboardAgentRow({
           relativeTimestamp={relativeTimestamp}
           expanded={expanded}
           hideExpand={hideExpand}
-          hideDismiss={agent.rowSource === 'subagent'}
+          hideDismiss={agent.rowSource === 'subagent' || agent.rowSource === 'available'}
           sendTargetStatus={sendTargetStatus}
           onDismiss={onDismiss}
           onToggleExpanded={handleToggleExpanded}

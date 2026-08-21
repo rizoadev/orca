@@ -110,6 +110,7 @@ export default function TabGroupPanel({
       onNewBrowserTab={commands.newBrowserTab}
       onNewDeepSeekHarnessTab={commands.newDeepSeekHarnessTab}
       onNewPaseoWebTab={commands.newPaseoWebTab}
+      onNewOpenChamberTab={commands.newOpenChamberTab}
       onNewSimulatorTab={commands.newSimulatorTab}
       onOpenEntry={commands.openEntry}
       onNewFileTab={commands.newFileTab}

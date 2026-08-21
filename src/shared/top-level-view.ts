@@ -17,7 +17,8 @@ const TOP_LEVEL_VIEW_LOOKUP: Record<TopLevelView, true> = {
   notes: true,
   paseo: true,
   docker: true,
-  'deepseek-harness': true
+  'deepseek-harness': true,
+  openchamber: true
 }
 
 export function isTopLevelView(value: unknown): value is TopLevelView {

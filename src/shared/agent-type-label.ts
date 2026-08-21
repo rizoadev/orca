@@ -25,7 +25,8 @@ const WELL_KNOWN_LABELS: Record<string, string> = {
   kimi: 'Kimi',
   strands: 'Strands',
   'deepseek-harness': 'DeepSeek Harness',
-  paseo: 'Paseo'
+  paseo: 'Paseo',
+  openchamber: 'OpenChamber'
 }
 
 export function formatAgentTypeLabel(agentType: AgentType | null | undefined): string {

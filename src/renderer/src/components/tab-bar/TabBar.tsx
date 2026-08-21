@@ -122,6 +122,8 @@ type TabBarProps = {
   onNewDeepSeekHarnessTab?: () => void
   /** Opens the Paseo web UI as a browser tab for the active worktree. */
   onNewPaseoWebTab?: () => void
+  /** Opens the OpenChamber web UI as a browser tab for the active worktree. */
+  onNewOpenChamberTab?: () => void
   onNewSimulatorTab?: () => void
   onOpenEntry?: (args: TabCreateEntryArgs) => Promise<void>
   terminalOnly?: boolean
@@ -249,6 +251,7 @@ function TabBarInner({
   onNewBrowserTab,
   onNewDeepSeekHarnessTab,
   onNewPaseoWebTab,
+  onNewOpenChamberTab,
   onNewSimulatorTab,
   onOpenEntry,
   terminalOnly = false,
@@ -716,6 +719,16 @@ function TabBarInner({
         {translate('paseo.view.new-tab', 'Paseo')}
       </DropdownMenuItem>
     ) : null
+  const newOpenChamberMenuItem =
+    !terminalOnly && onNewOpenChamberTab ? (
+      <DropdownMenuItem
+        onSelect={onNewOpenChamberTab}
+        className="gap-2 rounded-[7px] px-2 py-1.5 text-[12px] leading-5 font-medium"
+      >
+        <Bot className="size-4 text-muted-foreground" />
+        {translate('openchamber.view.new-tab', 'OpenChamber')}
+      </DropdownMenuItem>
+    ) : null
   const newSimulatorMenuItem =
     !terminalOnly && mobileEmulatorEnabled && onNewSimulatorTab ? (
       workspaceHasSimulatorTab ? (
@@ -789,6 +802,7 @@ function TabBarInner({
         {newBrowserMenuItem}
         {newDeepSeekHarnessMenuItem}
         {newPaseoWebMenuItem}
+        {newOpenChamberMenuItem}
         {newSimulatorMenuItem}
         {mobileEmulatorIntroMenuBlock}
       </>
@@ -798,6 +812,7 @@ function TabBarInner({
         {newBrowserMenuItem}
         {newDeepSeekHarnessMenuItem}
         {newPaseoWebMenuItem}
+        {newOpenChamberMenuItem}
         {newMarkdownMenuItem}
         {openMarkdownMenuItem}
         {newSimulatorMenuItem}

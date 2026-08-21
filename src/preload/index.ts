@@ -70,6 +70,10 @@ import type {
   DeepSeekWebStatus
 } from '../shared/deepseek-web-types'
 import type {
+  OpenChamberSessionSummary,
+  OpenChamberWebStatus
+} from '../shared/openchamber-web-types'
+import type {
   HiveAddCredentialArgs,
   HiveDeployEnvironmentArgs,
   HiveDispatchArgs,
@@ -1896,6 +1900,17 @@ const api = {
       ipcRenderer.invoke('deepseek-web:setDefaultAgentPreset', id),
     listSessions: (): Promise<DeepSeekSessionSummary[]> =>
       ipcRenderer.invoke('deepseek-web:listSessions')
+  },
+
+  openchamberWeb: {
+    getStatus: (): Promise<OpenChamberWebStatus> => ipcRenderer.invoke('openchamber-web:getStatus'),
+    start: (cwd: string | null): Promise<OpenChamberWebStatus> =>
+      ipcRenderer.invoke('openchamber-web:start', cwd),
+    stop: (): Promise<OpenChamberWebStatus> => ipcRenderer.invoke('openchamber-web:stop'),
+    attachDirectory: (directory: string | null): Promise<void> =>
+      ipcRenderer.invoke('openchamber-web:attachDirectory', directory),
+    listSessions: (): Promise<OpenChamberSessionSummary[]> =>
+      ipcRenderer.invoke('openchamber-web:listSessions')
   },
 
   jira: {

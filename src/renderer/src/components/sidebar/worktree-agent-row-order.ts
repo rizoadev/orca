@@ -15,10 +15,14 @@ export function comparePaneKeysOrdinal(a: string, b: string): number {
 }
 
 export function compareWorktreeAgentRows(a: DashboardAgentRow, b: DashboardAgentRow): number {
+  // Why: always-available web-view rows have no session start; sort behind real agent activity.
+  const availabilityRank = (row: DashboardAgentRow): number =>
+    row.rowSource === 'available' ? 1 : 0
   return (
+    availabilityRank(a) - availabilityRank(b) ||
     comparableNumber(a.startedAt) - comparableNumber(b.startedAt) ||
-    comparableNumber(a.tab.sortOrder) - comparableNumber(b.tab.sortOrder) ||
-    comparableNumber(a.tab.createdAt) - comparableNumber(b.tab.createdAt) ||
+    comparableNumber(a.tab?.sortOrder) - comparableNumber(b.tab?.sortOrder) ||
+    comparableNumber(a.tab?.createdAt) - comparableNumber(b.tab?.createdAt) ||
     comparePaneKeysOrdinal(a.paneKey, b.paneKey)
   )
 }

@@ -126,7 +126,7 @@ export function buildDashboardSnapshot(
         const isTitleDerived = row.startedAt === 0
         const routingPaneKey = row.activationPaneKey ?? row.paneKey
         const parsed = parsePaneKey(routingPaneKey)
-        const tabId = parsed?.tabId ?? row.tab.id
+        const tabId = parsed?.tabId ?? row.tab?.id ?? ''
         const leafId = parsed?.leafId ?? null
         const layoutPtyId =
           (leafId ? terminalLayoutsByTabId[tabId]?.ptyIdsByLeafId?.[leafId] : undefined) ?? null
