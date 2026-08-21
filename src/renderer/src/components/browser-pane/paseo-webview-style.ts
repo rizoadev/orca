@@ -76,6 +76,18 @@ function buildPaseoWorkspaceFilterScript(worktreePath: string): string {
     const guard = (window.__orcaPaseoFilter ?? (window.__orcaPaseoFilter = { observer: null }))
     if (guard.observer) guard.observer.disconnect()
     const norm = (p) => (p || '').replace(/[\\\\/]+$/, '')
+    // Why: each sidebar row is wrapped in a draggable-list cell rendered as
+    // <div style="opacity:1; z-index:1">; removing only the row button leaves
+    // that empty wrapper behind (whitespace), so the wrapper goes too.
+    const dragCellOf = (el) => {
+      let node = el.parentElement
+      while (node && node !== document.body) {
+        const st = node.getAttribute('style') || ''
+        if (st.indexOf('opacity: 1') !== -1 && st.indexOf('z-index: 1') !== -1) return node
+        node = node.parentElement
+      }
+      return el
+    }
     const cacheKey = '${PASEO_REPLICA_CACHE_KEY}'
     let timer = 0
     // Why: resolve the workspace whose directory matches the Orca worktree
@@ -154,8 +166,9 @@ function buildPaseoWorkspaceFilterScript(worktreePath: string): string {
         if (keep) {
           el.style.setProperty('pointer-events', 'none', 'important')
           el.style.cursor = 'default'
-        } else if (el.parentNode) {
-          el.parentNode.removeChild(el)
+        } else {
+          const wrapper = dragCellOf(el)
+          if (wrapper.parentNode) wrapper.parentNode.removeChild(wrapper)
         }
       }
       // Why: creation entries (Add project / New workspace) and Schedules
