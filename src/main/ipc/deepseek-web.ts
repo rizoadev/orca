@@ -6,6 +6,7 @@ import { ipcMain } from 'electron'
 import type { DeepSeekWebManager } from '../deepseek/deepseek-web-manager'
 import type {
   DeepSeekAgentPreset,
+  DeepSeekProjectStatus,
   DeepSeekSessionSummary,
   DeepSeekWebStatus
 } from '../deepseek/deepseek-web-manager'
@@ -17,6 +18,12 @@ export function registerDeepSeekWebHandlers(manager: DeepSeekWebManager): void {
   ipcMain.removeHandler('deepseek-web:listAgentPresets')
   ipcMain.removeHandler('deepseek-web:setDefaultAgentPreset')
   ipcMain.removeHandler('deepseek-web:listSessions')
+  ipcMain.removeHandler('deepseek-web:listProjects')
+  ipcMain.removeHandler('deepseek-web:stopProject')
+
+  ipcMain.handle('deepseek-web:listProjects', async (): Promise<DeepSeekProjectStatus[]> => {
+    return manager.listProjects()
+  })
 
   ipcMain.handle('deepseek-web:getStatus', async (): Promise<DeepSeekWebStatus> => {
     return manager.getStatus()
@@ -48,4 +55,11 @@ export function registerDeepSeekWebHandlers(manager: DeepSeekWebManager): void {
   ipcMain.handle('deepseek-web:listSessions', async (): Promise<DeepSeekSessionSummary[]> => {
     return manager.listSessions()
   })
+
+  ipcMain.handle(
+    'deepseek-web:stopProject',
+    async (_event, _projectPath: string): Promise<void> => {
+      manager.stopProject(_projectPath)
+    }
+  )
 }

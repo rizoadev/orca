@@ -553,6 +553,7 @@ import type {
 import type { PaseoDaemonStatus, PaseoProjectStatus } from '../shared/paseo-types'
 import type {
   DeepSeekAgentPreset,
+  DeepSeekProjectStatus,
   DeepSeekSessionSummary,
   DeepSeekWebStatus
 } from '../shared/deepseek-web-types'
@@ -2262,6 +2263,7 @@ export type PreloadApi = {
     }>
     getDaemonUrl: () => Promise<string>
     listProjects: () => Promise<PaseoProjectStatus[]>
+    clearWebviewStorage: () => Promise<void>
   }
   deepseekWeb: {
     getStatus: () => Promise<DeepSeekWebStatus>
@@ -2270,6 +2272,8 @@ export type PreloadApi = {
     listAgentPresets: () => Promise<DeepSeekAgentPreset[]>
     setDefaultAgentPreset: (id: string) => Promise<DeepSeekWebStatus>
     listSessions: () => Promise<DeepSeekSessionSummary[]>
+    listProjects: () => Promise<DeepSeekProjectStatus[]>
+    stopProject: (projectPath: string) => Promise<void>
   }
   openchamberWeb: {
     getStatus: () => Promise<OpenChamberWebStatus>

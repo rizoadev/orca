@@ -66,6 +66,7 @@ import type {
 import type { PaseoDaemonStatus, PaseoProjectStatus } from '../shared/paseo-types'
 import type {
   DeepSeekAgentPreset,
+  DeepSeekProjectStatus,
   DeepSeekSessionSummary,
   DeepSeekWebStatus
 } from '../shared/deepseek-web-types'
@@ -1888,7 +1889,8 @@ const api = {
     attachProject: (path: string | null): Promise<{ ok: boolean }> =>
       ipcRenderer.invoke('paseo:attachProject', path),
     getDaemonUrl: (): Promise<string> => ipcRenderer.invoke('paseo:getDaemonUrl'),
-    listProjects: (): Promise<PaseoProjectStatus[]> => ipcRenderer.invoke('paseo:listProjects')
+    listProjects: (): Promise<PaseoProjectStatus[]> => ipcRenderer.invoke('paseo:listProjects'),
+    clearWebviewStorage: (): Promise<void> => ipcRenderer.invoke('paseo:clearWebviewStorage')
   },
 
   deepseekWeb: {
@@ -1901,7 +1903,11 @@ const api = {
     setDefaultAgentPreset: (id: string): Promise<DeepSeekWebStatus> =>
       ipcRenderer.invoke('deepseek-web:setDefaultAgentPreset', id),
     listSessions: (): Promise<DeepSeekSessionSummary[]> =>
-      ipcRenderer.invoke('deepseek-web:listSessions')
+      ipcRenderer.invoke('deepseek-web:listSessions'),
+    listProjects: (): Promise<DeepSeekProjectStatus[]> =>
+      ipcRenderer.invoke('deepseek-web:listProjects'),
+    stopProject: (projectPath: string): Promise<void> =>
+      ipcRenderer.invoke('deepseek-web:stopProject', projectPath)
   },
 
   openchamberWeb: {

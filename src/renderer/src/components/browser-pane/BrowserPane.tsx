@@ -87,11 +87,15 @@ import { rememberLiveBrowserUrl } from './browser-runtime'
 import { ensureBrowserPageWebview } from './browser-page-webview'
 import { injectPaseoMatchOverlay, listenForPaseoForceRecover } from './paseo-webview-match'
 import {
+  hidePaseoOtherWorkspaces,
   isPaseoWebviewUrl,
-  maybeHidePaseoWorkspaceList,
   preparePaseoWebview
 } from './paseo-webview-style'
-import { prepareDeepSeekWebview } from './deepseek-webview-style'
+import {
+  injectDeepSeekMatchOverlay,
+  listenForDeepSeekForceRecover,
+  prepareDeepSeekWebview
+} from './deepseek-webview-style'
 import { OPENCHAMBER_WEBVIEW_CSS } from '@/lib/openchamber-webview-css'
 import {
   hideOpenChamberOtherWorkspaces,
@@ -3584,7 +3588,16 @@ function BrowserPagePane({
       firstReloadTokenRef.current = false
       return
     }
-    webviewRef.current?.reload()
+    // Why: Electron throws synchronously if reload() runs before the guest is
+    // dom-ready (e.g. the webview was just recreated for a new partition, or
+    // the token bumped during mount); the throw is transient and would take
+    // down the page via React's error boundary, so swallow it and let the next
+    // did-navigate/dom-ready pin pass retry.
+    try {
+      webviewRef.current?.reload()
+    } catch {
+      // Best-effort — the guest re-pins on its next dom-ready.
+    }
   }, [browserTab.reloadToken])
 
   useEffect(() => {
@@ -3703,6 +3716,11 @@ function BrowserPagePane({
       // Why: seed from the store URL (getURL() can throw during attach) so URL sync won't force-navigate an already-correct webview.
       lastKnownWebviewUrlRef.current =
         normalizeBrowserNavigationUrl(browserTabUrlRef.current) ?? null
+    } else {
+      // Why: a fresh webview must not inherit the previous mount's reloadToken
+      // skip — a bumped token during recreation would reload before dom-ready
+      // and crash the page via React's error boundary.
+      firstReloadTokenRef.current = true
     }
 
     webviewRef.current = webview
@@ -3769,9 +3787,15 @@ function BrowserPagePane({
       prepareDeepSeekWebview(webview, browserTab.id, webview.getURL())
       prepareOpenChamberWebview(webview, browserTab.id, webview.getURL())
       const worktreePath = useAppStore.getState().getKnownWorktreeById(worktreeId)?.path
-      // Why: the Paseo web app gets the same match-dir overlay + force-recover
-      // as OpenChamber; it re-pins the workspace for Orca's active worktree
-      // and heals a dead daemon or a stale workspace selection.
+      // Why: the browser pane serves every 127.0.0.1-hosted SPA (OpenChamber,
+      // DeepSeek Harness), so the URL alone cannot tell them apart — both are
+      // loopback roots on arbitrary ports. The per-app overlays below must be
+      // gated on the tab's webViewAgentType or they cross-inject: e.g. the
+      // OpenChamber match pill would run inside a DeepSeek webview, read a
+      // missing lastDirectory, and force-recover the wrong host.
+      const webViewAgentType = useAppStore
+        .getState()
+        .browserTabsByWorktree[worktreeId]?.find((t) => t.id === workspaceId)?.webViewAgentType
       if (worktreePath) {
         const currentUrl = webview.getURL()
         if (isPaseoWebviewUrl(currentUrl)) {
@@ -3780,17 +3804,27 @@ function BrowserPagePane({
         }
         // Why: keep only the Recent section plus the workspace of the active
         // worktree in the OpenChamber sidebar (same filter as the in-app page).
-        hideOpenChamberOtherWorkspaces(webview, webview.getURL(), worktreePath)
-        injectOpenChamberMatchOverlay(webview, webview.getURL(), worktreePath)
-        listenForOpenChamberForceRecover(webview, worktreePath)
+        if (webViewAgentType === 'openchamber') {
+          hideOpenChamberOtherWorkspaces(webview, webview.getURL(), worktreePath)
+          injectOpenChamberMatchOverlay(webview, webview.getURL(), worktreePath)
+          listenForOpenChamberForceRecover(webview, worktreePath)
+        }
+        // Why: the DeepSeek Harness chat UI gets the same match pill + blocker
+        // + auto force-recover as OpenChamber; its session must stay on the
+        // active worktree or the user could type into the wrong project.
+        if (webViewAgentType === 'deepseek-harness') {
+          injectDeepSeekMatchOverlay(webview, webview.getURL(), worktreePath)
+          listenForDeepSeekForceRecover(webview, worktreePath)
+        }
       }
-      maybeHidePaseoWorkspaceList(webview, webview.getURL())
+      // Why: the Paseo sidebar keeps only the current workspace + its session
+      // list; the filter resolves the workspace through the SPA's replica cache.
+      if (worktreePath) {
+        hidePaseoOtherWorkspaces(webview, webview.getURL(), worktreePath)
+      }
       // Why: the DeepSeek Harness SPA must also hide its toolbar / workspace
       // list in a browser tab (the screen-side webview already does this).
       const url = webview.getURL()
-      const webViewAgentType = useAppStore
-        .getState()
-        .browserTabsByWorktree[worktreeId]?.find((t) => t.id === workspaceId)?.webViewAgentType
       if (webViewAgentType === 'openchamber') {
         webview.insertCSS(OPENCHAMBER_WEBVIEW_CSS).catch(() => undefined)
       } else if (/^http:\/\/127\.0\.0\.1:\d+\/?$/.test(url)) {
@@ -3915,7 +3949,10 @@ function BrowserPagePane({
       const currentUrl = event.url ?? webview.getURL() ?? webview.src ?? 'about:blank'
       // Why: SPA pushState and full reloads re-run this; re-inject idempotently
       // so the Paseo styling survives every navigation, not just the first load.
-      maybeHidePaseoWorkspaceList(webview, currentUrl)
+      const worktreePathAfterNav = useAppStore.getState().getKnownWorktreeById(worktreeId)?.path
+      if (worktreePathAfterNav) {
+        hidePaseoOtherWorkspaces(webview, currentUrl, worktreePathAfterNav)
+      }
       if (isChromiumErrorPage(currentUrl)) {
         return
       }

@@ -21,6 +21,8 @@ import { translate } from '@/i18n/i18n'
 import { DEEPSEEK_WEBVIEW_CSS } from '@/lib/deepseek-webview-css'
 import {
   alertDeepSeekCwdMismatch,
+  injectDeepSeekMatchOverlay,
+  listenForDeepSeekForceRecover,
   prepareDeepSeekWebview,
   queueDeepSeekSession
 } from '@/components/browser-pane/deepseek-webview-style'
@@ -29,6 +31,7 @@ import type {
   DeepSeekSessionSummary,
   DeepSeekWebStatus
 } from '../../../../shared/deepseek-web-types'
+import { DeepSeekProjectsTable } from './DeepSeekProjectsTable'
 
 // Why: this webview has no store page id; a fixed key addresses its pending session.
 const DEEPSEEK_PAGE_ID = 'deepseek-page-view'
@@ -41,6 +44,7 @@ export default function DeepSeekPage(): React.JSX.Element {
   const [presets, setPresets] = useState<DeepSeekAgentPreset[]>([])
   const [sessions, setSessions] = useState<DeepSeekSessionSummary[]>([])
   const [retryKey, setRetryKey] = useState(0)
+  const [tableExpanded, setTableExpanded] = useState(true)
   const activeWorktree = useActiveWorktree()
   const activeWorktreeId = useActiveWorktreeId()
   const webviewRef = useRef<Electron.WebviewTag | null>(null)
@@ -76,9 +80,12 @@ export default function DeepSeekPage(): React.JSX.Element {
     if (!node) {
       return
     }
-    // Why: shared partition while debugging the blank-tab report — the
-    // per-worktree partition change coincided with the regression.
-    node.setAttribute('partition', 'persist:deepseek-web')
+    // Why: one daemon serves every project, so all DeepSeek webviews share an
+    // origin; a per-worktree partition keeps this screen's session pin isolated
+    // from DeepSeek tabs of other projects (shared partition made switching
+    // projects show the last-pinned session — the "wrong project" bug).
+    const worktreeId = useAppStore.getState().activeWorktreeId
+    node.setAttribute('partition', `persist:deepseek-web:${worktreeId ?? 'page'}`)
     node.setAttribute('allowpopups', '')
     node.style.flex = '1'
     node.style.width = '100%'
@@ -93,12 +100,20 @@ export default function DeepSeekPage(): React.JSX.Element {
     node.addEventListener('dom-ready', () => {
       prepareDeepSeekWebview(node, DEEPSEEK_PAGE_ID, node.getURL())
       injectCss()
-      // Why: after the SPA hydrates, surface a banner + force-sync button if
-      // the pinned session is still on a different cwd than the active worktree
-      // (the pin+reload can fail silently).
+      // Why: surface the match pill + blocker (and auto force-recover) in the
+      // Harness chat UI itself, mirroring the OpenChamber pattern — the SPA
+      // must not accept typing into the wrong project when the session
+      // resolves to a different cwd than the active worktree.
       const path = useAppStore
         .getState()
         .getKnownWorktreeById(useAppStore.getState().activeWorktreeId ?? '')?.path
+      if (path) {
+        injectDeepSeekMatchOverlay(node, node.getURL(), path)
+        listenForDeepSeekForceRecover(node, path)
+      }
+      // Why: after the SPA hydrates, surface a banner + force-sync button if
+      // the pinned session is still on a different cwd than the active worktree
+      // (the pin+reload can fail silently).
       const worktreeId = useAppStore.getState().activeWorktreeId
       if (path && worktreeId) {
         window.setTimeout(() => {
@@ -194,6 +209,18 @@ export default function DeepSeekPage(): React.JSX.Element {
       const match = list.find((session) => session.cwd === cwd)
       if (match) {
         queueDeepSeekSession(DEEPSEEK_PAGE_ID, match.sessionId)
+        // Why: the webview may already be dom-ready (its own dom-ready pin
+        // ran before the async session list resolved), so re-apply the pin now
+        // by reloading — otherwise the SPA boots on the stale session.
+        const node = webviewRef.current
+        if (node) {
+          try {
+            node.reload()
+          } catch {
+            // Why: reload before dom-ready is transient; the next dom-ready
+            // pin pass re-attempts.
+          }
+        }
       }
     })
     return () => {
@@ -316,7 +343,12 @@ export default function DeepSeekPage(): React.JSX.Element {
           </Button>
         </div>
       </div>
-      <div className="flex min-h-0 flex-1 flex-col">
+      <DeepSeekProjectsTable
+        activeWorktreePath={activeWorktree?.path ?? null}
+        tableExpanded={tableExpanded}
+        onToggleExpanded={() => setTableExpanded((expanded) => !expanded)}
+      />
+      <div className={`${tableExpanded ? 'hidden' : 'flex min-h-0 flex-1 flex-col'}`}>
         {noWorktree ? (
           <div className="flex flex-1 flex-col items-center justify-center gap-2 px-6 text-center text-xs text-muted-foreground">
             <p>
@@ -340,7 +372,7 @@ export default function DeepSeekPage(): React.JSX.Element {
           </div>
         ) : webUrl ? (
           <webview
-            key={webUrl}
+            key={`${webUrl}|${activeWorktreeId}`}
             ref={handleWebviewRef}
             src={webUrl}
             style={{ flex: 1, width: '100%', height: '100%', border: 'none', display: 'flex' }}

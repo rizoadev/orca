@@ -1,23 +1,10 @@
 /**
  * Injected styling/behavior for the embedded Paseo web app (browser tab).
- * Hides the sidebar workspace list and pins the app's persisted
- * last-workspace selection to the workspace that matches Orca's active
- * worktree, so the chat always runs in the folder the user is looking at.
+ * Pins the app's persisted last-workspace selection to the workspace that
+ * matches Orca's active worktree, so the chat always runs in the folder the
+ * user is looking at. The sidebar keeps the current workspace and its session
+ * list visible; everything else is filtered out.
  */
-
-// Why: the Paseo web app renders its sidebar workspace list with a stable
-// data-testid; display:none removes it without touching the rest of the UI.
-const PASEO_WORKSPACE_LIST_HIDE_CSS = `
-  [data-testid="sidebar-project-workspace-list-scroll"],
-  [aria-label="Add project"],
-  [aria-label="History"],
-  [data-testid="new-workspace-ref-picker-row"] {
-    display: none !important;
-  }
-`
-
-// Why: hide the Paseo sidebar chrome (list, Add project, History, picker).
-const PASEO_SIDEBAR_HIDE_ENABLED = true
 
 // Why: the Paseo web app always lives under its /h/ host route (workspace or
 // sessions); DeepSeek Harness serves its SPA from the loopback root, so this
@@ -57,13 +44,156 @@ export function isPaseoWebviewUrl(url: string): boolean {
   return PASEO_WEBVIEW_URL_PATTERN.test(url)
 }
 
-export function maybeHidePaseoWorkspaceList(webview: Electron.WebviewTag, url: string): void {
-  if (!PASEO_SIDEBAR_HIDE_ENABLED || !isPaseoWebviewUrl(url)) {
+// Why: the SPA keeps its replica cache in IndexedDB (key-value store); both
+// the match overlay and the sidebar filter resolve workspace ids through it.
+const PASEO_REPLICA_CACHE_DB = 'paseo-replica-cache'
+const PASEO_REPLICA_CACHE_STORE = 'key-value'
+
+// Why: the SPA home (no workspace selection yet) lives at the daemon root and
+// redirects to /open-project; recovery injection must also run there, or a
+// failed attach strands the webview without a pill or force-recover.
+const PASEO_WEBVIEW_ROOT_URL_PATTERN = /^http:\/\/127\.0\.0\.1:\d+\/(open-project)?(\?.*)?$/
+
+export function isPaseoWebviewRootUrl(url: string): boolean {
+  return PASEO_WEBVIEW_ROOT_URL_PATTERN.test(url)
+}
+
+/**
+ * Build the guest-side sidebar filter script. Keeps ONLY the current workspace
+ * (the one whose directory matches the Orca worktree path) and its session
+ * list; every other project/workspace row, the global "New workspace" entry
+ * and Schedules are hidden. Navigation chrome (History, command center,
+ * display preferences) stays visible. Resolves the current workspace through
+ * the app's IndexedDB replica cache; while the cache is unresolved nothing is
+ * hidden (a transient state must not collapse the whole sidebar). A
+ * MutationObserver re-applies because the SPA re-renders the sidebar without
+ * navigating; guarded on `window` so repeated injections replace — not stack —
+ * observers.
+ */
+function buildPaseoWorkspaceFilterScript(worktreePath: string): string {
+  return `(() => {
+    const target = ${JSON.stringify(worktreePath)}
+    const guard = (window.__orcaPaseoFilter ?? (window.__orcaPaseoFilter = { observer: null }))
+    if (guard.observer) guard.observer.disconnect()
+    const norm = (p) => (p || '').replace(/[\\\\/]+$/, '')
+    const cacheKey = '${PASEO_REPLICA_CACHE_KEY}'
+    let timer = 0
+    // Why: resolve the workspace whose directory matches the Orca worktree
+    // path through the SPA's IndexedDB replica cache; the sidebar keeps only
+    // that workspace row and its session list.
+    const resolveTargetId = () => new Promise((resolve) => {
+      try {
+        const open = indexedDB.open('${PASEO_REPLICA_CACHE_DB}')
+        open.onsuccess = () => {
+          try {
+            const tx = open.result.transaction('${PASEO_REPLICA_CACHE_STORE}', 'readonly').objectStore('${PASEO_REPLICA_CACHE_STORE}')
+            const get = tx.get(cacheKey)
+            get.onsuccess = () => {
+              try {
+                const cache = JSON.parse(get.result || 'null')
+                const hosts = Array.isArray(cache) ? cache : cache && Array.isArray(cache.hosts) ? cache.hosts : null
+                if (hosts) {
+                  outer: for (const host of hosts) {
+                    for (const ws of (host.workspaces || [])) {
+                      if (typeof ws.workspaceDirectory === 'string' && norm(ws.workspaceDirectory) === norm(target)) {
+                        resolve(ws.id)
+                        break outer
+                      }
+                    }
+                  }
+                }
+                resolve(null)
+              } catch (e) { resolve(null) }
+            }
+            get.onerror = () => resolve(null)
+          } catch (e) { resolve(null) }
+        }
+        open.onerror = () => resolve(null)
+      } catch (e) { resolve(null) }
+    })
+    const apply = async () => {
+      const scroller = document.querySelector('[data-testid="sidebar-project-workspace-list-scroll"]')
+      if (!scroller) return
+      const targetId = await resolveTargetId()
+      // Why: the list interleaves one project name row (sidebar-project-row-*)
+      // with its workspace rows; walk them in document order so each workspace
+      // row inherits the project name it belongs to.
+      const ordered = Array.from(
+        scroller.querySelectorAll(
+          '[data-testid^="sidebar-project-row-"], [data-testid^="sidebar-workspace-row-"]'
+        )
+      )
+      // First pass: find the project that contains the target workspace. Every
+      // workspace row of that project is part of the current workspace.
+      let currentProject = null
+      let matchedProject = null
+      let matched = 0
+      for (const el of ordered) {
+        const tid = el.getAttribute('data-testid')
+        if (tid.startsWith('sidebar-project-row-')) {
+          currentProject = el
+          continue
+        }
+        if (targetId && tid.endsWith(':' + targetId)) {
+          matched++
+          matchedProject = currentProject
+        }
+      }
+      // Why: removing the non-matching rows from the DOM closes the gap
+      // hidden rows would leave; the SPA re-renders new instances on the
+      // next observer tick, which we re-process, so no detached pool is
+      // needed. Kept rows get pointer-events + cursor reset so the accordion
+      // cannot be collapsed and the workspace row cannot navigate away.
+      currentProject = null
+      for (const el of ordered) {
+        const tid = el.getAttribute('data-testid')
+        if (tid.startsWith('sidebar-project-row-')) {
+          currentProject = el
+        }
+        const keep = targetId === null || currentProject === matchedProject
+        if (keep) {
+          el.style.setProperty('pointer-events', 'none', 'important')
+          el.style.cursor = 'default'
+        } else if (el.parentNode) {
+          el.parentNode.removeChild(el)
+        }
+      }
+      // Why: creation entries (Add project / New workspace) and Schedules
+      // must not appear in the sidebar; removing them closes any gap and the
+      // SPA re-creates them so the observer keeps the sidebar clean.
+      document.querySelectorAll(
+        '[data-testid="sidebar-add-project"], ' +
+        '[data-testid="sidebar-global-new-workspace"], ' +
+        '[data-testid="sidebar-schedules"]'
+      ).forEach((el) => {
+        if (el.parentNode) el.parentNode.removeChild(el)
+      })
+    }
+    apply()
+    guard.observer = new MutationObserver(() => {
+      window.clearTimeout(timer)
+      timer = window.setTimeout(apply, 150)
+    })
+    guard.observer.observe(document.body, { childList: true, subtree: true })
+  })()`
+}
+
+/**
+ * Inject the guest-side sidebar filter: only the current workspace (matching
+ * the Orca worktree path) and its session list stay visible. Best-effort — a
+ * failing script never breaks the webview.
+ */
+export function hidePaseoOtherWorkspaces(
+  webview: Electron.WebviewTag,
+  url: string,
+  worktreePath: string
+): void {
+  if (!isPaseoWebviewUrl(url)) {
     return
   }
-  // Why: insertCSS is idempotent per navigation and fails harmlessly on
-  // pre-attach states; a rejected promise must not surface to the app.
-  webview.insertCSS(PASEO_WORKSPACE_LIST_HIDE_CSS).catch(() => undefined)
+  void webview
+    .executeJavaScript(buildPaseoWorkspaceFilterScript(worktreePath))
+    .catch(() => undefined)
 }
 
 /**

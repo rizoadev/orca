@@ -5,6 +5,7 @@
  * attached to the project the user is looking at.
  */
 import WebSocket from 'ws'
+import { stripFolderWorkspaceInstanceSuffix } from '../../shared/worktree-id'
 import type { PaseoDaemonManager } from './daemon-manager'
 import type { PaseoProjectStatus } from '../../shared/paseo-types'
 
@@ -40,11 +41,25 @@ const ATTACH_DELAY_MS = 300
 // Why: attaching every Orca project up front must not hammer the daemon's WS;
 // a small worker pool keeps the creates serialized enough to stay reliable.
 const ATTACH_CONCURRENCY = 5
+// Why: the daemon keys reconnectable sessions by clientId, so Date.now()
+// alone collides when concurrent attaches run in the same millisecond — a
+// monotonic suffix keeps every WS connection a distinct session.
+let attachSequence = 0
+
+/** Normalize a caller-provided path to the real directory Paseo should open. */
+function normalizeAttachPath(path: string): string {
+  // Why: folder-workspace instance paths can carry a ::workspace:<uuid>
+  // suffix; the daemon would reject the virtual path as directory_not_found.
+  return stripFolderWorkspaceInstanceSuffix(path.trim())
+}
 
 export class PaseoAutoAttach {
   private lastAttachedPath: string | null = null
   private lastResult: PaseoAttachResult = { workspaceId: null, serverId: null }
-  private attachInFlight: Promise<PaseoAttachResult> | null = null
+  // Why: per-path in-flight promises make concurrent attaches for the same
+  // directory atomic — a second caller awaits the first and shares its result
+  // instead of racing the daemon's find-or-create.
+  private attachInFlightByPath = new Map<string, Promise<PaseoAttachResult>>()
   private daemon: PaseoDaemonManager
   // Why: the daemon dedupes by cwd (open_project reuses an active workspace),
   // so this cache only skips a redundant WS round trip per path.
@@ -59,11 +74,22 @@ export class PaseoAutoAttach {
     if (!worktreePath) {
       return { workspaceId: null, serverId: null }
     }
-    const cached = this.workspaceByPath.get(worktreePath)
+    const normalized = normalizeAttachPath(worktreePath)
+    if (!normalized) {
+      return { workspaceId: null, serverId: null }
+    }
+    const cached = this.workspaceByPath.get(normalized)
     if (cached?.workspaceId) {
       return cached
     }
-    if (worktreePath === this.lastAttachedPath) {
+    // Why: serialize per directory, not globally — a single in-flight promise
+    // makes every concurrent waiter burst through once it settles, so two
+    // calls for the same path can still race the daemon's find-or-create.
+    const inFlight = this.attachInFlightByPath.get(normalized)
+    if (inFlight) {
+      return inFlight
+    }
+    if (normalized === this.lastAttachedPath) {
       // Why: callers (worktree-follow) still need the workspace id to navigate
       // a restored Paseo tab even when the path was already attached.
       return this.lastResult
@@ -71,33 +97,25 @@ export class PaseoAutoAttach {
     if (!this.daemon.isRunning()) {
       // Why: the webview can't reach the daemon yet; record intent so a later
       // explicit attach call (view focus / worktree switch) still sends it.
-      this.lastAttachedPath = worktreePath
+      this.lastAttachedPath = normalized
       return { workspaceId: null, serverId: null }
     }
-    // Why: serialize concurrent attaches (open tab + worktree-follow can fire
-    // together) so two parallel runs don't create duplicate workspaces for the
-    // same path; the second caller re-checks after the first settles.
-    if (this.attachInFlight) {
-      await this.attachInFlight.catch(() => undefined)
-      if (worktreePath === this.lastAttachedPath) {
-        return this.lastResult
-      }
-    }
-    this.attachInFlight = this.doAttach(worktreePath).then((result) => {
-      this.lastAttachedPath = worktreePath
+    const promise = this.doAttach(normalized).then((result) => {
+      this.lastAttachedPath = normalized
       this.lastResult = result
       if (result.workspaceId) {
-        this.workspaceByPath.set(worktreePath, result)
+        this.workspaceByPath.set(normalized, result)
       }
       console.info(
-        `[paseo] attached path=${worktreePath} workspace=${result.workspaceId} server=${result.serverId}`
+        `[paseo] attached path=${normalized} workspace=${result.workspaceId} server=${result.serverId}`
       )
       return result
     })
+    this.attachInFlightByPath.set(normalized, promise)
     try {
-      return await this.attachInFlight
+      return await promise
     } finally {
-      this.attachInFlight = null
+      this.attachInFlightByPath.delete(normalized)
     }
   }
 
@@ -107,8 +125,10 @@ export class PaseoAutoAttach {
    * Idempotent: already-attached paths resolve from the in-process cache.
    */
   async attachAllWorktrees(worktreePaths: string[]): Promise<PaseoProjectStatus[]> {
+    // Why: several worktree entries can share one directory (folder-workspace
+    // instances); dedupe so a path is attached exactly once per pass.
+    const queue = Array.from(new Set(worktreePaths.map(normalizeAttachPath).filter(Boolean)))
     const results: PaseoProjectStatus[] = []
-    const queue = [...worktreePaths]
     const workers = Array.from(
       { length: Math.min(ATTACH_CONCURRENCY, Math.max(queue.length, 1)) },
       async () => {
@@ -138,10 +158,12 @@ export class PaseoAutoAttach {
   private async doAttach(worktreePath: string): Promise<PaseoAttachResult> {
     const url = `ws://127.0.0.1:${portOf(this.daemon)}${WS_PATH}`
     const stamp = Date.now()
+    const seq = attachSequence++
     // Why: unique ids keep the daemon from resuming a stale session (it keys
-    // reconnectable sessions by clientId) and let us correlate responses.
-    const clientId = `orca-${stamp}`
-    const openProjectRequestId = `orca-open-project-${stamp}`
+    // reconnectable sessions by clientId) and let us correlate responses; the
+    // sequence breaks the same-millisecond collision between parallel attaches.
+    const clientId = `orca-${stamp}-${seq}`
+    const openProjectRequestId = `orca-open-project-${stamp}-${seq}`
     let ws: WebSocket | null = null
     const send = (message: Record<string, unknown>): void => {
       ws?.send(JSON.stringify({ type: 'session', message }))

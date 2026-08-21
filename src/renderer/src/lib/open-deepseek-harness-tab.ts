@@ -77,7 +77,11 @@ export async function openDeepSeekHarnessTab(worktreeId: string, groupId: string
     hideBrowserChrome: true,
     // Why: explicit marker so session detection survives SPA title overwrites
     // and stays unambiguous against other app-like tabs (OpenChamber).
-    webViewAgentType: 'deepseek-harness'
+    webViewAgentType: 'deepseek-harness',
+    // Why: one daemon serves every project, so all DeepSeek webviews share an
+    // origin; a per-worktree partition keeps each tab's session pin isolated,
+    // otherwise opening two projects shows the same (last-pinned) session.
+    sessionPartition: `persist:deepseek-web:${worktreeId}`
   })
   // Why: pin the Harness UI to the session whose cwd matches this worktree.
   const sessions = await window.api.deepseekWeb.listSessions().catch(() => [])

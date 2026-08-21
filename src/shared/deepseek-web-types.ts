@@ -30,3 +30,13 @@ export type DeepSeekWebStatus = {
   cwd: string | null
   error: string | null
 }
+
+/** One project's DeepSeek Harness host row for the in-app overview table. */
+export type DeepSeekProjectStatus = {
+  projectPath: string
+  port: number
+  state: DeepSeekWebState
+  pid: number | null
+  sessionCount: number
+  error: string | null
+}

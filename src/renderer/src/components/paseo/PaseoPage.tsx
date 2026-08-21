@@ -9,6 +9,9 @@ import { useActiveWorktree, useActiveWorktreeId } from '@/store/selectors'
 import { Button } from '@/components/ui/button'
 import { translate } from '@/i18n/i18n'
 import {
+  hidePaseoOtherWorkspaces,
+  isPaseoWebviewRootUrl,
+  isPaseoWebviewUrl,
   preparePaseoWebview,
   queuePaseoCwd,
   queuePaseoWorkspaceSelection
@@ -16,7 +19,9 @@ import {
 import {
   injectPaseoMatchOverlay,
   listenForPaseoForceRecover,
-  pollPaseoDirectorySync
+  pollPaseoDirectorySync,
+  reconcilePaseoServerId,
+  retryPaseoAttach
 } from '@/components/browser-pane/paseo-webview-match'
 import type { PaseoProjectStatus } from '../../../../shared/paseo-types'
 
@@ -106,12 +111,19 @@ export default function PaseoPage(): React.JSX.Element {
     }
     let cancelled = false
     void (async () => {
-      const attach = await window.api.paseo.attachProject(worktreePath).catch(() => null)
+      const attach = await retryPaseoAttach(worktreePath, () => cancelled)
       console.info(`[paseo] page attach worktree=${worktreePath} attach=${JSON.stringify(attach)}`)
       if (cancelled) {
         return
       }
-      if (attach?.workspaceId && attach.serverId) {
+      if (attach.workspaceId && attach.serverId) {
+        // Why: clear the webview partition when the daemon identity changed
+        // (stale SPA host registry otherwise rejects the connection); the key
+        // change below then loads the app onto a clean bootstrap.
+        await reconcilePaseoServerId(attach.serverId)
+        if (cancelled) {
+          return
+        }
         // Why: pin the persisted selection too, so hydration lands on this
         // workspace rather than a stale last-loaded one.
         queuePaseoCwd(PASEO_PAGE_ID, worktreePath)
@@ -164,8 +176,15 @@ export default function PaseoPage(): React.JSX.Element {
           return
         }
         preparePaseoWebview(node, PASEO_PAGE_ID, node.getURL())
-        injectPaseoMatchOverlay(node, node.getURL(), path)
-        listenForPaseoForceRecover(node, path)
+        // Why: keep only the current workspace + its session list in the sidebar.
+        hidePaseoOtherWorkspaces(node, node.getURL(), path)
+        // Why: the SPA home (/open-project) is not under /h/, but a failed
+        // attach lands there — keep the pill + force-recover live so the view
+        // heals instead of sitting dead.
+        if (isPaseoWebviewUrl(node.getURL()) || isPaseoWebviewRootUrl(node.getURL())) {
+          injectPaseoMatchOverlay(node, node.getURL(), path)
+          listenForPaseoForceRecover(node, path)
+        }
       }
       node.addEventListener('dom-ready', () => {
         inject()

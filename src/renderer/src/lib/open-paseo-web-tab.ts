@@ -5,6 +5,10 @@ import {
   queuePaseoCwd,
   queuePaseoWorkspaceSelection
 } from '@/components/browser-pane/paseo-webview-style'
+import {
+  reconcilePaseoServerId,
+  retryPaseoAttach
+} from '@/components/browser-pane/paseo-webview-match'
 import { isWebViewAgentTab } from '@/components/sidebar/worktree-available-webview-agent-rows'
 
 /**
@@ -40,11 +44,7 @@ export async function openPaseoWebTab(worktreeId: string, groupId: string): Prom
     toast.error(status.error ?? translate('paseo.view.start-failed', 'Paseo failed to start'))
     return
   }
-  const attach = await window.api.paseo.attachProject(worktree.path).catch(() => ({
-    ok: false,
-    workspaceId: null,
-    serverId: null
-  }))
+  const attach = await retryPaseoAttach(worktree.path, () => false)
   console.info(
     `[paseo] open tab worktree=${worktree.path} attach=${JSON.stringify(attach)} port=${status.port}`
   )
@@ -52,6 +52,11 @@ export async function openPaseoWebTab(worktreeId: string, groupId: string): Prom
   // chat composer for the auto-attached workspace, and the host sessions route
   // lists every open session when no workspace id is known yet.
   const { workspaceId, serverId } = attach
+  if (workspaceId && serverId) {
+    // Why: clear the webview partition when the daemon identity changed so the
+    // app re-bootstraps its host registry instead of rejecting the connection.
+    await reconcilePaseoServerId(serverId)
+  }
   const port = status.port
   const url =
     workspaceId && serverId

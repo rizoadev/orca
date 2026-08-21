@@ -185,7 +185,7 @@ import { maybeAutoRenameBranchOnFirstWork } from './agent-hooks/first-work-branc
 import { rememberBranchRenameFailureOutput } from './agent-hooks/branch-rename-failure-output'
 import { renameWorktreeFolderOnFirstWork } from './agent-hooks/first-work-folder-rename'
 import { moveWorktree } from './git/worktree'
-import { getRepoIdFromWorktreeId, splitWorktreeId } from '../shared/worktree-id'
+import { getRepoIdFromWorktreeId, splitWorktreeIdForFilesystem } from '../shared/worktree-id'
 import { parseWorkspaceKey } from '../shared/workspace-scope'
 import { setMigrationUnsupportedPtyListener } from './agent-hooks/migration-unsupported-pty-state'
 import {
@@ -266,14 +266,20 @@ let store: Store | null = null
  */
 function listAllWorktreePaths(): string[] {
   const metas = store?.getAllWorktreeMeta() ?? {}
-  const paths: string[] = []
+  const paths = new Set<string>()
   for (const worktreeId of Object.keys(metas)) {
-    const parsed = splitWorktreeId(worktreeId)
-    if (parsed && existsSync(parsed.worktreePath)) {
-      paths.push(parsed.worktreePath)
+    const parsed = splitWorktreeIdForFilesystem(worktreeId)
+    if (!parsed) {
+      continue
+    }
+    // Why: folder-workspace instances share one directory; dedupe so each
+    // real path is attached exactly once (open_project find-or-create is
+    // not safe against parallel same-cwd creates).
+    if (existsSync(parsed.worktreePath)) {
+      paths.add(parsed.worktreePath)
     }
   }
-  return paths
+  return Array.from(paths)
 }
 let stats: StatsCollector | null = null
 let claudeUsage: ClaudeUsageStore | null = null
@@ -1208,7 +1214,12 @@ function openMainWindow(): BrowserWindow {
     registerPaseoHandlers(paseoDaemon, paseoAutoAttach, { listWorktreePaths: listAllWorktreePaths })
   }
   if (!deepSeekWeb) {
-    deepSeekWeb = new DeepSeekWebManager()
+    deepSeekWeb = new DeepSeekWebManager({
+      // Why: the overview table auto-scans every Orca worktree so each project
+      // shows its allocated (deterministic) port up front, even before its
+      // host has ever been spawned. Worktree ids embed the path.
+      listWorktreePaths: listAllWorktreePaths
+    })
     registerDeepSeekWebHandlers(deepSeekWeb)
   }
   if (!openChamberWeb) {

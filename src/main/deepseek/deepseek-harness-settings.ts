@@ -65,3 +65,15 @@ export function ensureEnglishHarnessLocale(harnessHomePath: string): void {
     doc.locale = locale
   })
 }
+
+/** Persist the default agent preset for new sessions (host re-reads at boot). */
+export function setDefaultAgentPresetInSettings(harnessHomePath: string, id: string): void {
+  mergeHarnessSettings(harnessHomePath, (doc) => {
+    const agentPresets =
+      doc['agent-presets'] && typeof doc['agent-presets'] === 'object'
+        ? (doc['agent-presets'] as Record<string, unknown>)
+        : {}
+    agentPresets.default = id
+    doc['agent-presets'] = agentPresets
+  })
+}

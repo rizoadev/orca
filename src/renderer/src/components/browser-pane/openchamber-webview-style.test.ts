@@ -229,7 +229,10 @@ describe('injectOpenChamberMatchOverlay', () => {
     // direct force on mismatch (no re-pin+reload budget / auto-reload counters)
     expect(script).not.toContain('orcaOcAutoReloads')
     expect(script).toContain('force-recover')
-    expect(script).toContain("sessionStorage.setItem('orcaOcForceSignaled', '1')")
+    // retry timestamp throttle persists across reloads instead of a one-shot flag
+    expect(script).toContain("sessionStorage.setItem('orcaOcLastForcedAt'")
+    expect(script).toContain('orcaOcBootedAt')
+    expect(script).toContain('orcaOcAutoReloaded')
     // click forces instead of re-pinning+reloading
     expect(script).toContain("guard.el.addEventListener('click'")
     // mismatch blocks input (keyboard + visual overlay) so nothing is typed
@@ -240,6 +243,10 @@ describe('injectOpenChamberMatchOverlay', () => {
     expect(script).toContain('input')
     expect(script).toContain('location.reload()')
     expect(script).toContain('autoReloaded')
+    // bootedAt/autoReloaded persist in sessionStorage so a reload cannot reset
+    // them and re-enter the auto-reload branch forever (blocker stuck)
+    expect(script).toContain("sessionStorage.getItem('orcaOcBootedAt')")
+    expect(script).toContain("sessionStorage.getItem('orcaOcAutoReloaded')")
   })
 
   it('swallows executeJavaScript rejections', () => {

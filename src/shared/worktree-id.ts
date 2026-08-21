@@ -38,8 +38,13 @@ export function splitWorktreeIdForFilesystem(worktreeId: string): ParsedWorktree
     // Why: folder projects can have multiple workspace sessions backed by the
     // same directory. Their IDs carry a UUID suffix, but filesystem callers
     // still need the real folder path as cwd/root.
-    worktreePath: parsed.worktreePath.replace(FOLDER_WORKSPACE_INSTANCE_SUFFIX, '')
+    worktreePath: stripFolderWorkspaceInstanceSuffix(parsed.worktreePath)
   }
+}
+
+/** Strip the folder-workspace-instance UUID suffix from a worktree path. */
+export function stripFolderWorkspaceInstanceSuffix(worktreePath: string): string {
+  return worktreePath.replace(FOLDER_WORKSPACE_INSTANCE_SUFFIX, '')
 }
 
 export function getWorktreePathBasenameFromId(worktreeId: string): string | null {

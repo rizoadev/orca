@@ -2,7 +2,7 @@
  * Electron IPC handlers for the in-app Paseo view: daemon status/start/stop
  * and project auto-attach from the active worktree.
  */
-import { ipcMain } from 'electron'
+import { ipcMain, session } from 'electron'
 import type { PaseoDaemonManager } from '../paseo/daemon-manager'
 import type { PaseoAutoAttach } from '../paseo/auto-attach'
 import type { PaseoDaemonStatus } from '../paseo/daemon-manager'
@@ -24,9 +24,18 @@ export function registerPaseoHandlers(
   ipcMain.removeHandler('paseo:attachProject')
   ipcMain.removeHandler('paseo:getDaemonUrl')
   ipcMain.removeHandler('paseo:listProjects')
+  ipcMain.removeHandler('paseo:clearWebviewStorage')
 
   ipcMain.handle('paseo:getStatus', async (): Promise<PaseoDaemonStatus> => {
     return daemon.getStatus()
+  })
+
+  ipcMain.handle('paseo:clearWebviewStorage', async (): Promise<void> => {
+    // Why: the SPA's host registry pins the daemon serverId; after the daemon
+    // home is wiped the id changes and the stale registry makes the app reject
+    // the connection (stuck on /open-project). Clearing the webview partition
+    // lets the app re-bootstrap from the daemon-injected connection hint.
+    await session.fromPartition('persist:paseo').clearStorageData()
   })
 
   ipcMain.handle('paseo:start', async (): Promise<PaseoDaemonStatus> => {

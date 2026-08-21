@@ -1,154 +1,165 @@
 /**
- * Manages the DeepSeek Harness web host for the in-app DeepSeek view.
- * Spawns `dsh --profile web` (the dsh-terminal-plugin front door) with the
- * active worktree as its working directory, waits for the HTTP listener, and
- * stops the host on quit or when the workspace changes.
+ * Manages a SINGLE DeepSeek Harness web daemon serving every Orca worktree.
+ *
+ * One `dsh --profile web` child on a PERSISTENT loopback port (allocated by a
+ * registry, lowest free, written to disk under userData). Every worktree is
+ * registered as a Host Workspace on that daemon, so switching projects never
+ * restarts anything — the SPA just re-pins its current session to the session
+ * whose cwd matches the active worktree.
+ *
+ * Why one daemon instead of one per project: multiple dsh children sharing
+ * the same DSH_HOME fight over the workspace/session registry (sessions leak
+ * across projects — the "wrong project" bug) and spawn-heavy children pile
+ * up past the startup timeout (the "max 3 / failed to start" bug). A single
+ * daemon sidesteps both, matching how Paseo runs one daemon for all projects.
  */
-import { execFileSync, spawn, type ChildProcess } from 'node:child_process'
-import { existsSync } from 'node:fs'
-import { homedir } from 'node:os'
+import type { ChildProcess } from 'node:child_process'
 import { join } from 'node:path'
 import { app } from 'electron'
 import { DeepSeekHostClient } from './deepseek-host-client'
-import { ensureEnglishHarnessLocale, mergeHarnessSettings } from './deepseek-harness-settings'
+import {
+  ensureEnglishHarnessLocale,
+  setDefaultAgentPresetInSettings
+} from './deepseek-harness-settings'
+import { spawnDeepSeekHost } from './deepseek-host-spawn'
+import { harnessHome, resolveDshBin } from './deepseek-server-resolver'
+import { DeepSeekPortRegistry } from './deepseek-port-registry'
+import { resolveFreeLoopbackPort, waitForHttpListener } from '../web-hosts/loopback-listener'
 import type {
   DeepSeekAgentPreset,
+  DeepSeekProjectStatus,
   DeepSeekSessionSummary,
   DeepSeekWebState,
   DeepSeekWebStatus
 } from '../../shared/deepseek-web-types'
 
-const DEFAULT_PORT = 3080
+// Why: the registry keys by project path; the single daemon uses one fixed key
+// so its port stays stable while every worktree shares the same host.
+const DAEMON_KEY = 'daemon'
 
-// Why: the web host spawns its own Harness runtime home; keep it isolated from
-// the user's real ~/.dsh so Orca-managed sessions stay scoped to Orca's data.
-function harnessHome(): string {
-  return process.env.DSH_HOME?.trim() || `${app.getPath('userData')}/dsh-home`
+type DeepSeekInstance = {
+  projectPath: string
+  child: ChildProcess | null
+  state: DeepSeekWebState
+  error: string | null
+  port: number
+  cwd: string | null
+  stderrTail: string
+  workspaceGuardTimer: NodeJS.Timeout | null
 }
 
-// Why: Electron may launch with a bare PATH (e.g. from a desktop launcher) that
-// omits npm's global bin, where `dsh` lives. Resolve the binary explicitly
-// instead of relying on the inherited environment.
-function resolveDshBin(): string | null {
-  const override = process.env.DSH_BIN?.trim()
-  if (override && existsSync(override)) {
-    return override
-  }
-  const pathDirs = (process.env.PATH ?? '').split(':').filter(Boolean)
-  for (const dir of pathDirs) {
-    for (const name of ['dsh', 'dsh.cmd', 'dsh.exe']) {
-      const candidate = join(dir, name)
-      if (existsSync(candidate)) {
-        return candidate
-      }
-    }
-  }
-  // Why: `npm i -g` installs into the npm global prefix; probe the common
-  // locations directly so a PATH-less Electron process still finds it.
-  const npmGlobalCandidates = [
-    process.env.NPM_CONFIG_PREFIX,
-    join(homedir(), '.npm-global'),
-    join(homedir(), 'node_modules')
-  ]
-  for (const prefix of npmGlobalCandidates) {
-    if (!prefix) {
-      continue
-    }
-    for (const name of ['dsh', 'dsh.cmd', 'dsh.exe']) {
-      const candidate = join(prefix, 'bin', name)
-      if (existsSync(candidate)) {
-        return candidate
-      }
-    }
-  }
-  // Why: nvm-style installs put global bins under the nvm node prefix, which
-  // PATH-less GUI launches and the fixed candidate list both miss; `npm prefix -g`
-  // reports the real prefix cheaply.
-  try {
-    const prefix = execFileSync('npm', ['prefix', '-g'], {
-      encoding: 'utf8',
-      timeout: 3_000
-    }).trim()
-    if (prefix) {
-      for (const name of ['dsh', 'dsh.cmd', 'dsh.exe']) {
-        const candidate = join(prefix, 'bin', name)
-        if (existsSync(candidate)) {
-          return candidate
-        }
-      }
-    }
-  } catch {
-    // npm unavailable (e.g. bare GUI PATH) — fall through; PATH/DSH_BIN still apply
-  }
-  return null
+export type {
+  DeepSeekAgentPreset,
+  DeepSeekProjectStatus,
+  DeepSeekSessionSummary,
+  DeepSeekWebState,
+  DeepSeekWebStatus
 }
 
-export type { DeepSeekAgentPreset, DeepSeekSessionSummary, DeepSeekWebState, DeepSeekWebStatus }
+export type DeepSeekWebManagerOptions = {
+  /** Enumerate every known Orca worktree path (for the auto-scan overview). */
+  listWorktreePaths?: () => string[]
+}
 
 export class DeepSeekWebManager {
-  private child: ChildProcess | null = null
-  private state: DeepSeekWebState = 'stopped'
-  private error: string | null = null
-  private port = DEFAULT_PORT
-  private cwd: string | null = null
-  private workspaceGuardTimer: NodeJS.Timeout | null = null
+  private instance: DeepSeekInstance | null = null
+  /** The worktree the SPA should currently be pinned to. */
+  private activePath: string | null = null
+  private readonly listWorktreePaths: () => string[]
+  private readonly ports: DeepSeekPortRegistry
+  // Why: DeepSeekPage's effect and the tab opener can call start() for the
+  // same project concurrently; serialize so only one spawn happens.
+  private readonly starting = new Map<string, Promise<DeepSeekWebStatus>>()
 
-  getUrl(): string {
-    return `http://127.0.0.1:${this.port}`
+  constructor(options: DeepSeekWebManagerOptions = {}) {
+    this.listWorktreePaths = options.listWorktreePaths ?? (() => [])
+    this.ports = new DeepSeekPortRegistry(join(app.getPath('userData'), 'deepseek', 'ports.json'))
+  }
+
+  private daemon(): DeepSeekInstance {
+    if (this.instance) {
+      return this.instance
+    }
+    const daemon: DeepSeekInstance = {
+      projectPath: DAEMON_KEY,
+      child: null,
+      state: 'stopped',
+      error: null,
+      port: this.ports.portFor(DAEMON_KEY),
+      cwd: null,
+      stderrTail: '',
+      workspaceGuardTimer: null
+    }
+    this.instance = daemon
+    return daemon
+  }
+
+  private instanceUrl(instance: DeepSeekInstance): string {
+    return `http://127.0.0.1:${instance.port}`
+  }
+
+  private isChildAlive(instance: DeepSeekInstance): boolean {
+    return (
+      instance.child !== null &&
+      instance.child.exitCode === null &&
+      instance.child.signalCode === null
+    )
+  }
+
+  private isRunning(instance: DeepSeekInstance): boolean {
+    return instance.state === 'running' && this.isChildAlive(instance)
   }
 
   getStatus(): DeepSeekWebStatus {
+    const instance = this.daemon()
     return {
-      state: this.state,
-      port: this.port,
-      url: this.state === 'running' ? this.getUrl() : null,
-      pid: this.child?.pid ?? null,
-      cwd: this.cwd,
-      error: this.error
+      state: instance.state,
+      port: instance.port,
+      url: instance.state === 'running' ? this.instanceUrl(instance) : null,
+      pid: instance.child?.pid ?? null,
+      cwd: this.activePath,
+      error: instance.error
     }
   }
 
-  /** POST-RPC against the running host (same envelope the dsh CLI client uses). */
-  private readonly host = new DeepSeekHostClient(() => this.getUrl())
+  /** All sessions on the daemon (every workspace's sessions). */
+  async listSessions(): Promise<DeepSeekSessionSummary[]> {
+    const instance = this.daemon()
+    if (!this.isRunning(instance)) {
+      return []
+    }
+    return this.hostFor(instance).listSessions()
+  }
+
+  /** All agent presets the daemon exposes (system plus user roots). */
+  async listAgentPresets(): Promise<DeepSeekAgentPreset[]> {
+    const instance = this.daemon()
+    if (!this.isRunning(instance)) {
+      return []
+    }
+    return this.hostFor(instance).listAgentPresets()
+  }
+
+  private hostFor(instance: DeepSeekInstance): DeepSeekHostClient {
+    return new DeepSeekHostClient(() => this.instanceUrl(instance))
+  }
 
   /**
-   * Persist the host's default agent preset for new sessions and restart the
-   * host so the new default is live (the host caches it at boot).
+   * Persist the daemon's default agent preset for new sessions and restart the
+   * daemon so the new default is live (the host caches it at boot).
    */
   async setDefaultAgentPreset(id: string): Promise<DeepSeekWebStatus> {
-    const presets = await this.host.listAgentPresets()
+    const instance = this.daemon()
+    const presets = await this.hostFor(instance).listAgentPresets()
     if (!presets.some((preset) => preset.id === id)) {
-      this.state = 'errored'
-      this.error = `Unknown agent preset: ${id}`
+      instance.state = 'errored'
+      instance.error = `Unknown agent preset: ${id}`
       return this.getStatus()
     }
-    mergeHarnessSettings(harnessHome(), (doc) => {
-      const agentPresets =
-        doc['agent-presets'] && typeof doc['agent-presets'] === 'object'
-          ? (doc['agent-presets'] as Record<string, unknown>)
-          : {}
-      agentPresets.default = id
-      doc['agent-presets'] = agentPresets
-    })
-    const cwd = this.cwd
+    setDefaultAgentPresetInSettings(harnessHome(), id)
+    const cwd = this.activePath
     this.stop()
     return this.start(cwd)
-  }
-
-  /** All sessions on the running host (slim projection for the in-app list). */
-  async listSessions(): Promise<DeepSeekSessionSummary[]> {
-    if (!this.isRunning()) {
-      return []
-    }
-    return this.host.listSessions()
-  }
-
-  /** All agent presets the running host exposes (system plus user roots). */
-  async listAgentPresets(): Promise<DeepSeekAgentPreset[]> {
-    if (!this.isRunning()) {
-      return []
-    }
-    return this.host.listAgentPresets()
   }
 
   /**
@@ -156,169 +167,146 @@ export class DeepSeekWebManager {
    * when deleted from the registry, and drops stale registrations when the
    * directory no longer exists so a future re-create is clean.
    */
-  private async ensureWorkspaceRegistration(): Promise<void> {
-    if (!this.isRunning()) {
+  private async ensureWorkspaceRegistration(cwd: string | null): Promise<void> {
+    const instance = this.daemon()
+    if (!this.isRunning(instance)) {
       return
     }
-    await this.host.ensureWorkspaceRegistration(this.cwd)
+    await this.hostFor(instance).ensureWorkspaceRegistration(cwd)
   }
 
-  // Why: the registry can change out from under us (workspace deleted in the
-  // web UI, directory removed); re-ensure every few seconds while running.
   private startWorkspaceGuard(): void {
     this.stopWorkspaceGuard()
-    this.workspaceGuardTimer = setInterval(() => {
-      void this.ensureWorkspaceRegistration()
+    const instance = this.daemon()
+    instance.workspaceGuardTimer = setInterval(() => {
+      void this.ensureWorkspaceRegistration(this.activePath)
     }, 10_000)
   }
 
   private stopWorkspaceGuard(): void {
-    if (this.workspaceGuardTimer) {
-      clearInterval(this.workspaceGuardTimer)
-      this.workspaceGuardTimer = null
+    const instance = this.daemon()
+    if (instance.workspaceGuardTimer) {
+      clearInterval(instance.workspaceGuardTimer)
     }
+    instance.workspaceGuardTimer = null
   }
 
-  /** The spawned child is alive regardless of the reported state (which is 'starting' while the listener comes up). */
-  private isChildAlive(): boolean {
-    return this.child !== null && this.child.exitCode === null && this.child.signalCode === null
+  /**
+   * Every known Orca worktree with the daemon's port and per-project session
+   * counts — feeds the in-app overview table. Removed worktrees drop out via
+   * listWorktreePaths; the single daemon stays regardless.
+   */
+  async listProjects(): Promise<DeepSeekProjectStatus[]> {
+    const instance = this.daemon()
+    const sessions = this.isRunning(instance)
+      ? await this.hostFor(instance)
+          .listSessions()
+          .catch(() => [])
+      : []
+    const byCwd = new Map<string, number>()
+    for (const session of sessions) {
+      byCwd.set(session.cwd, (byCwd.get(session.cwd) ?? 0) + 1)
+    }
+    return this.listWorktreePaths().map((projectPath) => ({
+      projectPath,
+      port: instance.port,
+      state: instance.state,
+      pid: instance.child?.pid ?? null,
+      sessionCount: byCwd.get(projectPath) ?? 0,
+      error: instance.error
+    }))
   }
 
-  isRunning(): boolean {
-    return this.state === 'running' && this.isChildAlive()
+  /**
+   * Ensure the single daemon is running and register the project as a Host
+   * Workspace; make it the active one the SPA should pin. A live daemon is
+   * reused — switching projects never restarts it. Concurrent starts share
+   * one spawn.
+   */
+  start(projectPath: string | null): Promise<DeepSeekWebStatus> {
+    if (!projectPath) {
+      return Promise.resolve(this.getStatus())
+    }
+    const inFlight = this.starting.get(projectPath)
+    if (inFlight) {
+      return inFlight
+    }
+    const promise = this.spawnDaemon(projectPath)
+    this.starting.set(projectPath, promise)
+    void promise.finally(() => {
+      this.starting.delete(projectPath)
+    })
+    return promise
   }
 
-  async start(cwd: string | null): Promise<DeepSeekWebStatus> {
-    // Why: the web UI reads the host's cwd as its workspace; switching the
-    // active worktree restarts the host so the project list follows Orca.
-    if (this.isRunning() && this.cwd === cwd) {
+  private async spawnDaemon(projectPath: string): Promise<DeepSeekWebStatus> {
+    const instance = this.daemon()
+    this.activePath = projectPath
+    if (this.isRunning(instance)) {
+      // Why: daemon already up; just make sure this worktree is a workspace.
+      await this.ensureWorkspaceRegistration(projectPath)
       return this.getStatus()
     }
+    // Why: a 'starting' child may still be alive; clear it before re-spawning
+    // so a restart never leaks a second host on the same port.
     this.stop()
-    if (!cwd) {
-      return this.getStatus()
-    }
     const dshBin = resolveDshBin()
     if (!dshBin) {
-      this.state = 'errored'
-      this.error =
+      instance.state = 'errored'
+      instance.error =
         'dsh not found. Install it with: npm install -g dsh-terminal-plugin, then run: dsh setup <deepseek-harness-dir>'
       return this.getStatus()
     }
-    this.state = 'starting'
-    this.error = null
-    this.cwd = cwd
+    instance.state = 'starting'
+    instance.error = null
     // Why: force the harness browser client to English (its default is zh-CN).
     ensureEnglishHarnessLocale(harnessHome())
-    // Why: bind port 0 so the OS picks a free one; a leftover host from a
-    // crashed run (or any other occupant) on a fixed port would EADDRINUSE and
-    // the view would never come up. The real port is parsed from stdout below.
-    this.port = 0
+    // Why: a non-Orca process may hold the registered port; walk up on
+    // collision and persist the rebound port so the next start reuses it.
+    instance.port = await resolveFreeLoopbackPort(instance.port)
+    this.ports.reassign(DAEMON_KEY, instance.port)
 
-    const child = spawn(dshBin, ['--profile', 'web', '--port', String(this.port)], {
-      // Why: the host reads `<cwd>/.env` at boot and crashes if it declares a
-      // bootstrap-only name (PATH, NODE_OPTIONS, GIT_*, DSH_*, …). Spawn from
-      // the isolated harness home instead of the worktree so a project .env
-      // can never take the host down; the worktree is pinned via the
-      // workspace registration below, not the spawn cwd.
-      cwd: harnessHome(),
-      env: {
-        ...process.env,
-        DSH_HOME: harnessHome()
-      },
-      stdio: ['ignore', 'pipe', 'pipe'],
-      detached: false
-    })
-    // Why: `dsh web` prints its composed URL (e.g. "dsh web: http://127.0.0.1:38921")
-    // once the listener is up; parse the actual port instead of assuming one.
-    let stdoutTail = ''
-    child.stdout?.on('data', (chunk: Buffer) => {
-      if (this.child !== child) {
-        return
-      }
-      stdoutTail = (stdoutTail + chunk.toString()).slice(-2_000)
-      const match = /http:\/\/[^/\s]+:(\d+)/.exec(stdoutTail)
-      if (match) {
-        this.port = Number(match[1])
-      }
-    })
-    let stderrTail = ''
-    child.stderr?.on('data', (chunk: Buffer) => {
-      stderrTail = (stderrTail + chunk.toString()).slice(-2_000)
-    })
-    this.child = child
-    child.once('exit', (code) => {
-      if (this.child === child) {
-        this.state = 'stopped'
-        if (code !== 0) {
-          this.state = 'errored'
-          this.error = `DeepSeek web host exited with code ${code}${stderrTail ? `: ${stderrTail.trim().split('\n').slice(-4).join(' | ')}` : ''}`
-        }
-      }
-    })
-    child.once('error', (err) => {
-      if (this.child === child) {
-        this.state = 'errored'
-        this.error = err.message
-      }
-    })
-
+    instance.child = spawnDeepSeekHost(dshBin, harnessHome(), instance)
     // Why: wait for the HTTP listener so the webview load doesn't race the host.
-    await this.waitUntilListening(30_000)
-    // Why: registering the active worktree as a Host Workspace makes the web
-    // UI's session flow auto-target it instead of asking to pick a directory.
-    if (this.isRunning() && cwd) {
-      await this.ensureWorkspaceRegistration()
-      this.startWorkspaceGuard()
+    await waitForHttpListener({
+      url: this.instanceUrl(instance),
+      timeoutMs: 45_000,
+      isChildAlive: () => this.isChildAlive(instance)
+    })
+    if (!this.isChildAlive(instance)) {
+      return this.getStatus()
     }
+    // Why: a live child past the wait counts as up even if probes never
+    // answered (listener may reject the probe path); the webview retries.
+    instance.state = 'running'
+    // Why: registering the worktree as a Host Workspace makes the web UI's
+    // session flow auto-target it instead of asking to pick a directory.
+    await this.ensureWorkspaceRegistration(projectPath)
+    this.startWorkspaceGuard()
     return this.getStatus()
   }
 
-  private async waitUntilListening(timeoutMs: number): Promise<void> {
-    const startedAt = Date.now()
-    const probe = async (): Promise<boolean> => {
-      try {
-        const res = await fetch(this.getUrl(), {
-          // Why: a listener that accepts but never responds must not hang the
-          // webview load; abort each probe so the loop keeps moving.
-          signal: AbortSignal.timeout(2_000)
-        })
-        return res.status < 500
-      } catch {
-        return false
-      }
-    }
-    while (Date.now() - startedAt < timeoutMs) {
-      // Why: child liveness, not isRunning() — the state is still 'starting'
-      // until the first successful probe flips it to 'running'.
-      if (!this.isChildAlive()) {
-        return
-      }
-      if (await probe()) {
-        this.state = 'running'
-        return
-      }
-      await new Promise((resolve) => setTimeout(resolve, 500))
-    }
-    if (this.isChildAlive() && this.port > 0) {
-      // Why: the listener may accept connections but reject the probe path;
-      // treat the process being alive (and a known port) as enough for the
-      // webview to retry.
-      this.state = 'running'
-    } else if (this.port <= 0) {
-      this.state = 'errored'
-      this.error = 'DeepSeek web host started but did not report a listening port'
-    }
-  }
-
+  /** Stop the single daemon (its port stays reserved in the registry). */
   stop(): void {
-    const child = this.child
-    this.child = null
+    const instance = this.instance
+    this.instance = null
     this.stopWorkspaceGuard()
+    if (!instance) {
+      return
+    }
+    const child = instance.child
+    instance.child = null
     if (child && child.exitCode === null) {
       child.kill()
     }
-    this.state = 'stopped'
-    this.cwd = null
+    instance.state = 'stopped'
+    instance.error = null
+    instance.cwd = null
+    this.activePath = null
+  }
+
+  /** Alias for stop() kept for the table's per-row kill action. */
+  stopProject(_projectPath: string): void {
+    this.stop()
   }
 }
