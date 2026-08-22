@@ -179,29 +179,33 @@ function buildPaseoMatchOverlayScript(worktreePath: string): string {
     }
     const workspaceDirFor = async (workspaceId) => {
       if (!workspaceId) return null
-      // Why: the SPA keeps its replica cache in IndexedDB, not localStorage -
-      // a localStorage read here would stay unresolved and never turn green.
+      // Why: the SPA keeps its replica cache in IndexedDB, not localStorage.
       const hosts = await readReplicaCache()
       if (!hosts) return null
       for (const host of hosts) {
         for (const ws of (host.workspaces || [])) {
-          if (ws.id === workspaceId && typeof ws.workspaceDirectory === 'string') {
-            return ws.workspaceDirectory
-          }
+          if (ws.id === workspaceId && typeof ws.workspaceDirectory === 'string') return ws.workspaceDirectory
         }
       }
       return null
     }
-    // Why: resolve the target project by matching its path directly against
-    // the replica cache (same by-path lookup the pin script uses).
+    // Why: resolve the current project by matching the target path against the
+    // replica cache — agents[].snapshot.cwd (live) or workspaces[].dir (older).
+    // Folder-name fallback tolerates symlink/realpath drift between Orca's
+    // worktree path and the cwd the daemon reports.
     const dirForTarget = async () => {
       const hosts = await readReplicaCache()
       if (!hosts) return null
+      const folder = folderOf(target)
       for (const host of hosts) {
+        for (const agent of (host.agents || [])) {
+          const snap = agent && typeof agent.snapshot === 'object' ? agent.snapshot : null
+          const cwd = typeof snap?.cwd === 'string' ? snap.cwd : null
+          if (cwd && (norm(cwd) === norm(target) || folderOf(cwd) === folder)) return cwd
+        }
         for (const ws of (host.workspaces || [])) {
-          if (typeof ws.workspaceDirectory === 'string' && norm(ws.workspaceDirectory) === norm(target)) {
-            return ws.workspaceDirectory
-          }
+          const dir = typeof ws.workspaceDirectory === 'string' ? ws.workspaceDirectory : null
+          if (dir && (norm(dir) === norm(target) || folderOf(dir) === folder)) return dir
         }
       }
       return null
