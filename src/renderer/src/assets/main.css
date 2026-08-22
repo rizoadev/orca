@@ -678,6 +678,16 @@
   box-shadow: none;
 }
 
+/* Shift status blocks 200px left and raise clock 5px when right sidebar is collapsed */
+.pet-hero[data-right-sidebar-open='false'] .pet-hero-status {
+  right: 218px; /* 18px + 200px */
+  top: 9px; /* 14px - 5px */
+}
+
+.pet-hero[data-right-sidebar-open='false'] .pet-hero-pomodoro {
+  right: 25px;
+}
+
 @keyframes pet-hero-wander {
   0% {
     transform: translateX(-8px) translateY(0) scale(var(--pet-scale));

@@ -102,6 +102,7 @@ export default function PetHero({ worktreeId }: { worktreeId: string }): React.J
   const gitEntries = useAppStore(
     (state) => state.gitStatusByWorktree[worktreeId] ?? EMPTY_GIT_ENTRIES
   )
+  const rightSidebarOpen = useAppStore((s) => s.rightSidebarOpen)
   const gitDiffStats = useMemo(() => {
     let added = 0
     let removed = 0
@@ -142,7 +143,12 @@ export default function PetHero({ worktreeId }: { worktreeId: string }): React.J
           : 'resting'
 
   return (
-    <header className="pet-hero" data-pet-hero="true" data-pet-mode={effectiveMode}>
+    <header
+      className="pet-hero"
+      data-pet-hero="true"
+      data-pet-mode={effectiveMode}
+      data-right-sidebar-open={rightSidebarOpen}
+    >
       <div className="pet-hero-copy">
         <p className="pet-hero-eyebrow">ORCA / WORKSPACE</p>
         <h1 className="pet-hero-title">{greeting}</h1>
