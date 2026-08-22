@@ -31,7 +31,7 @@ import {
   recordServerPid
 } from './openchamber-server-pid'
 import {
-  fetchBusyDirectoriesAcrossServers,
+  fetchBusyDirectoriesOnPorts,
   fetchSessionCount,
   fetchSessionSummaries,
   projectWebStatus
@@ -138,14 +138,16 @@ export class OpenChamberWebManager {
 
   /**
    * Directories from `directories` with a busy (non-idle) LLM turn on any
-   * running server; every running child is asked, not just the active one.
+   * running server. Why every known port counts, tracked or not: servers
+   * inherited from a previous main process keep serving open tabs but have no
+   * live child here, so each directory's deterministic port is probed too.
    */
   listBusyDirectories(directories: string[]): Promise<string[]> {
-    const running = [...this.instances.values()].filter((instance) => this.isRunning(instance))
-    return fetchBusyDirectoriesAcrossServers(
-      running.map((instance) => this.instanceUrl(instance)),
-      directories
-    )
+    const ports = new Set(this.instances.values().map((instance) => instance.port))
+    for (const directory of directories) {
+      ports.add(PREFERRED_PORT + (Number.parseInt(projectKey(directory), 36) % PORT_RANGE))
+    }
+    return fetchBusyDirectoriesOnPorts([...ports], directories)
   }
 
   /**

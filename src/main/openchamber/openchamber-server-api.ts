@@ -74,7 +74,13 @@ export async function fetchBusyDirectories(url: string, directories: string[]): 
           return null
         }
         const body = (await res.json()) as unknown
-        return body && typeof body === 'object' && Object.keys(body).length > 0 ? directory : null
+        // Why: these probes can reach ports inherited from older sessions or
+        // unrelated loopback services; only trust a session-status-shaped map
+        // ({ sessionId: { type, … } }) so foreign JSON never reads as busy.
+        if (!isSessionStatusMap(body)) {
+          return null
+        }
+        return Object.keys(body).length > 0 ? directory : null
       } catch {
         return null
       }
@@ -83,18 +89,33 @@ export async function fetchBusyDirectories(url: string, directories: string[]): 
   return busy.filter((d): d is string => d !== null)
 }
 
+function isSessionStatusMap(body: unknown): body is Record<string, { type?: unknown }> {
+  if (body === null || typeof body !== 'object') {
+    return false
+  }
+  const entries = Object.values(body)
+  return entries.every(
+    (entry) =>
+      entry !== null &&
+      typeof entry === 'object' &&
+      typeof (entry as { type?: unknown }).type === 'string'
+  )
+}
+
 /**
- * Ask every running server and union the busy directories — sessions can live
- * on a non-active instance (each server keeps its own history).
+ * Ask every loopback server on `ports` and union the busy directories —
+ * sessions can live on an inherited server this process never spawned.
  */
-export async function fetchBusyDirectoriesAcrossServers(
-  serverUrls: string[],
+export async function fetchBusyDirectoriesOnPorts(
+  ports: number[],
   directories: string[]
 ): Promise<string[]> {
-  if (directories.length === 0 || serverUrls.length === 0) {
+  if (directories.length === 0 || ports.length === 0) {
     return []
   }
-  const busy = await Promise.all(serverUrls.map((url) => fetchBusyDirectories(url, directories)))
+  const busy = await Promise.all(
+    ports.map((port) => fetchBusyDirectories(`http://127.0.0.1:${port}`, directories))
+  )
   return [...new Set(busy.flat())]
 }
 
