@@ -141,8 +141,7 @@ function buildPaseoMatchOverlayScript(worktreePath: string): string {
     const signal = () => {
       if (sessionStorage.getItem('orcaPaseoForceSignaled')) return
       sessionStorage.setItem('orcaPaseoForceSignaled', '1')
-      // Why: the host listens for this marker on the webview's
-      // console-message and escalates to re-attach + re-pin + navigate.
+      // Why: the host listens for this marker on console-message.
       console.log('[orca:paseo] force-recover')
     }
     const pinnedWorkspaceId = () => {
@@ -151,10 +150,20 @@ function buildPaseoMatchOverlayScript(worktreePath: string): string {
         if (!raw) return null
         const parsed = JSON.parse(raw)
         return parsed && typeof parsed.workspaceId === 'string' ? parsed.workspaceId : null
-      } catch (e) { /* ignore malformed */ }
-      return null
+      } catch (e) { return null }
     }
     const readReplicaCache = async () => {
+      const parse = (raw) => {
+        if (!raw) return null
+        try {
+          const cache = JSON.parse(raw)
+          const hosts = Array.isArray(cache) ? cache : cache && Array.isArray(cache.hosts) ? cache.hosts : null
+          return Array.isArray(hosts) ? hosts : null
+        } catch (e) { return null }
+      }
+      // Why: localStorage is synchronous (the pin script reads/writes it there);
+      // fall back to IndexedDB, whose open can be slow during early injection.
+      try { const local = parse(localStorage.getItem(cacheKey)); if (local) return local } catch (e) { /* ignore */ }
       try {
         const raw = await new Promise((resolve) => {
           try {
@@ -170,16 +179,11 @@ function buildPaseoMatchOverlayScript(worktreePath: string): string {
             open.onerror = () => resolve(null)
           } catch (e) { resolve(null) }
         })
-        if (!raw) return null
-        const cache = JSON.parse(raw)
-        const hosts = Array.isArray(cache) ? cache : cache && Array.isArray(cache.hosts) ? cache.hosts : null
-        return Array.isArray(hosts) ? hosts : null
-      } catch (e) { /* ignore malformed cache */ }
-      return null
+        return parse(raw)
+      } catch (e) { return null }
     }
     const workspaceDirFor = async (workspaceId) => {
       if (!workspaceId) return null
-      // Why: the SPA keeps its replica cache in IndexedDB, not localStorage.
       const hosts = await readReplicaCache()
       if (!hosts) return null
       for (const host of hosts) {
@@ -189,18 +193,16 @@ function buildPaseoMatchOverlayScript(worktreePath: string): string {
       }
       return null
     }
-    // Why: resolve the current project by matching the target path against the
-    // replica cache — agents[].snapshot.cwd (live) or workspaces[].dir (older).
-    // Folder-name fallback tolerates symlink/realpath drift between Orca's
-    // worktree path and the cwd the daemon reports.
+    // Why: match the target path against the cache (agents[].snapshot.cwd live,
+    // workspaces[].workspaceDirectory older) with a folder-name fallback for
+    // symlink/realpath drift.
     const dirForTarget = async () => {
       const hosts = await readReplicaCache()
       if (!hosts) return null
       const folder = folderOf(target)
       for (const host of hosts) {
         for (const agent of (host.agents || [])) {
-          const snap = agent && typeof agent.snapshot === 'object' ? agent.snapshot : null
-          const cwd = typeof snap?.cwd === 'string' ? snap.cwd : null
+          const cwd = agent && typeof agent.snapshot?.cwd === 'string' ? agent.snapshot.cwd : null
           if (cwd && (norm(cwd) === norm(target) || folderOf(cwd) === folder)) return cwd
         }
         for (const ws of (host.workspaces || [])) {
@@ -221,9 +223,8 @@ function buildPaseoMatchOverlayScript(worktreePath: string): string {
       const routeId = routeMatch ? decodeURIComponent(routeMatch[2]) : null
       const pinnedId = pinnedWorkspaceId()
       // Why: prefer matching the target path directly against the replica cache
-      // (same by-path lookup the pin script uses) so the pill turns green even
-      // when the route id / persisted selection shape differs from the cache's
-      // workspace ids; fall back to resolving the pinned id by id.
+      // Why: by-path match first (green even when route/persisted id shape
+      // differs from the cache's ids), by-id as fallback.
       const current = (await dirForTarget()) ?? (await workspaceDirFor(routeId ?? pinnedId))
       const match = current !== null && norm(current) === norm(target)
       if (match) {
