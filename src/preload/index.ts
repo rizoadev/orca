@@ -1904,6 +1904,8 @@ const api = {
       ipcRenderer.invoke('deepseek-web:setDefaultAgentPreset', id),
     listSessions: (): Promise<DeepSeekSessionSummary[]> =>
       ipcRenderer.invoke('deepseek-web:listSessions'),
+    listSessionsProbe: (): Promise<DeepSeekSessionSummary[]> =>
+      ipcRenderer.invoke('deepseek-web:listSessionsProbe'),
     listProjects: (): Promise<DeepSeekProjectStatus[]> =>
       ipcRenderer.invoke('deepseek-web:listProjects'),
     stopProject: (projectPath: string): Promise<void> =>

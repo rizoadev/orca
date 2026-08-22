@@ -13,7 +13,8 @@ import { isWebViewAgentTab } from '@/components/sidebar/worktree-available-webvi
  *   pushing console markers; merged here on arrival.
  * - OpenChamber: /api/session/status is directory-scoped and omits idle
  *   sessions, so the main process polls it for candidate paths.
- * - DeepSeek: listSessions() already carries `cwd` + `running` per session.
+ * - DeepSeek: listSessionsProbe() carries `cwd` + `running` per session, and
+ *   falls back to probing the registry port when this process owns no daemon.
  */
 export type WebViewAgentActivityState = {
   /** path → working, reported by the embedded Paseo SPA. */
@@ -63,7 +64,7 @@ async function pollDaemonActivity(): Promise<void> {
   const openchamberPaths = candidatePaths('openchamber')
   const [deepseekSessions, busyDirectories] = await Promise.all([
     deepseekPaths.length > 0
-      ? window.api.deepseekWeb.listSessions().catch(() => [])
+      ? window.api.deepseekWeb.listSessionsProbe().catch(() => [])
       : Promise.resolve([]),
     openchamberPaths.length > 0
       ? window.api.openchamberWeb.listBusyDirectories(openchamberPaths).catch(() => [] as string[])

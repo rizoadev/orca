@@ -18,6 +18,7 @@ export function registerDeepSeekWebHandlers(manager: DeepSeekWebManager): void {
   ipcMain.removeHandler('deepseek-web:listAgentPresets')
   ipcMain.removeHandler('deepseek-web:setDefaultAgentPreset')
   ipcMain.removeHandler('deepseek-web:listSessions')
+  ipcMain.removeHandler('deepseek-web:listSessionsProbe')
   ipcMain.removeHandler('deepseek-web:listProjects')
   ipcMain.removeHandler('deepseek-web:stopProject')
 
@@ -54,6 +55,10 @@ export function registerDeepSeekWebHandlers(manager: DeepSeekWebManager): void {
 
   ipcMain.handle('deepseek-web:listSessions', async (): Promise<DeepSeekSessionSummary[]> => {
     return manager.listSessions()
+  })
+
+  ipcMain.handle('deepseek-web:listSessionsProbe', async (): Promise<DeepSeekSessionSummary[]> => {
+    return manager.listSessionsProbed()
   })
 
   ipcMain.handle(

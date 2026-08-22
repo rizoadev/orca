@@ -74,7 +74,6 @@ export async function openDeepSeekHarnessTab(worktreeId: string, groupId: string
     activate: true,
     targetGroupId: groupId,
     title: 'DeepSeek Harness',
-    hideBrowserChrome: true,
     // Why: explicit marker so session detection survives SPA title overwrites
     // and stays unambiguous against other app-like tabs (OpenChamber).
     webViewAgentType: 'deepseek-harness',

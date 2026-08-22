@@ -21,6 +21,7 @@ import {
   ensureEnglishHarnessLocale,
   setDefaultAgentPresetInSettings
 } from './deepseek-harness-settings'
+import { clearDaemonPid, reapOrphanDaemon, recordDaemonPid } from './deepseek-daemon-pid'
 import { spawnDeepSeekHost } from './deepseek-host-spawn'
 import { harnessHome, resolveDshBin } from './deepseek-server-resolver'
 import { DeepSeekPortRegistry } from './deepseek-port-registry'
@@ -74,6 +75,11 @@ export class DeepSeekWebManager {
   constructor(options: DeepSeekWebManagerOptions = {}) {
     this.listWorktreePaths = options.listWorktreePaths ?? (() => [])
     this.ports = new DeepSeekPortRegistry(join(app.getPath('userData'), 'deepseek', 'ports.json'))
+  }
+
+  /** Pid-file + port-registry home under userData. */
+  private dataDir(): string {
+    return join(app.getPath('userData'), 'deepseek')
   }
 
   private daemon(): DeepSeekInstance {
@@ -247,6 +253,10 @@ export class DeepSeekWebManager {
       await this.ensureWorkspaceRegistration(projectPath)
       return this.getStatus()
     }
+    // Why: a main-process restart or crash orphans the previous dsh child on
+    // the registry port; reap it so the fresh spawn rebinds the SAME port
+    // instead of walking up and running a second daemon over one DSH_HOME.
+    await reapOrphanDaemon(this.dataDir())
     // Why: a 'starting' child may still be alive; kill it before re-spawning
     // so a restart never leaks a second host on the same port. Reset in place
     // (not via stop()) so the singleton instance + activePath survive and
@@ -269,6 +279,9 @@ export class DeepSeekWebManager {
     this.ports.reassign(DAEMON_KEY, instance.port)
 
     instance.child = spawnDeepSeekHost(dshBin, harnessHome(), instance)
+    // Why: record the child so the next spawn can reap it if this main process
+    // dies without running stop() (dev-mode restarts, crashes).
+    recordDaemonPid(this.dataDir(), instance.child.pid ?? 0, dshBin)
     // Why: wait for the HTTP listener so the webview load doesn't race the host.
     await waitForHttpListener({
       url: this.instanceUrl(instance),
@@ -310,8 +323,24 @@ export class DeepSeekWebManager {
     if (child && child.exitCode === null) {
       child.kill()
     }
+    // Why: a child we killed ourselves leaves no orphan; drop the reap record
+    // so a recycled pid is never misidentified as our daemon.
+    clearDaemonPid(this.dataDir())
     instance.state = 'stopped'
     instance.error = null
+  }
+
+  /**
+   * Sessions from our live daemon, or — when this process owns no child (fresh
+   * start next to an inherited host) — probed straight off the registry port,
+   * mirroring the OpenChamber inherited-port busy probe.
+   */
+  async listSessionsProbed(): Promise<DeepSeekSessionSummary[]> {
+    const instance = this.daemon()
+    if (this.isRunning(instance)) {
+      return this.hostFor(instance).listSessions()
+    }
+    return new DeepSeekHostClient(() => `http://127.0.0.1:${instance.port}`).listSessions()
   }
 
   /** Alias for stop() kept for the table's per-row kill action. */

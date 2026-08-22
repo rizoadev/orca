@@ -2272,6 +2272,7 @@ export type PreloadApi = {
     listAgentPresets: () => Promise<DeepSeekAgentPreset[]>
     setDefaultAgentPreset: (id: string) => Promise<DeepSeekWebStatus>
     listSessions: () => Promise<DeepSeekSessionSummary[]>
+    listSessionsProbe: () => Promise<DeepSeekSessionSummary[]>
     listProjects: () => Promise<DeepSeekProjectStatus[]>
     stopProject: (projectPath: string) => Promise<void>
   }

@@ -96,7 +96,8 @@ export class PaseoDaemonManager {
     }
     try {
       const cmdline = readFileSync(`/proc/${pid}/cmdline`, 'utf8')
-      return cmdline.includes('paseo') || cmdline.includes('supervisor-entrypoint')
+      const lower = cmdline.toLowerCase()
+      return lower.includes('paseo') || lower.includes('supervisor-entrypoint')
     } catch {
       return false
     }

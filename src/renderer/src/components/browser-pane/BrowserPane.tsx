@@ -3703,7 +3703,10 @@ function BrowserPagePane({
       container,
       inputLocked: inputLockedRef.current,
       webviewPartition,
-      injectCss: hideBrowserChrome ? DEEPSEEK_WEBVIEW_CSS : undefined,
+      // Why: keyed on the agent marker, not hideBrowserChrome — paseo/openchamber
+      // tabs share that flag but must not receive the DeepSeek chrome CSS.
+      injectCss:
+        browserTab.webViewAgentType === 'deepseek-harness' ? DEEPSEEK_WEBVIEW_CSS : undefined,
       resolveContainer: () =>
         ensureBrowserPageViewport(browserTab.id, workspaceId)?.container ?? null
     })
