@@ -1,6 +1,7 @@
 import React from 'react'
 import paseoIconUrl from '../../../../../resources/paseo-icon.svg?url'
 import deepSeekIconUrl from '../../../../../resources/deepseek-icon.svg?url'
+import reasonixIconUrl from '../../../../../resources/reasonix-icon.svg?url'
 import openChamberIconUrl from '../../../../../resources/openchamber-icon.svg?url'
 import {
   Bell,
@@ -147,6 +148,12 @@ const WEB_VIEW_SIDEBAR_ENTRIES = [
     iconUrl: deepSeekIconUrl,
     labelKey: 'deepseek.sidebar.label',
     label: 'DeepSeek Harness'
+  },
+  {
+    view: 'reasonix',
+    iconUrl: reasonixIconUrl,
+    labelKey: 'reasonix.sidebar.label',
+    label: 'Reasonix'
   },
   {
     view: 'openchamber',

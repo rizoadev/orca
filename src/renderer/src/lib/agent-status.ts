@@ -132,6 +132,7 @@ const ICONABLE_AGENT_TYPES: Record<TuiAgent, true> = {
   ante: true,
   strands: true,
   'deepseek-harness': true,
+  reasonix: true,
   paseo: true,
   openchamber: true
 }

@@ -2,6 +2,7 @@ import { execFileSync, spawn } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import {
   chmodSync,
+  createWriteStream,
   cpSync,
   existsSync,
   lstatSync,
@@ -590,14 +591,27 @@ if (!userPassedPort && !isHelpOrVersion) {
 }
 prepareDevWebClient()
 const forwardedArgs = ['dev', ...forwardedRaw, ...forwardedExtras]
+
+const logDir = path.join(repoRoot, 'out', 'logs')
+mkdirSync(logDir, { recursive: true })
+const logPath = path.join(logDir, 'dev-run.log')
+const logStream = createWriteStream(logPath, { flags: 'a' })
+logStream.write(`\n--- [${new Date().toISOString()}] orca dev start ---\n`)
+console.error(`[orca-dev] Logging to ${logPath}`)
+
 const child = spawn(process.execPath, [electronViteCli, ...forwardedArgs], {
-  stdio: 'inherit',
+  stdio: ['inherit', 'pipe', 'pipe'],
   env: process.env,
   // Why: electron-vite launches Electron as a descendant process. Giving the
   // dev runner its own process group lets Ctrl+C kill the whole tree on macOS
   // instead of leaving the Electron app alive after the terminal exits.
   detached: process.platform !== 'win32'
 })
+
+child.stdout.pipe(process.stdout, { end: false })
+child.stdout.pipe(logStream, { end: false })
+child.stderr.pipe(process.stderr, { end: false })
+child.stderr.pipe(logStream, { end: false })
 
 let isShuttingDown = false
 let forcedKillTimer = null
@@ -660,6 +674,7 @@ child.on('error', (error) => {
   if (forcedKillTimer) {
     clearTimeout(forcedKillTimer)
   }
+  logStream.end()
   console.error(error)
   process.exit(1)
 })
@@ -669,6 +684,7 @@ child.on('exit', (code, signal) => {
     clearTimeout(forcedKillTimer)
   }
 
+  logStream.end()
   if (isShuttingDown) {
     process.exit(signalExitCode(signal ?? 'SIGINT'))
     return

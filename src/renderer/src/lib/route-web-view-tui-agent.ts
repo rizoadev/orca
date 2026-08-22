@@ -8,7 +8,12 @@ import type { TopLevelView, TuiAgent } from '../../../shared/types'
  */
 type WebViewTuiAgent = Extract<TuiAgent, TopLevelView>
 
-const WEB_VIEW_TUI_AGENTS = new Set<WebViewTuiAgent>(['deepseek-harness', 'paseo', 'openchamber'])
+const WEB_VIEW_TUI_AGENTS = new Set<WebViewTuiAgent>([
+  'deepseek-harness',
+  'reasonix',
+  'paseo',
+  'openchamber'
+])
 
 // Why: settings may carry a placeholder ('blank') or stale agent id; accept
 // unknown so callers never have to narrow before routing.

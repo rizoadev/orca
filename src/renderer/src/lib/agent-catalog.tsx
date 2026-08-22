@@ -2,6 +2,7 @@ import type React from 'react'
 import { ClaudeIcon, DroidIcon, OpenAIIcon } from '@/components/status-bar/icons'
 import openClaudeLogoUrl from '../../../../resources/openclaude-logo.png?url'
 import deepSeekIconUrl from '../../../../resources/deepseek-icon.svg?url'
+import reasonixIconUrl from '../../../../resources/reasonix-icon.svg?url'
 import paseoIconUrl from '../../../../resources/paseo-icon.svg?url'
 import openChamberIconUrl from '../../../../resources/openchamber-icon.svg?url'
 import type { TuiAgent } from '../../../shared/types'
@@ -309,6 +310,14 @@ export const getAgentCatalog = createLocalizedCatalog((): AgentCatalogEntry[] =>
     // Why: keep the faviconDomain as the read-the-docs/open fallback; iconUrl wins for the identity glyph.
     faviconDomain: 'deepseek.com',
     homepageUrl: 'https://github.com/deepseek-ai/deepseek-harness'
+  },
+  {
+    id: 'reasonix',
+    label: translate('auto.lib.agent.catalog.reasonix_label', 'Reasonix'),
+    cmd: 'reasonix',
+    iconUrl: reasonixIconUrl,
+    faviconDomain: 'reasonix.dev',
+    homepageUrl: 'https://reasonix.dev'
   },
   {
     id: 'paseo',

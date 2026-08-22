@@ -62,6 +62,7 @@ export type KeybindingActionId =
   | 'tab.newBrowser'
   | 'tab.newOpenChamber'
   | 'tab.newDeepSeekHarness'
+  | 'tab.newReasonix'
   | 'tab.newPaseo'
   | 'tab.newSimulator'
   | 'tab.newMarkdown'
@@ -603,6 +604,19 @@ export const KEYBINDING_DEFINITIONS: readonly KeybindingDefinition[] = [
     defaultBindings: {
       darwin: ['Mod+Alt+P'],
       linux: ['Mod+Alt+P'],
+      win32: []
+    }
+  },
+  {
+    id: 'tab.newReasonix',
+    title: 'New Reasonix tab',
+    group: 'Tabs',
+    scope: 'tabs',
+    searchKeywords: ['shortcut', 'tab', 'reasonix', 'new'],
+    // Why: X for Reasonix (Alt+Shift+X was Unassigned); same AltGr policy as tab.newOpenChamber (Windows Ctrl+Alt is AltGr).
+    defaultBindings: {
+      darwin: ['Mod+Alt+X'],
+      linux: ['Mod+Alt+X'],
       win32: []
     }
   },

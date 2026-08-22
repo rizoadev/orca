@@ -114,6 +114,7 @@ import { openMobileEmulatorTab } from '@/lib/open-mobile-emulator-tab'
 import { launchAgentInNewTab } from '@/lib/launch-agent-in-new-tab'
 import { openOpenChamberTab } from '@/lib/open-openchamber-tab'
 import { openDeepSeekHarnessTab } from '@/lib/open-deepseek-harness-tab'
+import { openReasonixTab } from '@/lib/open-reasonix-tab'
 import { openPaseoWebTab } from '@/lib/open-paseo-web-tab'
 import { resumeSleepingAgentSessionsForWorktree } from '@/lib/resume-sleeping-agent-session'
 import { listBoundAgentTabActions, resolveDefaultAgentForNewTab } from '@/lib/agent-tab-shortcuts'
@@ -1280,6 +1281,16 @@ function Terminal(): React.JSX.Element | null {
     void openDeepSeekHarnessTab(activeWorktreeId, targetGroupId ?? activeWorktreeId)
   }, [activeWorktreeId])
 
+  const handleNewReasonixTab = useCallback(() => {
+    if (!activeWorktreeId) {
+      return
+    }
+    const targetGroupId =
+      useAppStore.getState().activeGroupIdByWorktree[activeWorktreeId] ??
+      useAppStore.getState().groupsByWorktree[activeWorktreeId]?.[0]?.id
+    void openReasonixTab(activeWorktreeId, targetGroupId ?? activeWorktreeId)
+  }, [activeWorktreeId])
+
   const handleNewPaseoTab = useCallback(() => {
     if (!activeWorktreeId) {
       return
@@ -1788,6 +1799,16 @@ function Terminal(): React.JSX.Element | null {
         return
       }
 
+      // Mod+Alt+X — new Reasonix tab (macOS/Linux default)
+      if (!e.repeat && matchShortcut('tab.newReasonix')) {
+        e.preventDefault()
+        notifyTerminalCapture('tab.newReasonix')
+        if (!floatingWorkspaceFocused) {
+          handleNewReasonixTab()
+        }
+        return
+      }
+
       // Mod+Alt+P — new Paseo tab (macOS/Linux default)
       if (!e.repeat && matchShortcut('tab.newPaseo')) {
         e.preventDefault()
@@ -1948,6 +1969,7 @@ function Terminal(): React.JSX.Element | null {
     handleNewSimulatorTab,
     handleNewOpenChamberTab,
     handleNewDeepSeekHarnessTab,
+    handleNewReasonixTab,
     handleNewPaseoTab,
     handleNewFile,
     handleNewTab,

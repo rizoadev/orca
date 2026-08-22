@@ -43,7 +43,8 @@ export const TUI_AGENT_DISPLAY_NAMES: Record<TuiAgent, string> = {
   strands: 'Strands',
   'deepseek-harness': 'DeepSeek Harness',
   paseo: 'Paseo',
-  openchamber: 'OpenChamber'
+  openchamber: 'OpenChamber',
+  reasonix: 'Reasonix'
 }
 
 /** Canonical agent id list derived from the exhaustive display-name record,

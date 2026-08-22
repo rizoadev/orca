@@ -99,7 +99,12 @@ describe('buildAvailableWebViewAgentRows', () => {
   it('defaults to every web-view agent when no filter is given', () => {
     const rows = buildAvailableWebViewAgentRows('wt-1', 1000)
 
-    expect(rows.map((row) => row.agentType)).toEqual(['deepseek-harness', 'paseo', 'openchamber'])
+    expect(rows.map((row) => row.agentType)).toEqual([
+      'deepseek-harness',
+      'reasonix',
+      'paseo',
+      'openchamber'
+    ])
   })
 
   it('emits idle state by default (no LLM activity)', () => {

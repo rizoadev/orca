@@ -6,17 +6,9 @@
  * shared DSH_HOME, so the next spawn either walks to a higher port (a second
  * daemon fighting over the session registry) or fails outright — the "DeepSeek
  * Harness failed to start" loop. The manager records each spawned child's pid
- * here; the next spawn reaps the recorded process (Linux only, verified
- * against /proc) before binding.
+ * here; the next spawn reaps the recorded process before binding.
  */
-import {
-  existsSync,
-  mkdirSync,
-  readdirSync,
-  readFileSync,
-  unlinkSync,
-  writeFileSync
-} from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 function pidFilePath(dataDir: string): string {
@@ -32,26 +24,37 @@ function isPidAlive(pid: number): boolean {
   }
 }
 
-/** Best-effort check that a pid is really our dsh host (Linux /proc only). */
+/**
+ * Best-effort check that `pid` is really our dsh host.
+ *
+ * Only matches when `dshBin` is a non-empty binary path that appears in the
+ * process cmdline. This blocks the empty-search-term trap where
+ * `''.includes('')` is true for every process on the system — the bug that
+ * previously let a cleanup sweep SIGTERM the whole machine. Never called as
+ * part of a /proc enumeration.
+ */
 function pidIsDshHost(pid: number, dshBin: string): boolean {
-  if (process.platform !== 'linux') {
+  if (process.platform !== 'linux' || dshBin.trim() === '') {
     return false
   }
   try {
     const cmdline = readFileSync(`/proc/${pid}/cmdline`, 'utf8')
-    return cmdline.includes('--profile') || cmdline.includes(dshBin)
+    return cmdline.includes(dshBin)
   } catch {
     return false
   }
 }
 
 /**
- * Kill any dsh host orphans on this machine — both the recorded daemon child
- * (if any) and any pid-fileless survivors from older code that share the
- * loopback port + DSH_HOME. Mirrors Paseo's reapOrphanPaseo /proc sweep.
+ * Reap the previously spawned `dsh --profile web` child recorded for this data
+ * dir, so a dev-mode restart or crash doesn't leave a daemon holding the
+ * loopback port + DSH_HOME (the "DeepSeek Harness failed to start" loop).
+ *
+ * SAFETY: this only ever signals the single recorded child pid, and only after
+ * verifying that pid is still our dsh host via its recorded binary path. It
+ * never scans /proc or signals any other process.
  */
 export async function reapOrphanDaemon(dataDir: string): Promise<void> {
-  let recordedPid: number | null = null
   try {
     const pidFile = pidFilePath(dataDir)
     if (existsSync(pidFile)) {
@@ -61,38 +64,15 @@ export async function reapOrphanDaemon(dataDir: string): Promise<void> {
       }
       if (
         Number.isFinite(recorded.pid) &&
+        recorded.dshBin &&
         isPidAlive(recorded.pid) &&
-        pidIsDshHost(recorded.pid, recorded.dshBin ?? '')
+        pidIsDshHost(recorded.pid, recorded.dshBin)
       ) {
-        recordedPid = recorded.pid
         process.kill(recorded.pid, 'SIGTERM')
       }
     }
   } catch {
     // Best-effort — a stale/corrupt pid file must not block spawning.
-  }
-  // Why: orphans from older code (before pid recording) or surviving workers
-  // share the registry port + DSH_HOME; sweep /proc so the fresh spawn
-  // rebinds the same port instead of walking up and running a second daemon.
-  if (process.platform === 'linux') {
-    try {
-      for (const entry of readdirSync('/proc')) {
-        if (!/^\d+$/.test(entry)) {
-          continue
-        }
-        const pid = Number.parseInt(entry, 10)
-        if (pid === recordedPid || !pidIsDshHost(pid, '')) {
-          continue
-        }
-        try {
-          process.kill(pid, 'SIGTERM')
-        } catch {
-          // Already gone.
-        }
-      }
-    } catch {
-      // /proc unavailable — the recorded-pid kill above still frees the port.
-    }
   }
   await new Promise((resolve) => setTimeout(resolve, 500))
   try {

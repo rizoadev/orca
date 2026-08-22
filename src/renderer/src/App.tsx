@@ -47,6 +47,7 @@ import { isRemoteWorkspaceSnapshotApplyInProgress, useIpcEvents } from './hooks/
 import { usePaseoWorktreeFollow } from './hooks/use-paseo-worktree-follow'
 import { useOpenChamberWorktreeFollow } from './hooks/use-openchamber-worktree-follow'
 import { useDeepSeekWorktreeFollow } from './hooks/use-deepseek-worktree-follow'
+import { useReasonixWorktreeFollow } from './hooks/use-reasonix-worktree-follow'
 import { useAutomationDispatchEvents } from './hooks/useAutomationDispatchEvents'
 import RetainedAgentsSyncGate from './components/dashboard/RetainedAgentsSyncGate'
 import { AgentHibernationGate } from './components/AgentHibernationGate'
@@ -318,6 +319,7 @@ const IssueBoardPage = lazy(() => import('./components/issue-board/IssueBoardPag
 const AgentDashboardPage = lazy(() => import('./components/dashboard/AgentDashboardPage'))
 const PaseoPage = lazy(() => import('./components/paseo/PaseoPage'))
 const DeepSeekPage = lazy(() => import('./components/deepseek/DeepSeekPage'))
+const ReasonixPage = lazy(() => import('./components/reasonix/ReasonixPage'))
 const OpenChamberPage = lazy(() => import('./components/openchamber/OpenChamberPage'))
 const OrchestrationBoardPage = lazy(
   () => import('./components/orchestration-board/OrchestrationBoardPage')
@@ -746,6 +748,7 @@ function App(): React.JSX.Element {
   usePaseoWorktreeFollow()
   useOpenChamberWorktreeFollow()
   useDeepSeekWorktreeFollow()
+  useReasonixWorktreeFollow()
   useAutomationDispatchEvents()
   // Why: retention runs at App level (in <RetainedAgentsSyncGate />, a null leaf) so "done" agents survive card collapse and its high-churn subscriptions don't re-render App.
   // Why: git polling lives at App level (RightSidebar unmounts when closed, stranding stale Rebasing/Merging badges); gate on workspaceSessionReady so it doesn't compete with first paint.
@@ -2273,6 +2276,7 @@ function App(): React.JSX.Element {
                               {activeView === 'notes' ? <NotesPage /> : null}
                               {activeView === 'paseo' ? <PaseoPage /> : null}
                               {activeView === 'deepseek-harness' ? <DeepSeekPage /> : null}
+                              {activeView === 'reasonix' ? <ReasonixPage /> : null}
                               {activeView === 'openchamber' ? <OpenChamberPage /> : null}
                               {activeView === 'docker' ? <DockerContainersPage /> : null}
                               {activeView === 'terminal' &&

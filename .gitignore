@@ -139,3 +139,9 @@ squashfs-root/
 
 # Local data (keyring, etc)
 .data/
+
+# Reasonix desktop runtime state (auto-title bookkeeping), not source
+.reasonix/
+
+# Reasonix local config (provider/API keys, permissions) — not source
+reasonix.toml

@@ -26,6 +26,7 @@ import { openTabBarEntry, type TabCreateEntryArgs } from '../tab-bar/tab-create-
 import { openMobileEmulatorTab } from '@/lib/open-mobile-emulator-tab'
 import { ensureSimulatorTab, getSimulatorTabForWorktree } from '@/lib/ensure-simulator-tab'
 import { openDeepSeekHarnessTab } from '@/lib/open-deepseek-harness-tab'
+import { openReasonixTab } from '@/lib/open-reasonix-tab'
 import { openOpenChamberTab } from '@/lib/open-openchamber-tab'
 import { openPaseoWebTab } from '@/lib/open-paseo-web-tab'
 import { buildDuplicatedBrowserTabOptions } from '@/lib/duplicate-browser-tab-options'
@@ -575,6 +576,9 @@ export function useTabGroupWorkspaceModel({
       },
       newDeepSeekHarnessTab: () => {
         void openDeepSeekHarnessTab(worktreeId, groupId)
+      },
+      newReasonixTab: () => {
+        void openReasonixTab(worktreeId, groupId)
       },
       newPaseoWebTab: () => {
         void openPaseoWebTab(worktreeId, groupId)

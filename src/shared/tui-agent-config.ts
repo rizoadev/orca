@@ -327,7 +327,8 @@ export const TUI_AGENT_CONFIG: Record<TuiAgent, TuiAgentConfig> = {
     promptInjectionMode: 'argv'
   },
   paseo: webViewAgentConfig('paseo'),
-  openchamber: webViewAgentConfig('openchamber')
+  openchamber: webViewAgentConfig('openchamber'),
+  reasonix: webViewAgentConfig('reasonix')
 }
 
 export function isTuiAgent(value: unknown): value is TuiAgent {

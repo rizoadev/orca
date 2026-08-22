@@ -30,6 +30,14 @@ export class DeepSeekHostClient {
     return result.value as T
   }
 
+  /**
+   * Liveness probe that THROWS when the host's RPC backend is down — a bare
+   * `dsh --profile web` without `dsh setup` serves only the static SPA.
+   */
+  async probe(): Promise<void> {
+    await this.rpc('workspace.list', {})
+  }
+
   /** All agent presets the running host exposes (system plus user roots). */
   async listAgentPresets(): Promise<DeepSeekAgentPreset[]> {
     try {

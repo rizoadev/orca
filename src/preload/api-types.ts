@@ -558,6 +558,11 @@ import type {
   DeepSeekWebStatus
 } from '../shared/deepseek-web-types'
 import type {
+  ReasonixProjectStatus,
+  ReasonixSessionSummary,
+  ReasonixWebStatus
+} from '../shared/reasonix-web-types'
+import type {
   OpenChamberProjectStatus,
   OpenChamberSessionSummary,
   OpenChamberWebStatus
@@ -2275,6 +2280,17 @@ export type PreloadApi = {
     listSessionsProbe: () => Promise<DeepSeekSessionSummary[]>
     listProjects: () => Promise<DeepSeekProjectStatus[]>
     stopProject: (projectPath: string) => Promise<void>
+  }
+  reasonixWeb: {
+    getStatus: () => Promise<ReasonixWebStatus>
+    start: (cwd: string | null) => Promise<ReasonixWebStatus>
+    stop: () => Promise<ReasonixWebStatus>
+    attachDirectory: (directory: string | null) => Promise<void>
+    listSessions: () => Promise<ReasonixSessionSummary[]>
+    listProjects: () => Promise<ReasonixProjectStatus[]>
+    stopProject: (projectPath: string) => Promise<void>
+    clearStorage: (projectPath: string) => Promise<void>
+    listBusyDirectories: (directories: string[]) => Promise<string[]>
   }
   openchamberWeb: {
     getStatus: () => Promise<OpenChamberWebStatus>

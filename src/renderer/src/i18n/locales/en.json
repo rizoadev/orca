@@ -13850,5 +13850,30 @@
     "sidebar": {
       "label": "Agent Dashboard"
     }
+  },
+  "reasonix": {
+    "sidebar": {
+      "label": "Reasonix"
+    },
+    "view": {
+      "actions": "Actions",
+      "collapse": "Collapse table",
+      "errored": "Failed to start",
+      "expand": "Expand table",
+      "kill": "Kill server",
+      "new-tab": "Reasonix",
+      "no-projects": "No projects",
+      "port": "Port",
+      "project": "Project",
+      "projects": "Projects / ports",
+      "refresh": "Refresh",
+      "restart": "Restart engine",
+      "retry": "Retry",
+      "running": "Coding engine running",
+      "sessions": "Sessions",
+      "starting": "Starting coding engine…",
+      "status": "Status",
+      "title": "Reasonix"
+    }
   }
 }

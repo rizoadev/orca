@@ -16,6 +16,17 @@ Never add a `max-lines` disable (`eslint-disable max-lines`, `oxlint-disable max
 
 Never use vague names like `helpers`, `utils`, `common`, `misc`, or `shared-stuff` for files, folders, or modules. They carry zero info and tend to become dumping grounds. Name files after what they _actually_ contain — prefer the concrete domain concept (e.g. `tab-group-state.ts`, `terminal-orphan-cleanup.ts`) over the generic role (`tabs-helpers.ts`, `terminal-utils.ts`). If you find yourself reaching for `helpers`, the file probably has more than one responsibility and should be split, or there's a better name hiding in the code that describes what the functions operate on.
 
+## Process and System Safety
+
+**Never write code that kills, sends signals to, or enumerates processes outside the application's own tree.** Code that iterates `/proc`, calls `process.kill()`, `spawn('taskkill')`, `os.popen('kill')`, `pkill`, `killall`, or sends any signal (`SIGTERM`, `SIGKILL`, `SIGINT`) to other processes is strictly forbidden unless the target process is **provably** a direct child spawned by the application itself and identified by a PID obtained from that exact spawn.
+
+- **Never** scan `/proc` and `SIGTERM` indiscriminately.
+- **Never** rely on string-includes on `/proc/<pid>/cmdline` with an empty or loose search term — this will match every process on the system.
+- **Never** send signals to processes whose PID was read from a file on disk without first validating that PID still belongs to the expected child process.
+- If process cleanup is needed, use mechanisms scoped to the process group (e.g. `detached: true` + `process.kill(-pid, signal)`) or OS-specific sandboxing, not ad-hoc `/proc` sweeps.
+
+Violations of this rule can immediately destroy the user's desktop session, kill unrelated daemons, and cause data loss.
+
 ## Worktree Safety
 
 Always use the primary working directory (the worktree) for all file reads and edits. Never follow absolute paths from subagent results that point to the main repo.

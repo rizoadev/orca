@@ -92,6 +92,7 @@ export const AGENT_KIND_VALUES = [
   'deepseek-harness',
   'paseo',
   'openchamber',
+  'reasonix',
   'other'
 ] as const
 export const agentKindSchema = z.enum(AGENT_KIND_VALUES)

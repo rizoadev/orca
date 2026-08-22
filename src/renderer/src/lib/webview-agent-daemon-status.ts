@@ -23,12 +23,15 @@ export type WebViewAgentActivityState = {
   openchamberByPath: Record<string, boolean>
   /** path → working, derived from DeepSeek's running sessions. */
   deepseekByPath: Record<string, boolean>
+  /** path → working, reported by Reasonix's busy-directories probe. */
+  reasonixByPath: Record<string, boolean>
 }
 
 const INITIAL: WebViewAgentActivityState = {
   paseoByPath: {},
   openchamberByPath: {},
-  deepseekByPath: {}
+  deepseekByPath: {},
+  reasonixByPath: {}
 }
 
 const POLL_INTERVAL_MS = 5_000
@@ -61,11 +64,15 @@ function candidatePaths(agentType: TuiAgent): string[] {
 
 async function pollDaemonActivity(): Promise<void> {
   const deepseekPaths = candidatePaths('deepseek-harness')
+  const reasonixPaths = candidatePaths('reasonix')
   const openchamberPaths = candidatePaths('openchamber')
-  const [deepseekSessions, busyDirectories] = await Promise.all([
+  const [deepseekSessions, reasonixBusy, busyDirectories] = await Promise.all([
     deepseekPaths.length > 0
       ? window.api.deepseekWeb.listSessionsProbe().catch(() => [])
       : Promise.resolve([]),
+    reasonixPaths.length > 0
+      ? window.api.reasonixWeb.listBusyDirectories(reasonixPaths).catch(() => [] as string[])
+      : Promise.resolve([] as string[]),
     openchamberPaths.length > 0
       ? window.api.openchamberWeb.listBusyDirectories(openchamberPaths).catch(() => [] as string[])
       : Promise.resolve([] as string[])
@@ -76,11 +83,15 @@ async function pollDaemonActivity(): Promise<void> {
       deepseekByPath[session.cwd] = true
     }
   }
+  const reasonixByPath: Record<string, boolean> = {}
+  for (const path of reasonixPaths) {
+    reasonixByPath[path] = reasonixBusy.includes(path)
+  }
   const openchamberByPath: Record<string, boolean> = {}
   for (const path of openchamberPaths) {
     openchamberByPath[path] = busyDirectories.includes(path)
   }
-  useWebViewAgentActivity.setState({ deepseekByPath, openchamberByPath })
+  useWebViewAgentActivity.setState({ deepseekByPath, reasonixByPath, openchamberByPath })
 }
 
 let pollTimer: number | null = null

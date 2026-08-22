@@ -82,7 +82,8 @@ export function useWorktreeAgentRows(worktreeId: string, active = true): Dashboa
     return {
       paseo: activity.paseoByPath[path] === true,
       openchamber: activity.openchamberByPath[path] === true,
-      'deepseek-harness': activity.deepseekByPath[path] === true
+      'deepseek-harness': activity.deepseekByPath[path] === true,
+      reasonix: activity.reasonixByPath[path] === true
     }
   }, [activity, worktreeId])
   // Why: narrow the subscriptions to only THIS worktree's entries via

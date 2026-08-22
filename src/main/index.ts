@@ -209,6 +209,8 @@ import { PaseoAutoAttach } from './paseo/auto-attach'
 import { registerPaseoHandlers } from './ipc/paseo'
 import { DeepSeekWebManager } from './deepseek/deepseek-web-manager'
 import { registerDeepSeekWebHandlers } from './ipc/deepseek-web'
+import { ReasonixWebManager } from './reasonix/reasonix-web-manager'
+import { registerReasonixWebHandlers } from './ipc/reasonix-web'
 import { OpenChamberWebManager } from './openchamber/openchamber-web-manager'
 import { registerOpenChamberWebHandlers } from './ipc/openchamber-web'
 import { createHeadlessAutomationOutputSnapshotBuffer } from './automations/headless-dispatch'
@@ -317,6 +319,7 @@ let paseoAutoAttach: PaseoAutoAttach | null = null
 // Why: the DeepSeek Harness web host is lazy like Paseo — spawned on first
 // view open via IPC, so users who never open the view pay no process cost.
 let deepSeekWeb: DeepSeekWebManager | null = null
+let reasonixWeb: ReasonixWebManager | null = null
 let openChamberWeb: OpenChamberWebManager | null = null
 // Why: a reload intent must not leak to a later load; the recovery reload re-fires did-finish-load, so its flag spares live PTYs from the orphan sweep (#5787).
 const expectedRendererReload = createWebContentsTimedFlag()
@@ -1221,6 +1224,12 @@ function openMainWindow(): BrowserWindow {
       listWorktreePaths: listAllWorktreePaths
     })
     registerDeepSeekWebHandlers(deepSeekWeb)
+  }
+  if (!reasonixWeb) {
+    reasonixWeb = new ReasonixWebManager({
+      listWorktreePaths: listAllWorktreePaths
+    })
+    registerReasonixWebHandlers(reasonixWeb)
   }
   if (!openChamberWeb) {
     openChamberWeb = new OpenChamberWebManager({
@@ -2643,6 +2652,8 @@ app.on('before-quit', () => {
   paseoAutoAttach = null
   deepSeekWeb?.stop()
   deepSeekWeb = null
+  reasonixWeb?.stop()
+  reasonixWeb = null
   runtimeRpc?.setMobileRelayPairingProvider(null)
   unsubscribeSystemResumeBroadcast?.()
   unsubscribeSystemResumeBroadcast = null

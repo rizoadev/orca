@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 
 import {
   forceRecoverDeepSeek,
+  hideDeepSeekOtherWorkspaces,
   injectDeepSeekMatchOverlay,
   isDeepSeekWebviewUrl
 } from './deepseek-webview-style'
@@ -73,6 +74,47 @@ describe('injectDeepSeekMatchOverlay', () => {
     const executeJavaScript = vi.fn((_script: string) => Promise.reject(new Error('guest crashed')))
     expect(() =>
       injectDeepSeekMatchOverlay(
+        executingWebview(executeJavaScript),
+        'http://127.0.0.1:3580/',
+        '/work/orca'
+      )
+    ).not.toThrow()
+  })
+})
+
+describe('hideDeepSeekOtherWorkspaces', () => {
+  it('skips non-DeepSeek URLs', () => {
+    const executeJavaScript = vi.fn((_script: string) => Promise.resolve(undefined))
+    const guest = {
+      getURL: () => 'https://example.com',
+      executeJavaScript
+    } as unknown as Electron.WebviewTag
+    hideDeepSeekOtherWorkspaces(guest, guest.getURL(), '/work/orca')
+    expect(executeJavaScript).not.toHaveBeenCalled()
+  })
+
+  it('injects a workspace-tree filter script keyed on the worktree path', () => {
+    const executeJavaScript = vi.fn((_script: string) => Promise.resolve(undefined))
+    hideDeepSeekOtherWorkspaces(
+      executingWebview(executeJavaScript),
+      'http://127.0.0.1:3580/',
+      '/home/user/projects/my-app'
+    )
+    expect(executeJavaScript).toHaveBeenCalledTimes(1)
+    const script = String(executeJavaScript.mock.calls[0][0])
+    // ├─ matches the current project by the selected-session row, falls back
+    // │  to the worktree folder name, and watches for DOM churn
+    expect(script).toContain('/home/user/projects/my-app')
+    expect(script).toContain('aria-expanded')
+    expect(script).toContain('aria-selected="true"')
+    expect(script).toContain('MutationObserver')
+    expect(script).toContain('my-app') // folder fallback
+  })
+
+  it('swallows executeJavaScript rejections', () => {
+    const executeJavaScript = vi.fn((_script: string) => Promise.reject(new Error('guest crashed')))
+    expect(() =>
+      hideDeepSeekOtherWorkspaces(
         executingWebview(executeJavaScript),
         'http://127.0.0.1:3580/',
         '/work/orca'

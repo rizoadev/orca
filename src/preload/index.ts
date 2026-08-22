@@ -71,6 +71,11 @@ import type {
   DeepSeekWebStatus
 } from '../shared/deepseek-web-types'
 import type {
+  ReasonixProjectStatus,
+  ReasonixSessionSummary,
+  ReasonixWebStatus
+} from '../shared/reasonix-web-types'
+import type {
   OpenChamberProjectStatus,
   OpenChamberSessionSummary,
   OpenChamberWebStatus
@@ -1910,6 +1915,25 @@ const api = {
       ipcRenderer.invoke('deepseek-web:listProjects'),
     stopProject: (projectPath: string): Promise<void> =>
       ipcRenderer.invoke('deepseek-web:stopProject', projectPath)
+  },
+
+  reasonixWeb: {
+    getStatus: (): Promise<ReasonixWebStatus> => ipcRenderer.invoke('reasonix-web:getStatus'),
+    start: (cwd: string | null): Promise<ReasonixWebStatus> =>
+      ipcRenderer.invoke('reasonix-web:start', cwd),
+    stop: (): Promise<ReasonixWebStatus> => ipcRenderer.invoke('reasonix-web:stop'),
+    attachDirectory: (directory: string | null): Promise<void> =>
+      ipcRenderer.invoke('reasonix-web:attachDirectory', directory),
+    listSessions: (): Promise<ReasonixSessionSummary[]> =>
+      ipcRenderer.invoke('reasonix-web:listSessions'),
+    listProjects: (): Promise<ReasonixProjectStatus[]> =>
+      ipcRenderer.invoke('reasonix-web:listProjects'),
+    stopProject: (projectPath: string): Promise<void> =>
+      ipcRenderer.invoke('reasonix-web:stopProject', projectPath),
+    clearStorage: (projectPath: string): Promise<void> =>
+      ipcRenderer.invoke('reasonix-web:clearStorage', projectPath),
+    listBusyDirectories: (directories: string[]): Promise<string[]> =>
+      ipcRenderer.invoke('reasonix-web:listBusyDirectories', directories)
   },
 
   openchamberWeb: {

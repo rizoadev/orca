@@ -97,10 +97,12 @@ import {
   preparePaseoWebview
 } from './paseo-webview-style'
 import {
+  hideDeepSeekOtherWorkspaces,
   injectDeepSeekMatchOverlay,
   listenForDeepSeekForceRecover,
   prepareDeepSeekWebview
 } from './deepseek-webview-style'
+import { injectReasonixMatchOverlay, listenForReasonixForceRecover } from './reasonix-webview-style'
 import { OPENCHAMBER_WEBVIEW_CSS } from '@/lib/openchamber-webview-css'
 import {
   hideOpenChamberOtherWorkspaces,
@@ -3825,8 +3827,17 @@ function BrowserPagePane({
         // + auto force-recover as OpenChamber; its session must stay on the
         // active worktree or the user could type into the wrong project.
         if (webViewAgentType === 'deepseek-harness') {
+          // Why: the Harness daemon serves every workspace, so the sidebar
+          // tree shows them all; hide everything except the current project.
+          hideDeepSeekOtherWorkspaces(webview, webview.getURL(), worktreePath)
           injectDeepSeekMatchOverlay(webview, webview.getURL(), worktreePath)
           listenForDeepSeekForceRecover(webview, worktreePath)
+        }
+        // Why: Reasonix gets the same match pill + blocker + auto force-recover,
+        // affirming its per-project server is pinned to the active worktree.
+        if (webViewAgentType === 'reasonix') {
+          injectReasonixMatchOverlay(webview, webview.getURL(), worktreePath)
+          listenForReasonixForceRecover(webview, worktreePath)
         }
       }
       // Why: the Paseo sidebar keeps only the current workspace + its session

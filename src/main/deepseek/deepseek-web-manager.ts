@@ -249,9 +249,20 @@ export class DeepSeekWebManager {
     const instance = this.daemon()
     this.activePath = projectPath
     if (this.isRunning(instance)) {
-      // Why: daemon already up; just make sure this worktree is a workspace.
-      await this.ensureWorkspaceRegistration(projectPath)
-      return this.getStatus()
+      // Why: a daemon spawned before `dsh setup` serves the SPA shell but 404s
+      // every RPC; recycling it beats pinning the tab to a host that can never
+      // load sessions.
+      const backendUp = await this.hostFor(instance)
+        .probe()
+        .then(
+          () => true,
+          () => false
+        )
+      if (backendUp) {
+        await this.ensureWorkspaceRegistration(projectPath)
+        return this.getStatus()
+      }
+      this.resetChild(instance)
     }
     // Why: a main-process restart or crash orphans the previous dsh child on
     // the registry port; reap it so the fresh spawn rebinds the SAME port
@@ -291,8 +302,20 @@ export class DeepSeekWebManager {
     if (!this.isChildAlive(instance)) {
       return this.getStatus()
     }
-    // Why: a live child past the wait counts as up even if probes never
-    // answered (listener may reject the probe path); the webview retries.
+    // Why: the SPA root answers 200 even when the RPC backend is down (dsh not
+    // set up), which used to render as a silently broken tab; surface it.
+    const backendUp = await this.hostFor(instance)
+      .probe()
+      .then(
+        () => true,
+        () => false
+      )
+    if (!backendUp) {
+      instance.state = 'errored'
+      instance.error =
+        'DeepSeek Harness host is up but its API is unavailable. Run `dsh setup <deepseek-harness-dir>` once, then retry.'
+      return this.getStatus()
+    }
     instance.state = 'running'
     // Why: registering the worktree as a Host Workspace makes the web UI's
     // session flow auto-target it instead of asking to pick a directory.

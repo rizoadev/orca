@@ -51,7 +51,8 @@ const TUI_AGENT_KIND_BY_AGENT = {
   strands: 'strands',
   'deepseek-harness': 'deepseek-harness',
   paseo: 'paseo',
-  openchamber: 'openchamber'
+  openchamber: 'openchamber',
+  reasonix: 'reasonix'
 } satisfies Record<TuiAgent, ConcreteAgentKind>
 
 // Why: `satisfies Record<TuiAgent, …>` makes the lookup exhaustive at compile

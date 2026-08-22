@@ -9,6 +9,7 @@ import type { BrowserWorkspace, TuiAgent } from '../../../../shared/types'
 // without a session never show the launcher.
 export const AVAILABLE_WEBVIEW_AGENTS: readonly TuiAgent[] = [
   'deepseek-harness',
+  'reasonix',
   'paseo',
   'openchamber'
 ]
@@ -19,6 +20,7 @@ export const AVAILABLE_WEBVIEW_AGENTS: readonly TuiAgent[] = [
 // Harness serves its SPA without a <title>, so its launch title survives.
 const WEBVIEW_AGENT_TAB_TITLE: Partial<Record<TuiAgent, string>> = {
   'deepseek-harness': 'DeepSeek Harness',
+  reasonix: 'Reasonix',
   paseo: 'Paseo',
   openchamber: 'OpenChamber'
 }

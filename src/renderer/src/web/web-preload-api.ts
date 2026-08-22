@@ -884,7 +884,8 @@ function createWebPreloadApi(): Partial<PreloadApi> {
         }),
       attachProject: () => Promise.resolve({ ok: false }),
       getDaemonUrl: () => Promise.resolve(''),
-      listProjects: () => Promise.resolve([])
+      listProjects: () => Promise.resolve([]),
+      clearWebviewStorage: () => Promise.resolve()
     },
     hostedReview: createRuntimeNamespaceApi('hostedReview'),
     linear: createRuntimeNamespaceApi('linear'),

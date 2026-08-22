@@ -4,6 +4,7 @@ import { useAppStore } from '@/store'
 import { activateAndRevealWorktree } from '@/lib/worktree-activation'
 import { activateTabAndFocusPane } from '@/lib/activate-tab-and-focus-pane'
 import { openDeepSeekHarnessTab } from '@/lib/open-deepseek-harness-tab'
+import { openReasonixTab } from '@/lib/open-reasonix-tab'
 import { openOpenChamberTab } from '@/lib/open-openchamber-tab'
 import { openPaseoWebTab } from '@/lib/open-paseo-web-tab'
 import type { TuiAgent } from '../../../../shared/types'
@@ -147,9 +148,7 @@ const WorktreeCardAgentsBody = React.memo(function WorktreeCardAgentsBody({
   ])
 
   const handleSendTargetClick = useCallback(
-    (paneKey: string) => {
-      void sendPromptToSidebarAgentTarget(paneKey)
-    },
+    (paneKey: string) => void sendPromptToSidebarAgentTarget(paneKey),
     [sendPromptToSidebarAgentTarget]
   )
 
@@ -190,9 +189,8 @@ const WorktreeCardAgentsBody = React.memo(function WorktreeCardAgentsBody({
     },
     [worktreeId]
   )
-  const handleActivateRetainedAgent = useCallback(() => {
-    // Why: hibernation-retained rows are passive completion evidence; activating would resume sleeping sessions, so the row is inert.
-  }, [])
+  // Why: hibernation-retained rows are passive completion evidence; activating would resume sleeping sessions, so the row is inert.
+  const handleActivateRetainedAgent = useCallback(() => undefined, [])
 
   // Why: web-view agents have no terminal pane; clicking opens their embedded UI scoped to this worktree.
   const handleActivateAvailableAgent = useCallback(
@@ -205,6 +203,7 @@ const WorktreeCardAgentsBody = React.memo(function WorktreeCardAgentsBody({
       const open =
         {
           'deepseek-harness': openDeepSeekHarnessTab,
+          reasonix: openReasonixTab,
           openchamber: openOpenChamberTab,
           paseo: openPaseoWebTab
         }[agentType] ?? openPaseoWebTab

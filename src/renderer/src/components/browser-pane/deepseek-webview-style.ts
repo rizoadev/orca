@@ -204,3 +204,79 @@ export function alertDeepSeekCwdMismatch(
     })
     .catch(() => undefined)
 }
+
+/**
+ * Build the guest-side script that hides every Harness workspace in the
+ * sidebar tree except the current project's. The current workspace is the
+ * tree row containing the session with `aria-selected="true"`; before any
+ * session is selected (fresh tab / pre-hydration) it falls back to matching
+ * the workspace title against the worktree folder name. Re-applies on DOM
+ * churn via a MutationObserver; a no-match never hides everything (a renamed
+ * workspace or an unhydrated moment shows all instead). Best-effort.
+ */
+function buildDeepSeekWorkspaceFilterScript(worktreePath: string): string {
+  return `(() => {
+    const target = ${JSON.stringify(worktreePath)}
+    const folder = target.split(/[\\\\/]+/).filter(Boolean).pop() || target
+    const guard = (window.__orcaDsTree ?? (window.__orcaDsTree = {}))
+    if (guard.observer) guard.observer.disconnect()
+    let timer = 0
+    const headerSel = 'div[role="treeitem"][aria-expanded]'
+    const titleOf = (row) => (row.querySelector('[class*="title"]')?.textContent ?? '').trim()
+    const apply = () => {
+      const tree = document.querySelector('[role="tree"]')
+      if (!tree) return
+      // Why: each workspace group is one container div holding its header row
+      // (role=treeitem aria-expanded) and, as SIBLINGS, its session rows
+      // (role=treeitem aria-selected). A session row is not a DOM descendant
+      // of the header, so link them through the shared container instead of
+      // closest().
+      const sections = Array.from(tree.children).filter(
+        (el) => el.querySelector(headerSel) !== null
+      )
+      if (sections.length === 0) return
+      const anySelected = tree.querySelector('div[role="treeitem"][aria-selected="true"]')
+      let matched = 0
+      for (const section of sections) {
+        const header = section.querySelector(headerSel)
+        const selectedInside = section.querySelector(
+          'div[role="treeitem"][aria-selected="true"]'
+        )
+        const keep = selectedInside !== null
+          || (anySelected === null && titleOf(header).toLowerCase() === folder.toLowerCase())
+        if (keep) matched++
+        section.style.display = keep ? '' : 'none'
+      }
+      // Why: renamed workspace or pre-hydration would otherwise hide
+      // everything; fall back to showing all workspaces when nothing matches.
+      if (matched === 0) {
+        for (const section of sections) section.style.display = ''
+      }
+    }
+    apply()
+    guard.observer = new MutationObserver(() => {
+      window.clearTimeout(timer)
+      timer = window.setTimeout(apply, 120)
+    })
+    guard.observer.observe(document.body, { childList: true, subtree: true })
+  })()`
+}
+
+/**
+ * Hide every Harness sidebar workspace except the one for the current
+ * worktree. Injected on dom-ready and re-injected after pin+reload so a new
+ * worktree re-targets the filter. Best-effort: a failing script never breaks
+ * the webview.
+ */
+export function hideDeepSeekOtherWorkspaces(
+  webview: Electron.WebviewTag,
+  url: string,
+  worktreePath: string
+): void {
+  if (!isDeepSeekWebviewUrl(url)) {
+    return
+  }
+  void webview
+    .executeJavaScript(buildDeepSeekWorkspaceFilterScript(worktreePath))
+    .catch(() => undefined)
+}

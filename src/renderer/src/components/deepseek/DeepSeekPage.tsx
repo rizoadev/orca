@@ -18,9 +18,11 @@ import {
   SelectValue
 } from '@/components/ui/select'
 import { translate } from '@/i18n/i18n'
+import { ORCA_BROWSER_PARTITION } from '../../../../shared/constants'
 import { DEEPSEEK_WEBVIEW_CSS } from '@/lib/deepseek-webview-css'
 import {
   alertDeepSeekCwdMismatch,
+  hideDeepSeekOtherWorkspaces,
   injectDeepSeekMatchOverlay,
   listenForDeepSeekForceRecover,
   prepareDeepSeekWebview,
@@ -80,12 +82,10 @@ export default function DeepSeekPage(): React.JSX.Element {
     if (!node) {
       return
     }
-    // Why: one daemon serves every project, so all DeepSeek webviews share an
-    // origin; a per-worktree partition keeps this screen's session pin isolated
-    // from DeepSeek tabs of other projects (shared partition made switching
-    // projects show the last-pinned session — the "wrong project" bug).
-    const worktreeId = useAppStore.getState().activeWorktreeId
-    node.setAttribute('partition', `persist:deepseek-web:${worktreeId ?? 'page'}`)
+    // Why: use the default browser partition (persist:orca-browser) so the
+    // guest attaches — will-attach-webview is fail-closed and only allows
+    // registry partitions.
+    node.setAttribute('partition', ORCA_BROWSER_PARTITION)
     node.setAttribute('allowpopups', '')
     node.style.flex = '1'
     node.style.width = '100%'
@@ -108,6 +108,7 @@ export default function DeepSeekPage(): React.JSX.Element {
         .getState()
         .getKnownWorktreeById(useAppStore.getState().activeWorktreeId ?? '')?.path
       if (path) {
+        hideDeepSeekOtherWorkspaces(node, node.getURL(), path)
         injectDeepSeekMatchOverlay(node, node.getURL(), path)
         listenForDeepSeekForceRecover(node, path)
       }

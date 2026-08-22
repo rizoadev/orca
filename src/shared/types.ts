@@ -2526,6 +2526,7 @@ export type TuiAgent =
   | 'deepseek-harness' // DeepSeek Harness (dsh)
   | 'paseo' // Paseo (embedded daemon web UI)
   | 'openchamber' // OpenChamber (embedded OpenCode web UI)
+  | 'reasonix' // Reasonix (embedded coding-agent web UI)
 // DeepSeek Harness (dsh)
 
 export type TaskViewPresetId = 'all' | 'issues' | 'review' | 'my-issues' | 'my-prs' | 'prs'
@@ -3263,6 +3264,7 @@ export type TopLevelView =
   | 'docker'
   | 'deepseek-harness'
   | 'openchamber'
+  | 'reasonix'
 
 export type PersistedUIState = {
   lastActiveRepoId: string | null

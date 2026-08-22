@@ -20,6 +20,7 @@ export function resolveZoomTarget(args: {
     | 'docker'
     | 'deepseek-harness'
     | 'openchamber'
+    | 'reasonix'
   activeTabType: 'terminal' | 'editor' | 'browser' | 'simulator'
   activeElement: unknown
 }): 'terminal' | 'editor' | 'simulator' | 'ui' {

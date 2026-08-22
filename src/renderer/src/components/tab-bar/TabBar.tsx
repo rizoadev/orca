@@ -119,6 +119,8 @@ type TabBarProps = {
   onNewBrowserTab: () => void
   /** Opens the DeepSeek Harness web UI as a browser tab for the active worktree. */
   onNewDeepSeekHarnessTab?: () => void
+  /** Opens the Reasonix web UI as a browser tab for the active worktree. */
+  onNewReasonixTab?: () => void
   /** Opens the Paseo web UI as a browser tab for the active worktree. */
   onNewPaseoWebTab?: () => void
   /** Opens the OpenChamber web UI as a browser tab for the active worktree. */
@@ -249,6 +251,7 @@ function TabBarInner({
   onNewTerminalWithShell,
   onNewBrowserTab,
   onNewDeepSeekHarnessTab,
+  onNewReasonixTab,
   onNewPaseoWebTab,
   onNewOpenChamberTab,
   onNewSimulatorTab,
@@ -287,6 +290,7 @@ function TabBarInner({
   const openMarkdownShortcut = useOptionalShortcutLabel('tab.openMarkdown')
   const newOpenChamberShortcut = useOptionalShortcutLabel('tab.newOpenChamber')
   const newDeepSeekHarnessShortcut = useOptionalShortcutLabel('tab.newDeepSeekHarness')
+  const newReasonixShortcut = useOptionalShortcutLabel('tab.newReasonix')
   const newPaseoShortcut = useOptionalShortcutLabel('tab.newPaseo')
   const generatedTabTitlesEnabled = useAppStore((s) => s.settings?.tabAutoGenerateTitle === true)
   const mobileEmulatorEnabled = useAppStore((s) => s.settings?.mobileEmulatorEnabled !== false)
@@ -738,6 +742,19 @@ function TabBarInner({
         ) : null}
       </DropdownMenuItem>
     ) : null
+  const newReasonixMenuItem =
+    !terminalOnly && onNewReasonixTab ? (
+      <DropdownMenuItem
+        onSelect={onNewReasonixTab}
+        className="gap-2 rounded-[7px] px-2 py-1.5 text-[12px] leading-5 font-medium"
+      >
+        <AgentIcon agent="reasonix" size={16} />
+        {translate('reasonix.view.new-tab', 'Reasonix')}
+        {newReasonixShortcut ? (
+          <DropdownMenuShortcut>{newReasonixShortcut}</DropdownMenuShortcut>
+        ) : null}
+      </DropdownMenuItem>
+    ) : null
   const newSimulatorMenuItem =
     !terminalOnly && mobileEmulatorEnabled && onNewSimulatorTab ? (
       workspaceHasSimulatorTab ? (
@@ -810,6 +827,7 @@ function TabBarInner({
         {defaultTerminalMenuItems}
         {newBrowserMenuItem}
         {newDeepSeekHarnessMenuItem}
+        {newReasonixMenuItem}
         {newPaseoWebMenuItem}
         {newOpenChamberMenuItem}
         {newSimulatorMenuItem}
@@ -820,6 +838,7 @@ function TabBarInner({
         {defaultTerminalMenuItems}
         {newBrowserMenuItem}
         {newDeepSeekHarnessMenuItem}
+        {newReasonixMenuItem}
         {newPaseoWebMenuItem}
         {newOpenChamberMenuItem}
         {newMarkdownMenuItem}

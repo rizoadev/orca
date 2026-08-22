@@ -74,13 +74,14 @@ export async function openDeepSeekHarnessTab(worktreeId: string, groupId: string
     activate: true,
     targetGroupId: groupId,
     title: 'DeepSeek Harness',
+    // Why: hide Orca's browser toolbar (URL bar) — the Harness UI is app-like
+    // and owns its own chrome; matches Paseo/OpenChamber/Reasonix tabs.
+    hideBrowserChrome: true,
     // Why: explicit marker so session detection survives SPA title overwrites
-    // and stays unambiguous against other app-like tabs (OpenChamber).
-    webViewAgentType: 'deepseek-harness',
-    // Why: one daemon serves every project, so all DeepSeek webviews share an
-    // origin; a per-worktree partition keeps each tab's session pin isolated,
-    // otherwise opening two projects shows the same (last-pinned) session.
-    sessionPartition: `persist:deepseek-web:${worktreeId}`
+    // and stays unambiguous against other app-like tabs (OpenChamber). Uses the
+    // default browser partition so will-attach-webview (fail-closed on
+    // non-registry partitions) lets the guest attach.
+    webViewAgentType: 'deepseek-harness'
   })
   // Why: pin the Harness UI to the session whose cwd matches this worktree.
   const sessions = await window.api.deepseekWeb.listSessions().catch(() => [])
