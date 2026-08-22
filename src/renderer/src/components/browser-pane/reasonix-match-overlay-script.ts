@@ -69,7 +69,7 @@ export function buildReasonixMatchOverlayScript(worktreePath: string): string {
       const s = guard.el.style
       s.position = 'fixed'
       s.right = '12px'
-      s.bottom = '12px'
+      s.top = '12px'
       s.zIndex = '2147483647'
       s.padding = '4px 10px'
       s.borderRadius = '999px'

@@ -38,11 +38,11 @@ export function buildOpenChamberMatchOverlayScript(worktreePath: string): string
       guard.el = document.createElement('div')
       guard.el.setAttribute('data-orca-oc-match', '')
       const s = guard.el.style
-      s.position = 'fixed'
-      s.right = '12px'
-      s.bottom = '12px'
-      s.zIndex = '2147483647'
-      s.padding = '4px 10px'
+      // Why: rendered inside the SPA's header bar (next to the work-status
+      // toggle) instead of floating over the viewport, so it reads as part of
+      // the app chrome and never covers chat content.
+      s.position = 'static'
+      s.padding = '2px 8px'
       s.borderRadius = '999px'
       s.font = '11px ui-monospace, SFMono-Regular, Menlo, monospace'
       s.background = 'rgba(15, 23, 42, 0.85)'
@@ -126,9 +126,18 @@ export function buildOpenChamberMatchOverlayScript(worktreePath: string): string
       console.log('[orca:openchamber] force-recover')
     }
     const check = () => {
-      // Why: the SPA can replace body content without navigating; re-append the
-      // pill so the status overlay is self-healing between full reloads.
-      if (!guard.el.isConnected) document.body.appendChild(guard.el)
+      // Why: the SPA can replace body content without navigating; re-insert the
+      // pill next to the work-status toggle (before it, so it reads left of the
+      // button) whenever the SPA re-renders the header. Falls back to the body
+      // if the toggle isn't mounted yet.
+      const toggle = document.querySelector('[aria-label="Toggle work-status panel"]')
+      if (toggle && toggle.parentElement) {
+        if (guard.el.parentElement !== toggle.parentElement) {
+          toggle.parentElement.insertBefore(guard.el, toggle)
+        }
+      } else if (!guard.el.isConnected) {
+        document.body.appendChild(guard.el)
+      }
       let current = null
       try {
         current = localStorage.getItem('lastDirectory')
