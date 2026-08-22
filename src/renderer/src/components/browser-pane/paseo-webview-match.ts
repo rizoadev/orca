@@ -154,11 +154,8 @@ function buildPaseoMatchOverlayScript(worktreePath: string): string {
       } catch (e) { /* ignore malformed */ }
       return null
     }
-    const workspaceDirFor = async (workspaceId) => {
-      if (!workspaceId) return null
+    const readReplicaCache = async () => {
       try {
-        // Why: the SPA keeps its replica cache in IndexedDB, not localStorage -
-        // a localStorage read here would stay unresolved and never turn green.
         const raw = await new Promise((resolve) => {
           try {
             const open = indexedDB.open('paseo-replica-cache')
@@ -176,15 +173,37 @@ function buildPaseoMatchOverlayScript(worktreePath: string): string {
         if (!raw) return null
         const cache = JSON.parse(raw)
         const hosts = Array.isArray(cache) ? cache : cache && Array.isArray(cache.hosts) ? cache.hosts : null
-        if (!hosts) return null
-        for (const host of hosts) {
-          for (const ws of (host.workspaces || [])) {
-            if (ws.id === workspaceId && typeof ws.workspaceDirectory === 'string') {
-              return ws.workspaceDirectory
-            }
+        return Array.isArray(hosts) ? hosts : null
+      } catch (e) { /* ignore malformed cache */ }
+      return null
+    }
+    const workspaceDirFor = async (workspaceId) => {
+      if (!workspaceId) return null
+      // Why: the SPA keeps its replica cache in IndexedDB, not localStorage -
+      // a localStorage read here would stay unresolved and never turn green.
+      const hosts = await readReplicaCache()
+      if (!hosts) return null
+      for (const host of hosts) {
+        for (const ws of (host.workspaces || [])) {
+          if (ws.id === workspaceId && typeof ws.workspaceDirectory === 'string') {
+            return ws.workspaceDirectory
           }
         }
-      } catch (e) { /* ignore malformed cache */ }
+      }
+      return null
+    }
+    // Why: resolve the target project by matching its path directly against
+    // the replica cache (same by-path lookup the pin script uses).
+    const dirForTarget = async () => {
+      const hosts = await readReplicaCache()
+      if (!hosts) return null
+      for (const host of hosts) {
+        for (const ws of (host.workspaces || [])) {
+          if (typeof ws.workspaceDirectory === 'string' && norm(ws.workspaceDirectory) === norm(target)) {
+            return ws.workspaceDirectory
+          }
+        }
+      }
       return null
     }
     const check = async () => {
@@ -197,7 +216,11 @@ function buildPaseoMatchOverlayScript(worktreePath: string): string {
       const routeMatch = location.pathname.match(/^\\/h\\/([^\\/]+)\\/workspace\\/([^\\/]+)/)
       const routeId = routeMatch ? decodeURIComponent(routeMatch[2]) : null
       const pinnedId = pinnedWorkspaceId()
-      const current = await workspaceDirFor(routeId ?? pinnedId)
+      // Why: prefer matching the target path directly against the replica cache
+      // (same by-path lookup the pin script uses) so the pill turns green even
+      // when the route id / persisted selection shape differs from the cache's
+      // workspace ids; fall back to resolving the pinned id by id.
+      const current = (await dirForTarget()) ?? (await workspaceDirFor(routeId ?? pinnedId))
       const match = current !== null && norm(current) === norm(target)
       if (match) {
         dot.style.background = '#22c55e'

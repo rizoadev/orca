@@ -76,11 +76,11 @@ export function buildDeepSeekMatchOverlayScript(worktreePath: string): string {
       guard.el = document.createElement('div')
       guard.el.setAttribute('data-orca-ds-match', '')
       const s = guard.el.style
-      s.position = 'fixed'
-      s.right = '12px'
-      s.top = '12px'
-      s.zIndex = '2147483647'
-      s.padding = '4px 10px'
+      // Why: rendered inside the session header's utilities slot (before the
+      // existing buttons) instead of floating over the viewport, so it reads as
+      // part of the app chrome and never covers chat content.
+      s.position = 'static'
+      s.padding = '2px 8px'
       s.borderRadius = '999px'
       s.font = '11px ui-monospace, SFMono-Regular, Menlo, monospace'
       s.background = 'rgba(15, 23, 42, 0.85)'
@@ -164,9 +164,18 @@ export function buildDeepSeekMatchOverlayScript(worktreePath: string): string {
       console.log('[orca:deepseek] force-recover')
     }
     const check = async () => {
-      // Why: the SPA can replace body content without navigating; re-append the
-      // pill so the status overlay is self-healing between full reloads.
-      if (!guard.el.isConnected) document.body.appendChild(guard.el)
+      // Why: the SPA can replace body content without navigating; re-insert the
+      // pill next to the session header's utilities slot (before it) whenever
+      // the SPA re-renders the header. Falls back to the body if the slot
+      // isn't mounted yet.
+      const slot = document.querySelector('[data-slot="conversation.session.header.utilities"]')
+      if (slot && slot.parentElement) {
+        if (guard.el.parentElement !== slot.parentElement) {
+          slot.parentElement.insertBefore(guard.el, slot)
+        }
+      } else if (!guard.el.isConnected) {
+        document.body.appendChild(guard.el)
+      }
       const current = await resolveSessionCwd()
       const match = current !== null && norm(current) === norm(target)
       dot.style.background = match ? '#22c55e' : '#ef4444'
