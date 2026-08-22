@@ -24,6 +24,10 @@ export type AgentDotState =
   | 'failed'
   | 'done'
   | 'idle'
+  // Why: embedded web-view agents (Paseo/OpenChamber/DeepSeek) are always
+  // "available", so a daemon running does not mean busy — it renders a steady
+  // yellow dot instead of the working spinner.
+  | 'running'
   // Why: the sidebar's title-based status flow (StatusIndicator/WorktreeCard)
   // collapses blocked + waiting into a single "needs attention" state. Keep
   // this as a distinct member so that flow can render without inventing a new
@@ -48,6 +52,8 @@ export function agentStateLabel(state: AgentDotState): string {
       return 'Done'
     case 'idle':
       return 'Idle'
+    case 'running':
+      return 'Running'
     case 'permission':
       return 'Needs attention'
   }
@@ -117,7 +123,9 @@ export const AgentStateDot = React.memo(function AgentStateDot({
           inner,
           state === 'blocked' || state === 'interrupted' || state === 'failed'
             ? 'bg-red-500'
-            : 'bg-neutral-500/40'
+            : state === 'running'
+              ? 'bg-yellow-400'
+              : 'bg-neutral-500/40'
         )}
       />
     </span>

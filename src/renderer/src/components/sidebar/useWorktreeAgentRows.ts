@@ -1,6 +1,7 @@
-import { useMemo } from 'react'
+import { useMemo, useEffect } from 'react'
 import { useShallow } from 'zustand/react/shallow'
 import type { DashboardAgentRow } from '@/components/dashboard/useDashboardData'
+import type { TuiAgent } from '../../../../shared/types'
 import { applyAgentRowLineage } from '@/components/dashboard/agent-row-lineage'
 import { migrationUnsupportedToAgentStatusEntry } from '@/lib/migration-unsupported-agent-entry'
 import { useAppStore } from '@/store'
@@ -24,6 +25,10 @@ import {
   buildAvailableWebViewAgentRows,
   openWebViewAgentTypes
 } from './worktree-available-webview-agent-rows'
+import {
+  ensureWebViewAgentDaemonPolling,
+  useWebViewAgentDaemonStatus
+} from '@/lib/webview-agent-daemon-status'
 
 export { buildWorktreeAgentRows } from './worktree-agent-rows'
 export {
@@ -57,6 +62,25 @@ export function useWorktreeAgentRows(worktreeId: string, active = true): Dashboa
     () => (browserTabs ? openWebViewAgentTypes(browserTabs) : []),
     [browserTabs]
   )
+  // Why: the daemon-status poller is a single app-wide timer; starting it here
+  // (per card) is guarded by an idempotent module flag, so it runs exactly once.
+  useEffect(() => {
+    if (active) {
+      ensureWebViewAgentDaemonPolling()
+    }
+  }, [active])
+  const daemonStatus = useWebViewAgentDaemonStatus(useShallow((s) => s))
+  // Why: OpenChamber runs one server per project, so its running state is keyed
+  // by this worktree's path; Paseo/DeepSeek are single daemons (global flags).
+  // The path is stable per worktreeId, so a non-reactive read here is safe.
+  const daemonRunning = useMemo<Partial<Record<TuiAgent, boolean>>>(() => {
+    const path = useAppStore.getState().getKnownWorktreeById(worktreeId)?.path
+    return {
+      paseo: daemonStatus.paseo,
+      openchamber: path ? (daemonStatus.openchamberByPath[path] ?? false) : false,
+      'deepseek-harness': daemonStatus['deepseek-harness']
+    }
+  }, [daemonStatus, worktreeId])
   // Why: narrow the subscriptions to only THIS worktree's entries via
   // useShallow. Subscribing to the whole agentStatusByPaneKey map would make
   // every on-screen card re-render on any agent-status update anywhere —
@@ -123,7 +147,7 @@ export function useWorktreeAgentRows(worktreeId: string, active = true): Dashboa
       // Why: launcher rows exist only while a browser-tab session for that
       // agent is open in the worktree (see openWebViewAgentTypes).
       ...(openWebViewAgents.length > 0
-        ? buildAvailableWebViewAgentRows(worktreeId, now, openWebViewAgents)
+        ? buildAvailableWebViewAgentRows(worktreeId, now, openWebViewAgents, daemonRunning)
         : [])
     ]
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -138,6 +162,7 @@ export function useWorktreeAgentRows(worktreeId: string, active = true): Dashboa
     ptyIdsByTabId,
     terminalLayoutsByTabId,
     runtimeAgentOrchestrationByPaneKey,
-    agentFreshnessSignature
+    agentFreshnessSignature,
+    daemonRunning
   ])
 }

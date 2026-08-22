@@ -101,4 +101,31 @@ describe('buildAvailableWebViewAgentRows', () => {
 
     expect(rows.map((row) => row.agentType)).toEqual(['deepseek-harness', 'paseo', 'openchamber'])
   })
+
+  it('emits idle state by default (daemon not running)', () => {
+    const rows = buildAvailableWebViewAgentRows('wt-1', 1000, ['paseo'])
+
+    expect(rows[0].state).toBe('idle')
+  })
+
+  it('emits running state when the daemon is reported running', () => {
+    const rows = buildAvailableWebViewAgentRows('wt-1', 1000, ['paseo', 'openchamber'], {
+      paseo: true
+    })
+
+    expect(rows.map((row) => [row.agentType, row.state])).toEqual([
+      ['paseo', 'running'],
+      ['openchamber', 'idle']
+    ])
+  })
+
+  it('emits openchamber running only for the worktree whose server is up', () => {
+    // Why: OpenChamber spawns one server per project; the caller resolves this
+    // worktree's flag from the daemon store's openchamberByPath[path].
+    const rows = buildAvailableWebViewAgentRows('wt-1', 1000, ['openchamber'], {
+      openchamber: true
+    })
+
+    expect(rows.map((row) => [row.agentType, row.state])).toEqual([['openchamber', 'running']])
+  })
 })

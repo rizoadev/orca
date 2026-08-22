@@ -13,13 +13,14 @@ import type { DashboardAgentRow as DashboardAgentRowData } from './useDashboardD
 import { getAgentRowPrimaryText } from '@/lib/agent-row-primary-text'
 
 // Why: narrow the dashboard's rollup states to shared dot states, defaulting unknowns to 'idle' so a row never crashes.
-function asDotState(state: AgentStatusState | 'idle'): AgentDotState {
+function asDotState(state: AgentStatusState | 'idle' | 'running'): AgentDotState {
   switch (state) {
     case 'working':
     case 'blocked':
     case 'waiting':
     case 'done':
     case 'idle':
+    case 'running':
       return state
   }
   return 'idle'

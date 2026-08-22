@@ -2,8 +2,10 @@
  * Injected styling/behavior for the embedded Paseo web app (browser tab).
  * Pins the app's persisted last-workspace selection to the workspace that
  * matches Orca's active worktree, so the chat always runs in the folder the
- * user is looking at. The sidebar keeps the current workspace and its session
- * list visible; everything else is filtered out.
+ * user is looking at. The sidebar keeps only the project group containing
+ * the open workspace: each group renders as an opacity/z-index wrapper, so
+ * hiding the wrapper removes the project cleanly (name + workspace rows,
+ * no whitespace gap).
  */
 
 // Why: the Paseo web app always lives under its /h/ host route (workspace or
@@ -59,130 +61,93 @@ export function isPaseoWebviewRootUrl(url: string): boolean {
 }
 
 /**
- * Build the guest-side sidebar filter script. Keeps ONLY the current workspace
- * (the one whose directory matches the Orca worktree path) and its session
- * list; every other project/workspace row, the global "New workspace" entry
- * and Schedules are hidden. Navigation chrome (History, command center,
- * display preferences) stays visible. Resolves the current workspace through
- * the app's IndexedDB replica cache; while the cache is unresolved nothing is
- * hidden (a transient state must not collapse the whole sidebar). A
- * MutationObserver re-applies because the SPA re-renders the sidebar without
- * navigating; guarded on `window` so repeated injections replace — not stack —
- * observers.
+ * Build the guest-side sidebar filter script. Keeps only the project group
+ * containing the open workspace: each group renders as an opacity/z-index
+ * wrapper holding the project name plus all its workspace rows, so toggling
+ * the wrapper hides a project without whitespace gaps. The target resolves
+ * from the open route first (its group is always the expanded/rendered one);
+ * non-workspace routes fall back to the Orca worktree directory through the
+ * app's IndexedDB replica cache, and an unmatched target shows everything
+ * rather than blanking the sidebar. A MutationObserver re-applies because the
+ * SPA re-renders the sidebar without navigating; guarded on `window` so
+ * repeated injections replace — not stack — observers.
  */
 function buildPaseoWorkspaceFilterScript(worktreePath: string): string {
   return `(() => {
     const target = ${JSON.stringify(worktreePath)}
     const guard = (window.__orcaPaseoFilter ?? (window.__orcaPaseoFilter = { observer: null }))
     if (guard.observer) guard.observer.disconnect()
-    const norm = (p) => (p || '').replace(/[\\\\/]+$/, '')
-    // Why: each sidebar row is wrapped in a draggable-list cell rendered as
-    // <div style="opacity:1; z-index:1">; removing only the row button leaves
-    // that empty wrapper behind (whitespace), so the wrapper goes too.
-    const dragCellOf = (el) => {
-      let node = el.parentElement
-      while (node && node !== document.body) {
-        const st = node.getAttribute('style') || ''
-        if (st.indexOf('opacity: 1') !== -1 && st.indexOf('z-index: 1') !== -1) return node
-        node = node.parentElement
-      }
-      return el
-    }
+    const norm = (p) => (p || '').replace(/[\\/]+$/, '')
     const cacheKey = '${PASEO_REPLICA_CACHE_KEY}'
     let timer = 0
-    // Why: resolve the workspace whose directory matches the Orca worktree
-    // path through the SPA's IndexedDB replica cache; the sidebar keeps only
-    // that workspace row and its session list.
-    const resolveTargetId = () => new Promise((resolve) => {
-      try {
-        const open = indexedDB.open('${PASEO_REPLICA_CACHE_DB}')
-        open.onsuccess = () => {
-          try {
-            const tx = open.result.transaction('${PASEO_REPLICA_CACHE_STORE}', 'readonly').objectStore('${PASEO_REPLICA_CACHE_STORE}')
-            const get = tx.get(cacheKey)
-            get.onsuccess = () => {
-              try {
-                const cache = JSON.parse(get.result || 'null')
-                const hosts = Array.isArray(cache) ? cache : cache && Array.isArray(cache.hosts) ? cache.hosts : null
-                if (hosts) {
-                  outer: for (const host of hosts) {
-                    for (const ws of (host.workspaces || [])) {
-                      if (typeof ws.workspaceDirectory === 'string' && norm(ws.workspaceDirectory) === norm(target)) {
-                        resolve(ws.id)
-                        break outer
+    const resolveTargetId = async () => {
+      const route = location.pathname.match(/\\/workspace\\/([^/?#]+)/)
+      if (route) return route[1]
+      return new Promise((resolve) => {
+        try {
+          const open = indexedDB.open('${PASEO_REPLICA_CACHE_DB}')
+          open.onsuccess = () => {
+            try {
+              const tx = open.result.transaction('${PASEO_REPLICA_CACHE_STORE}', 'readonly').objectStore('${PASEO_REPLICA_CACHE_STORE}')
+              const get = tx.get(cacheKey)
+              get.onsuccess = () => {
+                try {
+                  const cache = JSON.parse(get.result || 'null')
+                  const hosts = Array.isArray(cache) ? cache : cache && Array.isArray(cache.hosts) ? cache.hosts : null
+                  if (hosts) {
+                    outer: for (const host of hosts) {
+                      for (const ws of (host.workspaces || [])) {
+                        if (typeof ws.workspaceDirectory === 'string' && norm(ws.workspaceDirectory) === norm(target)) {
+                          resolve(ws.id)
+                          break outer
+                        }
                       }
                     }
                   }
-                }
-                resolve(null)
-              } catch (e) { resolve(null) }
-            }
-            get.onerror = () => resolve(null)
-          } catch (e) { resolve(null) }
-        }
-        open.onerror = () => resolve(null)
-      } catch (e) { resolve(null) }
-    })
+                  resolve(null)
+                } catch (e) { resolve(null) }
+              }
+              get.onerror = () => resolve(null)
+            } catch (e) { resolve(null) }
+          }
+          open.onerror = () => resolve(null)
+        } catch (e) { resolve(null) }
+      })
+    }
     const apply = async () => {
       const scroller = document.querySelector('[data-testid="sidebar-project-workspace-list-scroll"]')
       if (!scroller) return
       const targetId = await resolveTargetId()
-      // Why: the list interleaves one project name row (sidebar-project-row-*)
-      // with its workspace rows; walk them in document order so each workspace
-      // row inherits the project name it belongs to.
-      const ordered = Array.from(
-        scroller.querySelectorAll(
-          '[data-testid^="sidebar-project-row-"], [data-testid^="sidebar-workspace-row-"]'
-        )
-      )
-      // First pass: find the project that contains the target workspace. Every
-      // workspace row of that project is part of the current workspace.
-      let currentProject = null
-      let matchedProject = null
-      let matched = 0
-      for (const el of ordered) {
-        const tid = el.getAttribute('data-testid')
-        if (tid.startsWith('sidebar-project-row-')) {
-          currentProject = el
-          continue
-        }
-        if (targetId && tid.endsWith(':' + targetId)) {
-          matched++
-          matchedProject = currentProject
-        }
-      }
-      // Why: removing the non-matching rows from the DOM closes the gap
-      // hidden rows would leave; the SPA re-renders new instances on the
-      // next observer tick, which we re-process, so no detached pool is
-      // needed. Kept rows get pointer-events + cursor reset so the accordion
-      // cannot be collapsed and the workspace row cannot navigate away.
-      currentProject = null
-      for (const el of ordered) {
-        const tid = el.getAttribute('data-testid')
-        if (tid.startsWith('sidebar-project-row-')) {
-          currentProject = el
-        }
-        const keep = targetId === null || currentProject === matchedProject
-        if (keep) {
-          if (tid.startsWith('sidebar-project-row-')) {
-            // Why: the project name row is the accordion header (chevron); the
-            // pinned view must stay expanded, so collapse clicks are blocked.
-            el.style.setProperty('pointer-events', 'none', 'important')
-            el.style.cursor = 'default'
-          } else {
-            // Why: workspace rows are the session list; they stay clickable so
-            // the user can switch sessions, so pointer events are restored.
-            el.style.removeProperty('pointer-events')
-            el.style.removeProperty('cursor')
+      if (!targetId) return
+      // Why: a group wrapper is the opacity/z-index div that holds a project
+      // name row; per-workspace-row wrappers sit inside it without one.
+      const groups = Array.from(
+        scroller.querySelectorAll('div[style*="opacity: 1"][style*="z-index: 1"]')
+      ).filter((g) => g.querySelector('[data-testid^="sidebar-project-row-"]'))
+      if (groups.length === 0) return
+      let matchedAny = false
+      for (const g of groups) {
+        const hasTarget = g.querySelector('[data-testid$=":' + targetId + '"]')
+        if (hasTarget) {
+          matchedAny = true
+          g.style.removeProperty('display')
+          // Why: the project name row is the accordion header; the pinned view
+          // must stay expanded, so collapse clicks are blocked. Workspace rows
+          // stay clickable for switching sessions.
+          const header = g.querySelector('[data-testid^="sidebar-project-row-"]')
+          if (header) {
+            header.style.setProperty('pointer-events', 'none', 'important')
+            header.style.cursor = 'default'
           }
         } else {
-          const wrapper = dragCellOf(el)
-          if (wrapper.parentNode) wrapper.parentNode.removeChild(wrapper)
+          g.style.setProperty('display', 'none', 'important')
         }
       }
-      // Why: creation entries (Add project / New workspace) and Schedules
-      // must not appear in the sidebar; removing them closes any gap and the
-      // SPA re-creates them so the observer keeps the sidebar clean.
+      // Why: an unmatched target (collapsed fallback project, stale cache)
+      // must not blank the whole sidebar.
+      if (!matchedAny) {
+        for (const g of groups) g.style.removeProperty('display')
+      }
       document.querySelectorAll(
         '[data-testid="sidebar-add-project"], ' +
         '[data-testid="sidebar-global-new-workspace"], ' +
@@ -201,9 +166,9 @@ function buildPaseoWorkspaceFilterScript(worktreePath: string): string {
 }
 
 /**
- * Inject the guest-side sidebar filter: only the current workspace (matching
- * the Orca worktree path) and its session list stay visible. Best-effort — a
- * failing script never breaks the webview.
+ * Inject the guest-side sidebar filter: only the project group containing the
+ * open workspace stays visible. Best-effort — a failing script never breaks
+ * the webview.
  */
 export function hidePaseoOtherWorkspaces(
   webview: Electron.WebviewTag,

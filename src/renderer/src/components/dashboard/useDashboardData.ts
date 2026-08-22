@@ -24,7 +24,7 @@ export type DashboardAgentRow = {
   tab?: TerminalTab
   agentType: AgentType
   rowSource?: 'live' | 'retained' | 'subagent' | 'available'
-  state: AgentStatusState | 'idle'
+  state: AgentStatusState | 'idle' | 'running'
   /** Pane to focus when the row is activated, when it differs from paneKey.
    *  Subagent rows have no pane of their own and activate their parent's. */
   activationPaneKey?: string

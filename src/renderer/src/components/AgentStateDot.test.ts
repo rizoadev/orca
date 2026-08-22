@@ -67,4 +67,16 @@ describe('AgentStateDot', () => {
       expect(classNames).not.toContain('bg-amber-500')
     }
   )
+
+  it('renders running as a steady yellow dot', () => {
+    const classNames = renderDotClassNames('running')
+
+    expect(classNames).toContain('bg-yellow-400')
+    expect(classNames).not.toContain('bg-neutral-500/40')
+    expect(classNames).not.toContain('bg-red-500')
+  })
+
+  it('labels running as Running', () => {
+    expect(renderMarkup('running')).toContain('aria-label="Running"')
+  })
 })

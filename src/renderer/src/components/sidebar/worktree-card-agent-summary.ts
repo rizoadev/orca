@@ -13,17 +13,19 @@ const SUMMARY_STATE_ORDER: AgentDotState[] = [
   'blocked',
   'interrupted',
   'working',
+  'running',
   'done',
   'idle'
 ]
 
-function asDotState(state: AgentStatusState | 'idle'): AgentDotState {
+function asDotState(state: AgentStatusState | 'idle' | 'running'): AgentDotState {
   switch (state) {
     case 'working':
     case 'blocked':
     case 'waiting':
     case 'done':
     case 'idle':
+    case 'running':
       return state
   }
   return 'idle'
@@ -45,6 +47,8 @@ export function formatSummaryStateLabel(state: AgentDotState): string {
       return 'failed'
     case 'working':
       return 'working'
+    case 'running':
+      return 'running'
     case 'done':
       return 'done'
     case 'idle':

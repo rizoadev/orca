@@ -298,13 +298,14 @@ function orderSendTargetsByWorktreeAgentRows(
   return ordered
 }
 
-function asDotState(state: AgentStatusState | 'idle'): AgentDotState {
+function asDotState(state: AgentStatusState | 'idle' | 'running'): AgentDotState {
   switch (state) {
     case 'working':
     case 'blocked':
     case 'waiting':
     case 'done':
     case 'idle':
+    case 'running':
       return state
   }
   return 'idle'

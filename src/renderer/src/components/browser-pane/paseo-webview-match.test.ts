@@ -106,7 +106,7 @@ describe('injectPaseoMatchOverlay', () => {
 })
 
 describe('hidePaseoOtherWorkspaces', () => {
-  it('injects a filter script that keeps only the current workspace row', () => {
+  it('injects a group-wrapper filter that keeps only the open workspace project group', () => {
     const executeJavaScript = vi.fn((_script: string) => Promise.resolve(undefined))
     const webview = {
       getURL: () => 'http://127.0.0.1:6768/h/srv_1/workspace/wks_1',
@@ -115,12 +115,18 @@ describe('hidePaseoOtherWorkspaces', () => {
     hidePaseoOtherWorkspaces(webview, webview.getURL(), '/work/orca')
     expect(executeJavaScript).toHaveBeenCalledTimes(1)
     const script = String(executeJavaScript.mock.calls[0][0])
-    expect(script).toContain('/work/orca')
-    expect(script).toContain('sidebar-project-workspace-list-scroll')
-    expect(script).toContain('sidebar-workspace-row-')
+    // Why: the target resolves from the open route first (its group is the
+    // rendered one), falling back to the Orca directory via the replica cache.
+    expect(script).toContain('location.pathname.match')
     expect(script).toContain('paseo-replica-cache')
-    expect(script).toContain('sidebar-global-new-workspace')
-    expect(script).toContain('sidebar-schedules')
+    // Why: groups are opacity/z-index wrappers holding a project name row;
+    // hiding the wrapper removes name + workspace rows without gaps.
+    expect(script).toContain('opacity: 1')
+    expect(script).toContain('sidebar-project-row-')
+    expect(script).toContain(`'[data-testid$=":' + targetId + '"]'`)
+    // Why: an unmatched target must show everything instead of blanking.
+    expect(script).toContain('matchedAny')
+    expect(script).toContain('sidebar-add-project')
     expect(script).toContain('MutationObserver')
   })
 

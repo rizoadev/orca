@@ -53,6 +53,10 @@ function bucketForState(state: DashboardAgentRow['state']): DashboardBucket {
     case 'blocked':
     case 'waiting':
       return 'attention'
+    // Why: a running web-view daemon is an available agent, not an attention
+    // state; it folds into idle for bucketing but keeps its yellow dot.
+    case 'running':
+      return 'idle'
   }
 }
 
