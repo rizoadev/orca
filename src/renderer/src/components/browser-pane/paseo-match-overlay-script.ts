@@ -38,11 +38,8 @@ export function buildPaseoMatchOverlayScript(worktreePath: string): string {
       // the app chrome and never covers chat content.
       s.position = 'static'
       s.padding = '2px 8px'
-      s.borderRadius = '999px'
       s.font = '11px ui-monospace, SFMono-Regular, Menlo, monospace'
-      s.background = 'rgba(15, 23, 42, 0.85)'
       s.color = '#e2e8f0'
-      s.border = '1px solid rgba(148, 163, 184, 0.4)'
       s.boxShadow = '0 2px 8px rgba(0, 0, 0, 0.35)'
       s.cursor = 'pointer'
       s.userSelect = 'none'
