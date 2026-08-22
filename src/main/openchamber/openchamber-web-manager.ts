@@ -30,7 +30,12 @@ import {
   reapOrphanServer,
   recordServerPid
 } from './openchamber-server-pid'
-import { fetchSessionCount, fetchSessionSummaries } from './openchamber-server-api'
+import {
+  fetchBusyDirectoriesAcrossServers,
+  fetchSessionCount,
+  fetchSessionSummaries,
+  projectWebStatus
+} from './openchamber-server-api'
 import { clearProjectStorage as clearOriginStorage } from './openchamber-server-storage'
 import {
   resolveNodeBin,
@@ -120,26 +125,7 @@ export class OpenChamberWebManager {
 
   getStatus(): OpenChamberWebStatus {
     const instance = this.activeInstance()
-    if (!instance) {
-      return {
-        state: 'stopped',
-        port: PREFERRED_PORT,
-        url: null,
-        pid: null,
-        opencodeBinary: null,
-        cwd: null,
-        error: null
-      }
-    }
-    return {
-      state: instance.state,
-      port: instance.port,
-      url: instance.state === 'running' ? this.instanceUrl(instance) : null,
-      pid: instance.child?.pid ?? null,
-      opencodeBinary: instance.opencodeBinary,
-      cwd: instance.cwd,
-      error: instance.error
-    }
+    return projectWebStatus(instance, instance ? this.instanceUrl(instance) : null, PREFERRED_PORT)
   }
 
   async listSessions(): Promise<OpenChamberSessionSummary[]> {
@@ -148,6 +134,18 @@ export class OpenChamberWebManager {
       return []
     }
     return fetchSessionSummaries(this.instanceUrl(instance), instance.cwd ?? '')
+  }
+
+  /**
+   * Directories from `directories` with a busy (non-idle) LLM turn on any
+   * running server; every running child is asked, not just the active one.
+   */
+  listBusyDirectories(directories: string[]): Promise<string[]> {
+    const running = [...this.instances.values()].filter((instance) => this.isRunning(instance))
+    return fetchBusyDirectoriesAcrossServers(
+      running.map((instance) => this.instanceUrl(instance)),
+      directories
+    )
   }
 
   /**

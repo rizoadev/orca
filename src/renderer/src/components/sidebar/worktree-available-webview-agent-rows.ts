@@ -72,7 +72,7 @@ export function buildAvailableWebViewAgentRows(
   worktreeId: string,
   now: number,
   availableAgentTypes: readonly TuiAgent[] = AVAILABLE_WEBVIEW_AGENTS,
-  daemonRunning: Readonly<Partial<Record<TuiAgent, boolean>>> = {}
+  agentWorking: Readonly<Partial<Record<TuiAgent, boolean>>> = {}
 ): DashboardAgentRow[] {
   return availableAgentTypes.map((agentType) => {
     const paneKey = `available:${agentType}:${worktreeId}`
@@ -92,9 +92,9 @@ export function buildAvailableWebViewAgentRows(
       entry,
       agentType,
       rowSource: 'available',
-      // Why: a running daemon turns the grey idle dot into a yellow running dot;
-      // otherwise the row stays idle (session open but daemon not up yet).
-      state: daemonRunning[agentType] === true ? 'running' : 'idle',
+      // Why: the dot mirrors LLM activity — a streaming session in this
+      // worktree shows the working spinner, otherwise the row stays idle.
+      state: agentWorking[agentType] === true ? 'working' : 'idle',
       startedAt: 0
     }
   })

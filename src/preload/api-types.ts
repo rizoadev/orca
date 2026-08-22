@@ -2282,6 +2282,7 @@ export type PreloadApi = {
     attachDirectory: (directory: string | null) => Promise<void>
     listSessions: () => Promise<OpenChamberSessionSummary[]>
     listProjects: () => Promise<OpenChamberProjectStatus[]>
+    listBusyDirectories: (directories: string[]) => Promise<string[]>
     stopProject: (projectPath: string) => Promise<void>
     clearStorage: (projectPath: string) => Promise<void>
   }

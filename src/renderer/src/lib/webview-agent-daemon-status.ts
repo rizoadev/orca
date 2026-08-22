@@ -1,66 +1,96 @@
 import { create } from 'zustand'
-import type { OpenChamberProjectStatus } from '../../../shared/openchamber-web-types'
+import type { TuiAgent } from '../../../shared/types'
+import { useAppStore } from '@/store'
+import { isWebViewAgentTab } from '@/components/sidebar/worktree-available-webview-agent-rows'
 
-// Why: the sidebar's available web-view rows (Paseo/OpenChamber/DeepSeek) are
-// synthetic idle rows; this store tracks whether each embedded daemon is
-// actually running so the row can switch from a grey idle dot to a yellow
-// running dot. A single module-level poller serves every worktree card.
-//
-// Paseo and DeepSeek Harness run ONE daemon for every worktree, so one global
-// boolean each is accurate. OpenChamber spawns a server PER PROJECT, and its
-// getStatus() only reports the active project — so its running state must be
-// resolved per worktree path via listProjects().
-export type WebViewAgentDaemonStatus = {
-  paseo: boolean
-  'deepseek-harness': boolean
-  /** Per-worktree OpenChamber running state, keyed by project (worktree) path. */
+/**
+ * Per-worktree LLM activity for the sidebar's web-view agent rows (Paseo /
+ * OpenChamber / DeepSeek Harness). A row shows a working dot while any session
+ * of that worktree is streaming, and an idle grey dot otherwise.
+ *
+ * Sources per agent:
+ * - Paseo: guest-side replica-cache poller (see paseo-agent-activity-script)
+ *   pushing console markers; merged here on arrival.
+ * - OpenChamber: /api/session/status is directory-scoped and omits idle
+ *   sessions, so the main process polls it for candidate paths.
+ * - DeepSeek: listSessions() already carries `cwd` + `running` per session.
+ */
+export type WebViewAgentActivityState = {
+  /** path → working, reported by the embedded Paseo SPA. */
+  paseoByPath: Record<string, boolean>
+  /** path → working, from OpenChamber's directory-scoped status endpoint. */
   openchamberByPath: Record<string, boolean>
-  /** True once the first poll has resolved, so callers can distinguish "not running" from "unknown". */
-  started: boolean
+  /** path → working, derived from DeepSeek's running sessions. */
+  deepseekByPath: Record<string, boolean>
 }
 
-const INITIAL: WebViewAgentDaemonStatus = {
-  paseo: false,
-  'deepseek-harness': false,
+const INITIAL: WebViewAgentActivityState = {
+  paseoByPath: {},
   openchamberByPath: {},
-  started: false
+  deepseekByPath: {}
 }
 
 const POLL_INTERVAL_MS = 5_000
 
-export const useWebViewAgentDaemonStatus = create<WebViewAgentDaemonStatus>(() => INITIAL)
+export const useWebViewAgentActivity = create<WebViewAgentActivityState>(() => INITIAL)
+
+/** Report guest-pushed Paseo activity (called by the console-marker listener). */
+export function reportPaseoActivity(byPath: Record<string, boolean>): void {
+  useWebViewAgentActivity.setState({ paseoByPath: byPath })
+}
+
+/**
+ * Candidate worktree paths worth polling for one agent type — only those with
+ * an open tab for it, since a row without its tab never renders.
+ */
+function candidatePaths(agentType: TuiAgent): string[] {
+  const state = useAppStore.getState()
+  const out = new Set<string>()
+  for (const [worktreeId, tabs] of Object.entries(state.browserTabsByWorktree ?? {})) {
+    if (!tabs?.some((tab) => isWebViewAgentTab(agentType, tab))) {
+      continue
+    }
+    const path = state.getKnownWorktreeById(worktreeId)?.path
+    if (path) {
+      out.add(path)
+    }
+  }
+  return [...out]
+}
+
+async function pollDaemonActivity(): Promise<void> {
+  const deepseekPaths = candidatePaths('deepseek-harness')
+  const openchamberPaths = candidatePaths('openchamber')
+  const [deepseekSessions, busyDirectories] = await Promise.all([
+    deepseekPaths.length > 0
+      ? window.api.deepseekWeb.listSessions().catch(() => [])
+      : Promise.resolve([]),
+    openchamberPaths.length > 0
+      ? window.api.openchamberWeb.listBusyDirectories(openchamberPaths).catch(() => [] as string[])
+      : Promise.resolve([] as string[])
+  ])
+  const deepseekByPath: Record<string, boolean> = {}
+  for (const session of deepseekSessions) {
+    if (session.running && session.cwd) {
+      deepseekByPath[session.cwd] = true
+    }
+  }
+  const openchamberByPath: Record<string, boolean> = {}
+  for (const path of openchamberPaths) {
+    openchamberByPath[path] = busyDirectories.includes(path)
+  }
+  useWebViewAgentActivity.setState({ deepseekByPath, openchamberByPath })
+}
 
 let pollTimer: number | null = null
 
-async function refreshDaemonStatus(): Promise<void> {
-  const [paseo, deepseek, openchamberProjects] = await Promise.all([
-    window.api.paseo.getStatus().catch(() => null),
-    window.api.deepseekWeb.getStatus().catch(() => null),
-    window.api.openchamberWeb.listProjects().catch(() => [] as OpenChamberProjectStatus[])
-  ])
-  // Why: listProjects covers every known worktree, so a row can look up its
-  // own server's state instead of the active project's.
-  const openchamberByPath: Record<string, boolean> = {}
-  if (Array.isArray(openchamberProjects)) {
-    for (const project of openchamberProjects) {
-      openchamberByPath[project.projectPath] = project.state === 'running'
-    }
-  }
-  useWebViewAgentDaemonStatus.setState({
-    paseo: paseo?.state === 'running',
-    'deepseek-harness': deepseek?.state === 'running',
-    openchamberByPath,
-    started: true
-  })
-}
-
-/** Start the shared daemon-status poller. Idempotent — safe to call per card. */
+/** Start the shared activity poller. Idempotent — safe to call per card. */
 export function ensureWebViewAgentDaemonPolling(): void {
   if (pollTimer !== null) {
     return
   }
-  void refreshDaemonStatus()
+  void pollDaemonActivity()
   pollTimer = window.setInterval(() => {
-    void refreshDaemonStatus()
+    void pollDaemonActivity()
   }, POLL_INTERVAL_MS)
 }

@@ -87,6 +87,11 @@ import { rememberLiveBrowserUrl } from './browser-runtime'
 import { ensureBrowserPageWebview } from './browser-page-webview'
 import { injectPaseoMatchOverlay, listenForPaseoForceRecover } from './paseo-webview-match'
 import {
+  injectPaseoAgentActivity,
+  listenForPaseoAgentActivity
+} from './paseo-agent-activity-script'
+import { reportPaseoActivity } from '@/lib/webview-agent-daemon-status'
+import {
   hidePaseoOtherWorkspaces,
   isPaseoWebviewUrl,
   preparePaseoWebview
@@ -3801,6 +3806,10 @@ function BrowserPagePane({
         if (isPaseoWebviewUrl(currentUrl)) {
           injectPaseoMatchOverlay(webview, currentUrl, worktreePath)
           listenForPaseoForceRecover(webview, worktreePath)
+          // Why: feed the sidebar's per-worktree LLM activity dot from the
+          // SPA's replica cache (Paseo's daemon has no session HTTP API).
+          injectPaseoAgentActivity(webview)
+          listenForPaseoAgentActivity(webview, reportPaseoActivity)
         }
         // Why: keep only the Recent section plus the workspace of the active
         // worktree in the OpenChamber sidebar (same filter as the in-app page).

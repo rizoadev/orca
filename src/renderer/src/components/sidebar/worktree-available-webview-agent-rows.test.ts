@@ -102,30 +102,30 @@ describe('buildAvailableWebViewAgentRows', () => {
     expect(rows.map((row) => row.agentType)).toEqual(['deepseek-harness', 'paseo', 'openchamber'])
   })
 
-  it('emits idle state by default (daemon not running)', () => {
+  it('emits idle state by default (no LLM activity)', () => {
     const rows = buildAvailableWebViewAgentRows('wt-1', 1000, ['paseo'])
 
     expect(rows[0].state).toBe('idle')
   })
 
-  it('emits running state when the daemon is reported running', () => {
+  it('emits working state while a session of that agent is streaming', () => {
     const rows = buildAvailableWebViewAgentRows('wt-1', 1000, ['paseo', 'openchamber'], {
       paseo: true
     })
 
     expect(rows.map((row) => [row.agentType, row.state])).toEqual([
-      ['paseo', 'running'],
+      ['paseo', 'working'],
       ['openchamber', 'idle']
     ])
   })
 
-  it('emits openchamber running only for the worktree whose server is up', () => {
-    // Why: OpenChamber spawns one server per project; the caller resolves this
-    // worktree's flag from the daemon store's openchamberByPath[path].
+  it('emits openchamber working only for the worktree whose session streams', () => {
+    // Why: OpenChamber activity is per worktree path; the caller resolves this
+    // worktree's flag from the activity store's openchamberByPath[path].
     const rows = buildAvailableWebViewAgentRows('wt-1', 1000, ['openchamber'], {
       openchamber: true
     })
 
-    expect(rows.map((row) => [row.agentType, row.state])).toEqual([['openchamber', 'running']])
+    expect(rows.map((row) => [row.agentType, row.state])).toEqual([['openchamber', 'working']])
   })
 })

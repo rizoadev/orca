@@ -1921,6 +1921,8 @@ const api = {
       ipcRenderer.invoke('openchamber-web:listSessions'),
     listProjects: (): Promise<OpenChamberProjectStatus[]> =>
       ipcRenderer.invoke('openchamber-web:listProjects'),
+    listBusyDirectories: (directories: string[]): Promise<string[]> =>
+      ipcRenderer.invoke('openchamber-web:listBusyDirectories', directories),
     stopProject: (projectPath: string): Promise<void> =>
       ipcRenderer.invoke('openchamber-web:stopProject', projectPath),
     clearStorage: (projectPath: string): Promise<void> =>

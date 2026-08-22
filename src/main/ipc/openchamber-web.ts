@@ -17,6 +17,11 @@ export function registerOpenChamberWebHandlers(manager: OpenChamberWebManager): 
   ipcMain.removeHandler('openchamber-web:attachDirectory')
   ipcMain.removeHandler('openchamber-web:listProjects')
   ipcMain.removeHandler('openchamber-web:listSessions')
+  ipcMain.removeHandler('openchamber-web:listBusyDirectories')
+
+  ipcMain.handle('openchamber-web:listBusyDirectories', async (_event, directories: string[]) => {
+    return manager.listBusyDirectories(Array.isArray(directories) ? directories : [])
+  })
 
   ipcMain.handle('openchamber-web:listProjects', async (): Promise<OpenChamberProjectStatus[]> => {
     return manager.listProjects()

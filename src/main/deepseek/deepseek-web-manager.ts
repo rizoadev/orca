@@ -247,9 +247,11 @@ export class DeepSeekWebManager {
       await this.ensureWorkspaceRegistration(projectPath)
       return this.getStatus()
     }
-    // Why: a 'starting' child may still be alive; clear it before re-spawning
-    // so a restart never leaks a second host on the same port.
-    this.stop()
+    // Why: a 'starting' child may still be alive; kill it before re-spawning
+    // so a restart never leaks a second host on the same port. Reset in place
+    // (not via stop()) so the singleton instance + activePath survive and
+    // getStatus() still reports this instance instead of a fresh stopped one.
+    this.resetChild(instance)
     const dshBin = resolveDshBin()
     if (!dshBin) {
       instance.state = 'errored'
@@ -289,11 +291,20 @@ export class DeepSeekWebManager {
   /** Stop the single daemon (its port stays reserved in the registry). */
   stop(): void {
     const instance = this.instance
-    this.instance = null
-    this.stopWorkspaceGuard()
     if (!instance) {
       return
     }
+    this.resetChild(instance)
+    instance.cwd = null
+    this.activePath = null
+  }
+
+  /**
+   * Kill any live child and reset runtime fields on the SAME instance so the
+   * singleton reference and activePath survive a re-spawn.
+   */
+  private resetChild(instance: DeepSeekInstance): void {
+    this.stopWorkspaceGuard()
     const child = instance.child
     instance.child = null
     if (child && child.exitCode === null) {
@@ -301,8 +312,6 @@ export class DeepSeekWebManager {
     }
     instance.state = 'stopped'
     instance.error = null
-    instance.cwd = null
-    this.activePath = null
   }
 
   /** Alias for stop() kept for the table's per-row kill action. */

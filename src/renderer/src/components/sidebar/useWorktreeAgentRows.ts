@@ -27,7 +27,7 @@ import {
 } from './worktree-available-webview-agent-rows'
 import {
   ensureWebViewAgentDaemonPolling,
-  useWebViewAgentDaemonStatus
+  useWebViewAgentActivity
 } from '@/lib/webview-agent-daemon-status'
 
 export { buildWorktreeAgentRows } from './worktree-agent-rows'
@@ -69,18 +69,22 @@ export function useWorktreeAgentRows(worktreeId: string, active = true): Dashboa
       ensureWebViewAgentDaemonPolling()
     }
   }, [active])
-  const daemonStatus = useWebViewAgentDaemonStatus(useShallow((s) => s))
-  // Why: OpenChamber runs one server per project, so its running state is keyed
-  // by this worktree's path; Paseo/DeepSeek are single daemons (global flags).
-  // The path is stable per worktreeId, so a non-reactive read here is safe.
+  const activity = useWebViewAgentActivity(useShallow((s) => s))
+  // Why: the dot mirrors LLM activity per worktree — working while any session
+  // of this worktree streams, idle otherwise. OpenChamber/DeepSeek keys are
+  // polled; Paseo arrives pushed from its embedded SPA. The path is stable per
+  // worktreeId, so a non-reactive read here is safe.
   const daemonRunning = useMemo<Partial<Record<TuiAgent, boolean>>>(() => {
     const path = useAppStore.getState().getKnownWorktreeById(worktreeId)?.path
-    return {
-      paseo: daemonStatus.paseo,
-      openchamber: path ? (daemonStatus.openchamberByPath[path] ?? false) : false,
-      'deepseek-harness': daemonStatus['deepseek-harness']
+    if (!path) {
+      return {}
     }
-  }, [daemonStatus, worktreeId])
+    return {
+      paseo: activity.paseoByPath[path] === true,
+      openchamber: activity.openchamberByPath[path] === true,
+      'deepseek-harness': activity.deepseekByPath[path] === true
+    }
+  }, [activity, worktreeId])
   // Why: narrow the subscriptions to only THIS worktree's entries via
   // useShallow. Subscribing to the whole agentStatusByPaneKey map would make
   // every on-screen card re-render on any agent-status update anywhere —
