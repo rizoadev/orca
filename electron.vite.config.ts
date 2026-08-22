@@ -269,7 +269,14 @@ export default defineConfig({
     resolve: {
       alias: {
         '@renderer': resolve('src/renderer/src'),
-        '@': resolve('src/renderer/src')
+        '@': resolve('src/renderer/src'),
+        // Why: pnpm patches this addon to force its self-contained CJS entry; npm skips
+        // pnpm patches, so the ESM build pulls lru-cache's node diagnostics_channel build and
+        // throws at import (channel() is undefined in the renderer) -> blank window. Alias
+        // directly at the same CJS lib the patch selects so `npm run dev` renders too.
+        '@xterm/addon-ligatures': resolve(
+          'node_modules/@xterm/addon-ligatures/lib/addon-ligatures.js'
+        )
       }
     },
     plugins: [react(), tailwindcss()],
