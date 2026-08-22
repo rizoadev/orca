@@ -326,9 +326,9 @@ module.exports = {
     // Why: Ubuntu desktop ships GNOME Orca as the `orca` package and /usr/bin/orca.
     // The Linux installer should not claim those system package/file names.
     executableName: 'orca-ide',
-    // Why: the icns source lets electron-builder emit standard hicolor PNG
-    // sizes; a single 1024px PNG is ignored by some Linux docks/launchers.
-    icon: 'resources/build/icon.icns',
+    // Why: a single 1024px PNG avoids electron-builder's icns→icon-set tool
+    // (which fails under a HOME package.json with "type": "module").
+    icon: 'resources/build/icon.png',
     desktop: {
       entry: {
         // Why: Electron reports WM_CLASS=orca for the visible Linux window;

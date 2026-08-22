@@ -6,6 +6,7 @@ import { mkdirSync, appendFileSync, existsSync, readdirSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join, dirname } from 'node:path'
 import { pathToFileURL } from 'node:url'
+import type * as PiSdk from '@earendil-works/pi-coding-agent'
 
 /** Directory where per-issue session JSONL files are stored. */
 export const ISSUE_SESSIONS_DIR_DEFAULT = join(homedir(), '.pi', 'agent', 'sessions', 'orca-issues')
@@ -16,7 +17,12 @@ export function sessionFileSlug(sessionId: string): string {
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-export type CreatePiSessionResult = { agentSession: any; modelId: string; provider: string; sessionFile: string | undefined }
+export type CreatePiSessionResult = {
+  agentSession: any
+  modelId: string
+  provider: string
+  sessionFile: string | undefined
+}
 
 const PI_CHAT_LOG = '/tmp/pi-chat-debug.log'
 
@@ -24,7 +30,7 @@ const PI_CHAT_LOG = '/tmp/pi-chat-debug.log'
  * Import pi SDK — tries standard import first (dev), falls back to
  * scanning ~/.local/share/pi-node/ for the installed SDK (packaged app).
  */
-export async function importPiSdk(): Promise<typeof import('@earendil-works/pi-coding-agent')> {
+export async function importPiSdk(): Promise<typeof PiSdk> {
   try {
     return await import('@earendil-works/pi-coding-agent')
   } catch {
@@ -33,17 +39,25 @@ export async function importPiSdk(): Promise<typeof import('@earendil-works/pi-c
     const piNodeBase = join(homedir(), '.local', 'share', 'pi-node')
     try {
       for (const v of readdirSync(piNodeBase)) {
-        candidates.push(join(piNodeBase, v, 'lib', 'node_modules', '@earendil-works', 'pi-coding-agent'))
+        candidates.push(
+          join(piNodeBase, v, 'lib', 'node_modules', '@earendil-works', 'pi-coding-agent')
+        )
       }
-    } catch { /* ignore */ }
+    } catch {
+      /* ignore */
+    }
     // Also try finding from `which pi` binary location
     try {
       const { execSync } = await import('node:child_process')
       const piBin = execSync('which pi 2>/dev/null || echo ""', { encoding: 'utf8' }).trim()
       if (piBin) {
-        candidates.push(join(dirname(dirname(piBin)), 'lib', 'node_modules', '@earendil-works', 'pi-coding-agent'))
+        candidates.push(
+          join(dirname(dirname(piBin)), 'lib', 'node_modules', '@earendil-works', 'pi-coding-agent')
+        )
       }
-    } catch { /* ignore */ }
+    } catch {
+      /* ignore */
+    }
     for (const sdkPath of candidates) {
       if (existsSync(join(sdkPath, 'package.json'))) {
         piLog('importing pi SDK from fallback path:', sdkPath)
@@ -81,7 +95,8 @@ export async function createPiSession(
   // Why: lazy import keeps Electron main startup fast when chat panel is not open.
   const {
     createAgentSession,
-    ModelRuntime,
+    AuthStorage,
+    ModelRegistry,
     SessionManager,
     DefaultResourceLoader,
     getAgentDir
@@ -94,9 +109,10 @@ export async function createPiSession(
     args.sessionId,
     args.modelRef ?? 'none'
   )
-  // Why: SDK 0.83 dropped the AuthStorage/ModelRegistry.create facade; ModelRuntime is
-  // the canonical model+auth runtime (defaults to agentDir/auth.json + models.json).
-  const modelRuntime = await ModelRuntime.create()
+  // Why: ModelRegistry + AuthStorage is the model+auth runtime (auth.json + models.json);
+  // the older ModelRuntime facade was removed from the SDK.
+  const authStorage = AuthStorage.create(join(agentDir, 'auth.json'))
+  const modelRegistry = ModelRegistry.create(authStorage, join(agentDir, 'models.json'))
 
   // Resolve model from modelRef if provided (matches ~/.pi/agent/models.json keys)
   let model: unknown
@@ -105,14 +121,20 @@ export async function createPiSession(
     if (parts.length >= 2) {
       const providerName = parts[0]
       const modelId = parts.slice(1).join('/')
-      model = modelRuntime.getModel(providerName, modelId) ?? undefined
+      model = modelRegistry.find(providerName, modelId) ?? undefined
     }
   }
   if (!model) {
-    const available = await modelRuntime.getAvailable()
+    const available = modelRegistry.getAvailable()
     // Why: prefer models known to return real content. Some localhost models
     // (e.g. amanai/*) return empty responses. Prefer cb/* and kr/* first.
-    const PREFERRED = ['cb/kimi-k3', 'cb/default-model', 'cb/gpt-5.5', 'kr/claude-sonnet-4.5', 'kr/auto']
+    const PREFERRED = [
+      'cb/kimi-k3',
+      'cb/default-model',
+      'cb/gpt-5.5',
+      'kr/claude-sonnet-4.5',
+      'kr/auto'
+    ]
     model =
       PREFERRED.reduce<unknown>(
         (found, id) => found ?? available.find((m) => m.id === id),
@@ -160,7 +182,8 @@ export async function createPiSession(
     ...(model ? { model: model as never } : {}),
     resourceLoader: loader,
     sessionManager,
-    modelRuntime,
+    modelRegistry,
+    authStorage,
     tools: ['read', 'bash', 'edit', 'write']
   })
 
