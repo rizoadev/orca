@@ -76,12 +76,26 @@ export default function OpenChamberPage(): React.JSX.Element {
     }
   }, [])
 
+  // Why: track the worktree whose server this view has acquired so we can
+  // release it on unmount and when switching worktrees — a server only runs
+  // while its tab is open, so idle projects stop burning CPU.
+  const acquiredPathRef = useRef<string | null>(null)
   useEffect(() => {
-    // Why: spawn (or restart with a new workspace) whenever the active
-    // worktree is available or changes; the manager dedupes identical cwd.
     const worktreePath = activeWorktree?.path ?? null
     if (worktreePath) {
+      const previous = acquiredPathRef.current
+      if (previous && previous !== worktreePath) {
+        void window.api.openchamberWeb.release(previous)
+      }
+      acquiredPathRef.current = worktreePath
       void startHost(worktreePath)
+    }
+    return () => {
+      const path = acquiredPathRef.current
+      acquiredPathRef.current = null
+      if (path) {
+        void window.api.openchamberWeb.release(path)
+      }
     }
   }, [activeWorktree?.path, activeWorktreeId, retryKey, startHost])
 

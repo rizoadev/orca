@@ -14,6 +14,8 @@ import type {
   TerminalPreviewConnectResult,
   TerminalPreviewDataPayload
 } from '../shared/terminal-preview'
+import { SERVICE_COOLDOWN_IPC } from '../shared/service-cooldown-types'
+import type { ServiceCooldownState, ServiceCooldownId } from '../shared/service-cooldown-types'
 import type {
   DockerListRequest,
   DockerListResult,
@@ -1901,7 +1903,9 @@ const api = {
       ipcRenderer.invoke('paseo:attachProject', path),
     getDaemonUrl: (): Promise<string> => ipcRenderer.invoke('paseo:getDaemonUrl'),
     listProjects: (): Promise<PaseoProjectStatus[]> => ipcRenderer.invoke('paseo:listProjects'),
-    clearWebviewStorage: (): Promise<void> => ipcRenderer.invoke('paseo:clearWebviewStorage')
+    clearWebviewStorage: (): Promise<void> => ipcRenderer.invoke('paseo:clearWebviewStorage'),
+    // Why: drop this tab's reference so an idle project's paseo daemon is freed.
+    release: (): Promise<void> => ipcRenderer.invoke('paseo:release')
   },
 
   deepseekWeb: {
@@ -1920,7 +1924,10 @@ const api = {
     listProjects: (): Promise<DeepSeekProjectStatus[]> =>
       ipcRenderer.invoke('deepseek-web:listProjects'),
     stopProject: (projectPath: string): Promise<void> =>
-      ipcRenderer.invoke('deepseek-web:stopProject', projectPath)
+      ipcRenderer.invoke('deepseek-web:stopProject', projectPath),
+    // Why: drop this tab's reference so an idle project's harness is freed.
+    release: (projectPath: string | null): Promise<void> =>
+      ipcRenderer.invoke('deepseek-web:release', projectPath)
   },
 
   reasonixWeb: {
@@ -1939,7 +1946,10 @@ const api = {
     clearStorage: (projectPath: string): Promise<void> =>
       ipcRenderer.invoke('reasonix-web:clearStorage', projectPath),
     listBusyDirectories: (directories: string[]): Promise<string[]> =>
-      ipcRenderer.invoke('reasonix-web:listBusyDirectories', directories)
+      ipcRenderer.invoke('reasonix-web:listBusyDirectories', directories),
+    // Why: drop this tab's reference so an idle project's server is freed.
+    release: (projectPath: string | null): Promise<void> =>
+      ipcRenderer.invoke('reasonix-web:release', projectPath)
   },
 
   openchamberWeb: {
@@ -1958,7 +1968,21 @@ const api = {
     stopProject: (projectPath: string): Promise<void> =>
       ipcRenderer.invoke('openchamber-web:stopProject', projectPath),
     clearStorage: (projectPath: string): Promise<void> =>
-      ipcRenderer.invoke('openchamber-web:clearStorage', projectPath)
+      ipcRenderer.invoke('openchamber-web:clearStorage', projectPath),
+    // Why: drop this tab's reference so an idle project's server is freed.
+    release: (projectPath: string | null): Promise<void> =>
+      ipcRenderer.invoke('openchamber-web:release', projectPath)
+  },
+
+  serviceCooldown: {
+    getState: (): Promise<ServiceCooldownState> =>
+      ipcRenderer.invoke(SERVICE_COOLDOWN_IPC.getState),
+    setService: (id: ServiceCooldownId, enabled: boolean): Promise<ServiceCooldownState> =>
+      ipcRenderer.invoke(SERVICE_COOLDOWN_IPC.setService, id, enabled),
+    coolDownAll: (): Promise<ServiceCooldownState> =>
+      ipcRenderer.invoke(SERVICE_COOLDOWN_IPC.coolDownAll),
+    resumeAll: (): Promise<ServiceCooldownState> =>
+      ipcRenderer.invoke(SERVICE_COOLDOWN_IPC.resumeAll)
   },
 
   jira: {

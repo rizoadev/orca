@@ -726,6 +726,24 @@ export const createBrowserSlice: StateCreator<AppState, [], [], BrowserSlice> = 
         return s
       }
 
+      // Why: release the harness server for a closed agent-harness tab so an
+      // idle engine stops burning CPU once its last consumer (browser tab) is
+      // gone. The server is reference-counted in main, so an in-app view still
+      // open for the same worktree keeps it alive.
+      const closedType = closedWorkspace.webViewAgentType
+      if (closedType && owningWorktreeId) {
+        const closedPath = get().getKnownWorktreeById(owningWorktreeId)?.path ?? null
+        if (closedType === 'reasonix' && closedPath) {
+          void window.api.reasonixWeb.release(closedPath)
+        } else if (closedType === 'openchamber' && closedPath) {
+          void window.api.openchamberWeb.release(closedPath)
+        } else if (closedType === 'deepseek-harness') {
+          void window.api.deepseekWeb.release(closedPath)
+        } else if (closedType === 'paseo') {
+          void window.api.paseo.release()
+        }
+      }
+
       const closedPages = s.browserPagesByWorkspace[tabId] ?? []
       const nextBrowserPagesByWorkspace = { ...s.browserPagesByWorkspace }
       delete nextBrowserPagesByWorkspace[tabId]

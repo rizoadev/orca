@@ -7,6 +7,8 @@ import type { PaseoDaemonManager } from '../paseo/daemon-manager'
 import type { PaseoAutoAttach } from '../paseo/auto-attach'
 import type { PaseoDaemonStatus } from '../paseo/daemon-manager'
 import type { PaseoProjectStatus } from '../../shared/paseo-types'
+import type { ServiceCooldownController } from '../services/service-cooldown-controller'
+import { acquireHarness, releaseHarness } from '../services/harness-lifecycle'
 
 export type PaseoHandlersOptions = {
   /** Enumerate every known Orca worktree path (for the up-front allocation). */
@@ -16,7 +18,8 @@ export type PaseoHandlersOptions = {
 export function registerPaseoHandlers(
   daemon: PaseoDaemonManager,
   autoAttach: PaseoAutoAttach,
-  options: PaseoHandlersOptions = {}
+  options: PaseoHandlersOptions = {},
+  cooldown?: ServiceCooldownController
 ): void {
   ipcMain.removeHandler('paseo:getStatus')
   ipcMain.removeHandler('paseo:start')
@@ -25,6 +28,7 @@ export function registerPaseoHandlers(
   ipcMain.removeHandler('paseo:getDaemonUrl')
   ipcMain.removeHandler('paseo:listProjects')
   ipcMain.removeHandler('paseo:clearWebviewStorage')
+  ipcMain.removeHandler('paseo:release')
 
   ipcMain.handle('paseo:getStatus', async (): Promise<PaseoDaemonStatus> => {
     return daemon.getStatus()
@@ -39,12 +43,26 @@ export function registerPaseoHandlers(
   })
 
   ipcMain.handle('paseo:start', async (): Promise<PaseoDaemonStatus> => {
-    return daemon.start()
+    // Why: when Paseo is cooled down, refuse to spawn the daemon.
+    if (cooldown && !cooldown.canStart('paseo')) {
+      return daemon.getStatus()
+    }
+    // Why: reference-count so the daemon stops only once its last tab
+    // (in-app view or browser tab) closes.
+    return acquireHarness('paseo', null) ? await daemon.start() : daemon.getStatus()
   })
 
   ipcMain.handle('paseo:stop', async (): Promise<PaseoDaemonStatus> => {
     daemon.stop()
     return daemon.getStatus()
+  })
+
+  // Why: drop the calling tab's reference so the daemon is stopped once the
+  // last consumer (in-app view or browser tab) goes away.
+  ipcMain.handle('paseo:release', async (): Promise<void> => {
+    if (releaseHarness('paseo', null)) {
+      daemon.stop()
+    }
   })
 
   ipcMain.handle('paseo:attachProject', async (_event, path: string | null) => {

@@ -74,8 +74,14 @@ export default function PaseoPage(): React.JSX.Element {
     }
   }, [])
 
+  // Why: the daemon only runs while this view is open, so release it on
+  // unmount; switching projects re-pins the same singleton rather than
+  // spawning a second one (Paseo is reference-counted in the main process).
   useEffect(() => {
     void startDaemon()
+    return () => {
+      void window.api.paseo.release()
+    }
   }, [startDaemon, retryKey])
 
   const refreshProjects = useCallback((): void => {

@@ -39,6 +39,10 @@ import type { SkillDiscoveryResult } from '../../../shared/skills'
 import type { SkillFreshnessInventory } from '../../../shared/skill-freshness'
 import type { SshConnectionState, SshTarget } from '../../../shared/ssh-types'
 import {
+  defaultServiceCooldownState,
+  type ServiceCooldownState
+} from '../../../shared/service-cooldown-types'
+import {
   getDefaultOnboardingState,
   getDefaultSettings,
   getDefaultUIState,
@@ -882,6 +886,7 @@ function createWebPreloadApi(): Partial<PreloadApi> {
           pid: null,
           error: null
         }),
+      release: () => Promise.resolve(),
       attachProject: () => Promise.resolve({ ok: false }),
       getDaemonUrl: () => Promise.resolve(''),
       listProjects: () => Promise.resolve([]),
@@ -978,7 +983,15 @@ function createWebPreloadApi(): Partial<PreloadApi> {
     telemetrySetOptIn: () => Promise.resolve(),
     telemetryGetConsentState: () =>
       Promise.resolve({ optedIn: false, source: 'default', blockedByEnv: false } as never),
-    telemetryAcknowledgeBanner: () => Promise.resolve()
+    telemetryAcknowledgeBanner: () => Promise.resolve(),
+    serviceCooldown: {
+      getState: (): Promise<ServiceCooldownState> => Promise.resolve(defaultServiceCooldownState()),
+      setService: (): Promise<ServiceCooldownState> =>
+        Promise.resolve(defaultServiceCooldownState()),
+      coolDownAll: (): Promise<ServiceCooldownState> =>
+        Promise.resolve(defaultServiceCooldownState()),
+      resumeAll: (): Promise<ServiceCooldownState> => Promise.resolve(defaultServiceCooldownState())
+    }
   }
 }
 
@@ -3243,6 +3256,11 @@ function createSshApi(): NonNullable<Partial<PreloadApi>['ssh']> {
     },
     needsPassphrasePrompt: () => Promise.resolve(false),
     testConnection: () =>
+      Promise.resolve({
+        success: false,
+        error: translate('auto.web.web.preload.api.31bfe8ae1a', 'Unavailable in the web client.')
+      }),
+    testConnectionPreview: () =>
       Promise.resolve({
         success: false,
         error: translate('auto.web.web.preload.api.31bfe8ae1a', 'Unavailable in the web client.')

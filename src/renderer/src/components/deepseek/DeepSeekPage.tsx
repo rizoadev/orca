@@ -68,12 +68,19 @@ export default function DeepSeekPage(): React.JSX.Element {
     }
   }, [])
 
+  // Why: track the worktree whose host this view has acquired so we can release
+  // it on unmount; DeepSeek is a singleton, so switching worktrees re-pins the
+  // same host instead of spawning a second one (reference-counted in main).
+  const acquiredPathRef = useRef<string | null>(null)
   useEffect(() => {
-    // Why: spawn (or restart with a new workspace) whenever the active
-    // worktree is available or changes; the manager dedupes identical cwd.
     const worktreePath = activeWorktree?.path ?? null
     if (worktreePath) {
+      acquiredPathRef.current = worktreePath
       void startHost(worktreePath)
+    }
+    return () => {
+      acquiredPathRef.current = null
+      void window.api.deepseekWeb.release(worktreePath)
     }
   }, [activeWorktree?.path, activeWorktreeId, retryKey, startHost])
 

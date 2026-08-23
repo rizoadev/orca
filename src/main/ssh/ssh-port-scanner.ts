@@ -35,10 +35,17 @@ type ScanHandle = {
   initialPorts: Set<string> | null
 }
 
+// Why: a process-global registry so Service Cooldown can park every live
+// scanner (and thus stop the remote /proc walks) without threading a manager
+// reference through every relay session.
+const activeScanners = new Set<PortScanner>()
+
 export class PortScanner {
   private handles = new Map<string, ScanHandle>()
 
-  constructor(private visibility: PortScannerWindowVisibility) {}
+  constructor(private visibility: PortScannerWindowVisibility) {
+    activeScanners.add(this)
+  }
 
   startScanning(
     targetId: string,
@@ -153,6 +160,21 @@ export class PortScanner {
     for (const [targetId] of this.handles) {
       this.stopScanning(targetId)
     }
+    activeScanners.delete(this)
+  }
+
+  /** Stop every in-flight scan for this scanner (used by Service Cooldown). */
+  stopAll(): void {
+    for (const targetId of this.handles.keys()) {
+      this.stopScanning(targetId)
+    }
+  }
+}
+
+/** Park all active SSH port scanners so remotes stop being polled. */
+export function stopAllPortScanners(): void {
+  for (const scanner of activeScanners) {
+    scanner.stopAll()
   }
 }
 

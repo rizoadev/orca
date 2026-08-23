@@ -9,12 +9,18 @@ import type {
   OpenChamberProjectStatus,
   OpenChamberWebStatus
 } from '../openchamber/openchamber-web-manager'
+import type { ServiceCooldownController } from '../services/service-cooldown-controller'
+import { acquireHarness, releaseHarness } from '../services/harness-lifecycle'
 
-export function registerOpenChamberWebHandlers(manager: OpenChamberWebManager): void {
+export function registerOpenChamberWebHandlers(
+  manager: OpenChamberWebManager,
+  cooldown?: ServiceCooldownController
+): void {
   ipcMain.removeHandler('openchamber-web:getStatus')
   ipcMain.removeHandler('openchamber-web:start')
   ipcMain.removeHandler('openchamber-web:stop')
   ipcMain.removeHandler('openchamber-web:attachDirectory')
+  ipcMain.removeHandler('openchamber-web:release')
   ipcMain.removeHandler('openchamber-web:listProjects')
   ipcMain.removeHandler('openchamber-web:listSessions')
   ipcMain.removeHandler('openchamber-web:listBusyDirectories')
@@ -34,7 +40,13 @@ export function registerOpenChamberWebHandlers(manager: OpenChamberWebManager): 
   ipcMain.handle(
     'openchamber-web:start',
     async (_event, cwd: string | null): Promise<OpenChamberWebStatus> => {
-      return manager.start(cwd)
+      // Why: when OpenChamber is cooled down, refuse to spawn a server.
+      if (cooldown && !cooldown.canStart('openchamber')) {
+        return manager.getStatus()
+      }
+      // Why: reference-count so the server stops only once its last tab
+      // (in-app view or browser tab) closes.
+      return acquireHarness('openchamber', cwd) ? await manager.start(cwd) : manager.getStatus()
     }
   )
 
@@ -46,7 +58,21 @@ export function registerOpenChamberWebHandlers(manager: OpenChamberWebManager): 
   ipcMain.handle(
     'openchamber-web:attachDirectory',
     async (_event, directory: string | null): Promise<void> => {
+      if (cooldown && !cooldown.canStart('openchamber')) {
+        return
+      }
       await manager.attachDirectory(directory)
+    }
+  )
+
+  // Why: drop the calling tab's reference so an idle project's server is
+  // stopped once the last consumer (in-app view or browser tab) goes away.
+  ipcMain.handle(
+    'openchamber-web:release',
+    async (_event, projectPath: string | null): Promise<void> => {
+      if (releaseHarness('openchamber', projectPath) && projectPath) {
+        manager.stopProject(projectPath)
+      }
     }
   )
 

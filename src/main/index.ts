@@ -213,6 +213,10 @@ import { ReasonixWebManager } from './reasonix/reasonix-web-manager'
 import { registerReasonixWebHandlers } from './ipc/reasonix-web'
 import { OpenChamberWebManager } from './openchamber/openchamber-web-manager'
 import { registerOpenChamberWebHandlers } from './ipc/openchamber-web'
+import { ServiceCooldownController } from './services/service-cooldown-controller'
+import { registerServiceCooldownHandlers } from './ipc/service-cooldown'
+import { resetHarnessRefCountsFor } from './services/harness-lifecycle'
+import { stopAllPortScanners } from './ssh/ssh-port-scanner'
 import { createHeadlessAutomationOutputSnapshotBuffer } from './automations/headless-dispatch'
 import { buildHeadlessAutomationWorktreeCreateArgs } from './automations/headless-workspace-create'
 import { AgentAwakeService } from './agent-awake-service'
@@ -321,6 +325,9 @@ let paseoAutoAttach: PaseoAutoAttach | null = null
 let deepSeekWeb: DeepSeekWebManager | null = null
 let reasonixWeb: ReasonixWebManager | null = null
 let openChamberWeb: OpenChamberWebManager | null = null
+// Why: Service Cooldown (stop on/off the long-lived harness engines + SSH
+// scanners) is created once alongside the harness managers it controls.
+let serviceCooldown: ServiceCooldownController | null = null
 // Why: a reload intent must not leak to a later load; the recovery reload re-fires did-finish-load, so its flag spares live PTYs from the orphan sweep (#5787).
 const expectedRendererReload = createWebContentsTimedFlag()
 const recoveryReloadInFlight = createWebContentsTimedFlag()
@@ -1214,7 +1221,12 @@ function openMainWindow(): BrowserWindow {
   if (!paseoDaemon) {
     paseoDaemon = new PaseoDaemonManager()
     paseoAutoAttach = new PaseoAutoAttach(paseoDaemon)
-    registerPaseoHandlers(paseoDaemon, paseoAutoAttach, { listWorktreePaths: listAllWorktreePaths })
+    registerPaseoHandlers(
+      paseoDaemon,
+      paseoAutoAttach,
+      { listWorktreePaths: listAllWorktreePaths },
+      serviceCooldown ?? undefined
+    )
   }
   if (!deepSeekWeb) {
     deepSeekWeb = new DeepSeekWebManager({
@@ -1223,13 +1235,13 @@ function openMainWindow(): BrowserWindow {
       // host has ever been spawned. Worktree ids embed the path.
       listWorktreePaths: listAllWorktreePaths
     })
-    registerDeepSeekWebHandlers(deepSeekWeb)
+    registerDeepSeekWebHandlers(deepSeekWeb, serviceCooldown ?? undefined)
   }
   if (!reasonixWeb) {
     reasonixWeb = new ReasonixWebManager({
       listWorktreePaths: listAllWorktreePaths
     })
-    registerReasonixWebHandlers(reasonixWeb)
+    registerReasonixWebHandlers(reasonixWeb, serviceCooldown ?? undefined)
   }
   if (!openChamberWeb) {
     openChamberWeb = new OpenChamberWebManager({
@@ -1238,8 +1250,41 @@ function openMainWindow(): BrowserWindow {
       // server has ever been spawned. Worktree ids embed the path.
       listWorktreePaths: listAllWorktreePaths
     })
-    registerOpenChamberWebHandlers(openChamberWeb)
+    registerOpenChamberWebHandlers(openChamberWeb, serviceCooldown ?? undefined)
   }
+  // Why: Service Cooldown is created after the harness managers exist so its
+  // stop hooks can reach them; it persists the per-service enabled flag and
+  // tears work down whenever a service is toggled off (or "Cool Down All").
+  if (!serviceCooldown) {
+    serviceCooldown = new ServiceCooldownController({
+      stopHooks: {
+        // Why: force-stop the engine and clear its stale reference counts so a
+        // later tab open re-acquires cleanly instead of inheriting a leak.
+        reasonix: () => {
+          reasonixWeb?.stop()
+          resetHarnessRefCountsFor('reasonix')
+        },
+        openchamber: () => {
+          openChamberWeb?.stop()
+          resetHarnessRefCountsFor('openchamber')
+        },
+        deepseek: () => {
+          deepSeekWeb?.stop()
+          resetHarnessRefCountsFor('deepseek')
+        },
+        paseo: () => {
+          paseoDaemon?.stop()
+          resetHarnessRefCountsFor('paseo')
+        },
+        // Why: sftp rides the SSH filesystem provider, so cooling it parks the
+        // same SSH port scanners as the ssh toggle.
+        ssh: () => void stopAllPortScanners(),
+        sftp: () => void stopAllPortScanners()
+      }
+    })
+    registerServiceCooldownHandlers(serviceCooldown)
+  }
+
   attachMainWindowServices(
     window,
     store,

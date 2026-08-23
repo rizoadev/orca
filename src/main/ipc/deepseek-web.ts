@@ -10,8 +10,13 @@ import type {
   DeepSeekSessionSummary,
   DeepSeekWebStatus
 } from '../deepseek/deepseek-web-manager'
+import type { ServiceCooldownController } from '../services/service-cooldown-controller'
+import { acquireHarness, releaseHarness } from '../services/harness-lifecycle'
 
-export function registerDeepSeekWebHandlers(manager: DeepSeekWebManager): void {
+export function registerDeepSeekWebHandlers(
+  manager: DeepSeekWebManager,
+  cooldown?: ServiceCooldownController
+): void {
   ipcMain.removeHandler('deepseek-web:getStatus')
   ipcMain.removeHandler('deepseek-web:start')
   ipcMain.removeHandler('deepseek-web:stop')
@@ -21,6 +26,7 @@ export function registerDeepSeekWebHandlers(manager: DeepSeekWebManager): void {
   ipcMain.removeHandler('deepseek-web:listSessionsProbe')
   ipcMain.removeHandler('deepseek-web:listProjects')
   ipcMain.removeHandler('deepseek-web:stopProject')
+  ipcMain.removeHandler('deepseek-web:release')
 
   ipcMain.handle('deepseek-web:listProjects', async (): Promise<DeepSeekProjectStatus[]> => {
     return manager.listProjects()
@@ -33,7 +39,13 @@ export function registerDeepSeekWebHandlers(manager: DeepSeekWebManager): void {
   ipcMain.handle(
     'deepseek-web:start',
     async (_event, cwd: string | null): Promise<DeepSeekWebStatus> => {
-      return manager.start(cwd)
+      // Why: when DeepSeek is cooled down, refuse to spawn the host.
+      if (cooldown && !cooldown.canStart('deepseek')) {
+        return manager.getStatus()
+      }
+      // Why: reference-count so the host stops only once its last tab
+      // (in-app view or browser tab) closes.
+      return acquireHarness('deepseek', cwd) ? await manager.start(cwd) : manager.getStatus()
     }
   )
 
@@ -41,6 +53,17 @@ export function registerDeepSeekWebHandlers(manager: DeepSeekWebManager): void {
     manager.stop()
     return manager.getStatus()
   })
+
+  // Why: drop the calling tab's reference so the harness host is stopped once
+  // the last consumer (in-app view or browser tab) goes away.
+  ipcMain.handle(
+    'deepseek-web:release',
+    async (_event, projectPath: string | null): Promise<void> => {
+      if (releaseHarness('deepseek', projectPath)) {
+        manager.stop()
+      }
+    }
+  )
 
   ipcMain.handle('deepseek-web:listAgentPresets', async (): Promise<DeepSeekAgentPreset[]> => {
     return manager.listAgentPresets()

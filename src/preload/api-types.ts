@@ -568,6 +568,7 @@ import type {
   ReasonixSessionSummary,
   ReasonixWebStatus
 } from '../shared/reasonix-web-types'
+import type { ServiceCooldownId, ServiceCooldownState } from '../shared/service-cooldown-types'
 import type {
   OpenChamberProjectStatus,
   OpenChamberSessionSummary,
@@ -2267,6 +2268,8 @@ export type PreloadApi = {
     getStatus: () => Promise<PaseoDaemonStatus>
     start: () => Promise<PaseoDaemonStatus>
     stop: () => Promise<PaseoDaemonStatus>
+    /** Drop the calling tab's reference so the daemon stops when idle. */
+    release: () => Promise<void>
     attachProject: (path: string | null) => Promise<{
       ok: boolean
       workspaceId?: string | null
@@ -2286,6 +2289,8 @@ export type PreloadApi = {
     listSessionsProbe: () => Promise<DeepSeekSessionSummary[]>
     listProjects: () => Promise<DeepSeekProjectStatus[]>
     stopProject: (projectPath: string) => Promise<void>
+    /** Drop the calling tab's reference so the harness host stops when idle. */
+    release: (projectPath: string | null) => Promise<void>
   }
   reasonixWeb: {
     getStatus: () => Promise<ReasonixWebStatus>
@@ -2297,6 +2302,8 @@ export type PreloadApi = {
     stopProject: (projectPath: string) => Promise<void>
     clearStorage: (projectPath: string) => Promise<void>
     listBusyDirectories: (directories: string[]) => Promise<string[]>
+    /** Drop the calling tab's reference so the server stops when idle. */
+    release: (projectPath: string | null) => Promise<void>
   }
   openchamberWeb: {
     getStatus: () => Promise<OpenChamberWebStatus>
@@ -2307,7 +2314,15 @@ export type PreloadApi = {
     listProjects: () => Promise<OpenChamberProjectStatus[]>
     listBusyDirectories: (directories: string[]) => Promise<string[]>
     stopProject: (projectPath: string) => Promise<void>
+    /** Drop the calling tab's reference so the server stops when idle. */
+    release: (projectPath: string | null) => Promise<void>
     clearStorage: (projectPath: string) => Promise<void>
+  }
+  serviceCooldown: {
+    getState: () => Promise<ServiceCooldownState>
+    setService: (id: ServiceCooldownId, enabled: boolean) => Promise<ServiceCooldownState>
+    coolDownAll: () => Promise<ServiceCooldownState>
+    resumeAll: () => Promise<ServiceCooldownState>
   }
   jira: {
     connect: (args: {
