@@ -33,6 +33,11 @@ import {
 import { advertisedUrlWatcher } from '../ports/advertised-url-watcher'
 import { requestCredential, registerCredentialHandler } from './ssh-passphrase'
 import {
+  clearSavedPassword,
+  loadSavedPassword,
+  saveSavedPassword
+} from '../ssh/ssh-saved-password-store'
+import {
   clearProviderPtyState,
   deletePtyOwnership,
   getPtyIdsForConnection,
@@ -73,6 +78,7 @@ const SSH_IPC_CHANNELS = [
   'ssh:getState',
   'ssh:needsPassphrasePrompt',
   'ssh:testConnection',
+  'ssh:testConnectionPreview',
   'ssh:addPortForward',
   'ssh:updatePortForward',
   'ssh:removePortForward',
@@ -528,7 +534,17 @@ function createSshConnectionCallbacks(): SshConnectionCallbacks {
   return {
     onCredentialRequest: (targetId, kind, detail) => {
       credentialRequestedForTarget.add(targetId)
-      return requestCredential(getCurrentMainWindow, targetId, kind, detail)
+      // Why: a persisted password satisfies future prompts silently; only passwords are ever saved (keys use passphrase prompts).
+      if (kind === 'password') {
+        const saved = loadSavedPassword(targetId)
+        if (saved !== undefined) {
+          return Promise.resolve(saved)
+        }
+      }
+      return requestCredential(getCurrentMainWindow, targetId, kind, detail, {
+        allowRememberSecret: kind === 'password',
+        onRememberSecret: (value) => saveSavedPassword(targetId, value)
+      })
     },
     onStateChange: (targetId: string, state: SshConnectionState) => {
       if (testingTargets.has(targetId)) {
@@ -810,6 +826,8 @@ export function registerSshHandlers(
 
   ipcMain.handle('ssh:removeTarget', async (_event, args: { id: string }) => {
     await removeRegisteredSshTarget(args.id)
+    // Why: a forgotten host must not leave its persisted credential on disk.
+    clearSavedPassword(args.id)
   })
 
   ipcMain.handle('ssh:importConfig', (_event, args?: { reAdopt?: boolean }) => {
@@ -1207,6 +1225,30 @@ export function registerSshHandlers(
       credentialRequestedForTarget.delete(args.targetId)
     }
   })
+
+  // Why: the Add/Edit dialog tests unsaved form fields, so connect with a synthetic-id draft target instead of a stored one.
+  ipcMain.handle(
+    'ssh:testConnectionPreview',
+    async (_event, args: { target: Omit<SshTarget, 'id'> }) => {
+      const draftId = `draft-preview-${Date.now()}-${Math.random().toString(36).slice(2)}`
+      const target: SshTarget = { ...args.target, id: draftId }
+      testingTargets.add(draftId)
+      try {
+        const conn = await connectionManager!.connect(target)
+        const state = conn.getState()
+        await connectionManager!.disconnect(draftId)
+        return { success: true as const, state }
+      } catch (err) {
+        return {
+          success: false as const,
+          error: err instanceof Error ? err.message : String(err)
+        }
+      } finally {
+        testingTargets.delete(draftId)
+        credentialRequestedForTarget.delete(draftId)
+      }
+    }
+  )
 
   // ── Port forwarding ─────────────────────────────────────────────────
 

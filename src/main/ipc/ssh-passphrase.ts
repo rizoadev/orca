@@ -10,7 +10,12 @@ import { clampUtf8TextPrefix, measureUtf8ByteLength } from '../../shared/utf8-by
 const CREDENTIAL_TIMEOUT_MS = 120_000
 export const SSH_MAX_PENDING_CREDENTIAL_REQUESTS = 64
 export const SSH_CREDENTIAL_VALUE_MAX_UTF8_BYTES = 64 * 1024
-const pendingRequests = new Map<string, { resolve: (value: string | null) => void }>()
+type PendingRequest = {
+  resolve: (value: string | null) => void
+  /** Set when the renderer asks to persist this secret; consumed by the caller after resolution. */
+  rememberForever?: boolean
+}
+const pendingRequests = new Map<string, PendingRequest>()
 
 function notifyCredentialResolved(
   getMainWindow: () => BrowserWindow | null,
@@ -26,11 +31,19 @@ function notifyCredentialResolved(
   }
 }
 
+export type RequestCredentialOptions = {
+  /** Whether the dialog may offer a "save on this computer" checkbox (passwords only). */
+  allowRememberSecret?: boolean
+  /** Called with the submitted value when the user opted to save it. */
+  onRememberSecret?: (value: string) => void
+}
+
 export function requestCredential(
   getMainWindow: () => BrowserWindow | null,
   targetId: string,
   kind: SshCredentialKind,
-  detail: string
+  detail: string,
+  options?: RequestCredentialOptions
 ): Promise<string | null> {
   const win = getMainWindow()
   if (
@@ -51,19 +64,28 @@ export function requestCredential(
       }
     }, CREDENTIAL_TIMEOUT_MS)
 
-    pendingRequests.set(requestId, {
+    const pendingRequest: PendingRequest = {
       resolve: (value) => {
         clearTimeout(timer)
+        if (value !== null && options?.onRememberSecret && pendingRequest.rememberForever) {
+          try {
+            options.onRememberSecret(value)
+          } catch (error) {
+            console.warn('[ssh] failed to persist saved credential:', error)
+          }
+        }
         resolve(value)
       }
-    })
+    }
+    pendingRequests.set(requestId, pendingRequest)
 
     try {
       win.webContents.send('ssh:credential-request', {
         requestId,
         targetId,
         kind,
-        detail: retainedDetail
+        detail: retainedDetail,
+        allowRememberSecret: options?.allowRememberSecret === true && kind === 'password'
       })
     } catch {
       pendingRequests.delete(requestId)
@@ -77,13 +99,14 @@ export function registerCredentialHandler(getMainWindow: () => BrowserWindow | n
   ipcMain.removeHandler('ssh:submitCredential')
   ipcMain.handle(
     'ssh:submitCredential',
-    (_event, args: { requestId?: unknown; value?: unknown }) => {
+    (_event, args: { requestId?: unknown; value?: unknown; rememberForever?: unknown }) => {
       if (!args || typeof args !== 'object' || typeof args.requestId !== 'string') {
         return
       }
       const pending = pendingRequests.get(args.requestId)
       if (pending) {
         pendingRequests.delete(args.requestId)
+        pending.rememberForever = args.rememberForever === true
         notifyCredentialResolved(getMainWindow, args.requestId)
         const value =
           args.value === null ||

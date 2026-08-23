@@ -21,6 +21,7 @@ export function resolveZoomTarget(args: {
     | 'deepseek-harness'
     | 'openchamber'
     | 'reasonix'
+    | 'remote'
   activeTabType: 'terminal' | 'editor' | 'browser' | 'simulator'
   activeElement: unknown
 }): 'terminal' | 'editor' | 'simulator' | 'ui' {

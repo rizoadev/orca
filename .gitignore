@@ -145,3 +145,7 @@ squashfs-root/
 
 # Reasonix local config (provider/API keys, permissions) — not source
 reasonix.toml
+
+# Local secrets / private data — never commit
+docker-compose.yml
+notes-export-*.json

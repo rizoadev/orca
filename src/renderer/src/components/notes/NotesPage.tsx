@@ -14,7 +14,6 @@ import {
   Pencil,
   Pin,
   Plus,
-  RefreshCw,
   Search,
   Tag,
   Trash2,
@@ -51,10 +50,7 @@ import type {
   NoteTag,
   NotesListResult
 } from '../../../../shared/notes-types'
-import type {
-  NotesSyncStatus,
-  NotesSyncUserConfig
-} from '../../../../shared/notes-sync-types'
+import type { NotesSyncStatus, NotesSyncUserConfig } from '../../../../shared/notes-sync-types'
 
 const VIEW_OPTIONS = ['all', 'recent', 'pinned'] as const
 type NotesViewOption = (typeof VIEW_OPTIONS)[number]
@@ -85,7 +81,12 @@ function deriveNoteTitle(content: string, fallback: string): string {
   if (!firstLine) {
     return fallback
   }
-  return firstLine.replace(/^#{1,6}\s+/, '').replace(/[*_`]/g, '').trim() || fallback
+  return (
+    firstLine
+      .replace(/^#{1,6}\s+/, '')
+      .replace(/[*_`]/g, '')
+      .trim() || fallback
+  )
 }
 
 function formatRelativeTime(ts: number): string {
@@ -118,6 +119,29 @@ function useDebouncedValue<T>(value: T, delayMs: number): T {
     return () => clearTimeout(timer)
   }, [value, delayMs])
   return debounced
+}
+
+// Why: debug toasts for note update/delete are opt-in via localStorage so the
+// per-keystroke autosave doesn't spam. Enable in DevTools:
+// localStorage.setItem('orca.notes.debug', '1')
+function notesDebugEnabled(): boolean {
+  try {
+    return localStorage.getItem('orca.notes.debug') === '1'
+  } catch {
+    return false
+  }
+}
+
+function notesDebugToast(label: string, ok: boolean, detail?: string): void {
+  if (!notesDebugEnabled()) {
+    return
+  }
+  const message = detail ? `${label}: ${detail}` : label
+  if (ok) {
+    toast.success(message)
+  } else {
+    toast.error(message)
+  }
 }
 
 // Why: autosave is captured per note id so a controller only fires the latest
@@ -170,7 +194,6 @@ export function NotesPage(): React.JSX.Element {
 
   const [syncStatus, setSyncStatus] = useState<NotesSyncStatus | null>(null)
   const [syncConfig, setSyncConfig] = useState<NotesSyncUserConfig | null>(null)
-  const [syncing, setSyncing] = useState(false)
   const confirm = useConfirmationDialog()
 
   useEffect(() => {
@@ -180,6 +203,16 @@ export function NotesPage(): React.JSX.Element {
     return unsubscribe
   }, [])
 
+  // Why: a server-side change (this device's save or a pull from another device)
+  // is announced via notes:dataChanged; keep the latest query in a ref so the
+  // subscription can re-read with the same filter without re-subscribing on every keystroke.
+  const currentQueryRef = useRef<NoteSearchQuery | undefined>(undefined)
+  currentQueryRef.current = selectedTagId
+    ? { text: debouncedSearch || undefined, tagIds: [selectedTagId] }
+    : debouncedSearch
+      ? { text: debouncedSearch }
+      : undefined
+
   // Why: reload an unfiltered list so view/tag counters stay accurate regardless
   // of the currently applied search or tag filter.
   const refreshCounts = useCallback(async () => {
@@ -187,17 +220,34 @@ export function NotesPage(): React.JSX.Element {
     setAllNotes(result.notes)
   }, [])
 
-  const refresh = useCallback(async (query: NoteSearchQuery | undefined) => {
-    setVault((prev) => ({ ...prev, loading: true }))
-    const next = await loadNotes(query)
-    setVault(next)
-    void refreshCounts()
-  }, [refreshCounts])
+  const refresh = useCallback(
+    async (query: NoteSearchQuery | undefined) => {
+      setVault((prev) => ({ ...prev, loading: true }))
+      const next = await loadNotes(query)
+      setVault(next)
+      void refreshCounts()
+    },
+    [refreshCounts]
+  )
 
   useEffect(() => {
     void refresh(undefined)
     setHasLoaded(true)
     // eslint-disable-next-line react-hooks/exhaustive-deps -- load once on mount
+  }, [refresh])
+
+  useEffect(() => {
+    // Why: the preload recompiles only on a full app relaunch, not a renderer
+    // reload; guard so a stale preload missing onDataChanged can't white-screen Notes.
+    if (typeof window.api.notes.onDataChanged !== 'function') {
+      return
+    }
+    // Why: re-read from Turso when the main process signals fresh data (e.g. an
+    // automatic pull completed) so notes stay in sync across devices.
+    const unsubscribe = window.api.notes.onDataChanged(() => {
+      void refresh(currentQueryRef.current).catch(() => undefined)
+    })
+    return unsubscribe
   }, [refresh])
 
   useEffect(() => {
@@ -245,22 +295,24 @@ export function NotesPage(): React.JSX.Element {
   }, [notes, selectedView])
 
   const persistNote = useCallback(
-    async (id: string, updates: { title?: string; content?: string; pinned?: boolean; tagIds?: string[] }) => {
+    async (
+      id: string,
+      updates: { title?: string; content?: string; pinned?: boolean; tagIds?: string[] }
+    ) => {
       setSaveState('saving')
       try {
         const result = await window.api.notes.updateNote(id, updates)
         setVault((prev) => ({ ...prev, ...result, loading: false }))
         setSaveState('saved')
+        notesDebugToast(`updateNote ${id}`, true)
         void refreshCounts()
       } catch (error) {
         console.error('Note autosave failed:', error)
+        notesDebugToast('updateNote', false, error instanceof Error ? error.message : String(error))
         setSaveState('error')
-        toast.error(
-          translate('auto.components.notes.autosave.failed', 'Could not save note'),
-          {
-            description: error instanceof Error ? error.message : String(error)
-          }
-        )
+        toast.error(translate('auto.components.notes.autosave.failed', 'Could not save note'), {
+          description: error instanceof Error ? error.message : String(error)
+        })
       }
     },
     [refreshCounts]
@@ -282,16 +334,19 @@ export function NotesPage(): React.JSX.Element {
         const result = await window.api.notes.updateNote(id, { title })
         setVault((prev) => ({ ...prev, ...result, loading: false }))
         setSaveState('saved')
+        notesDebugToast(`updateNote(title) ${id}`, true)
         void refreshCounts()
       } catch (error) {
         console.error('Note title save failed:', error)
-        setSaveState('error')
-        toast.error(
-          translate('auto.components.notes.autosave.failed', 'Could not save note'),
-          {
-            description: error instanceof Error ? error.message : String(error)
-          }
+        notesDebugToast(
+          'updateNote(title)',
+          false,
+          error instanceof Error ? error.message : String(error)
         )
+        setSaveState('error')
+        toast.error(translate('auto.components.notes.autosave.failed', 'Could not save note'), {
+          description: error instanceof Error ? error.message : String(error)
+        })
       }
     },
     [refreshCounts]
@@ -307,36 +362,20 @@ export function NotesPage(): React.JSX.Element {
     }
   }, [refreshCounts])
 
-  const handleSyncNow = useCallback(async () => {
-    if (syncing) {
-      return
-    }
-    setSyncing(true)
-    try {
-      const result = await window.api.notes.syncNow()
-      if (result.status === 'error') {
-        toast.error(
-          translate('auto.components.notes.sync.failed', 'Sync failed'),
-          { description: result.error }
-        )
-      }
-      // Why: a successful sync may have merged remote notes in — refresh the list.
-      await refresh(undefined)
-    } finally {
-      setSyncing(false)
-    }
-  }, [refresh, syncing])
-
   const isTursoLinked = syncConfig?.provider === 'turso'
 
   const handleExportNotes = useCallback(async () => {
     const result = await window.api.notes.exportNotes()
     if (result.status === 'ok') {
       toast.success(
-        translate('auto.components.notes.export.success', 'Exported {{notes0}} notes and {{tags0}} tags', {
-          notes0: String(result.notes),
-          tags0: String(result.tags)
-        })
+        translate(
+          'auto.components.notes.export.success',
+          'Exported {{notes0}} notes and {{tags0}} tags',
+          {
+            notes0: String(result.notes),
+            tags0: String(result.tags)
+          }
+        )
       )
     } else if (result.status === 'error') {
       toast.error(translate('auto.components.notes.export.failed', 'Export failed'), {
@@ -415,11 +454,20 @@ export function NotesPage(): React.JSX.Element {
       if (!confirmed) {
         return
       }
-      const result = await window.api.notes.deleteNote(id)
-      setVault((prev) => ({ ...prev, ...result, loading: false }))
-      void refreshCounts()
-      if (editingNoteId === id) {
-        setEditingNoteId(null)
+      try {
+        const result = await window.api.notes.deleteNote(id)
+        setVault((prev) => ({ ...prev, ...result, loading: false }))
+        notesDebugToast(`deleteNote ${id}`, true)
+        void refreshCounts()
+        if (editingNoteId === id) {
+          setEditingNoteId(null)
+        }
+      } catch (error) {
+        console.error('Note delete failed:', error)
+        notesDebugToast('deleteNote', false, error instanceof Error ? error.message : String(error))
+        toast.error(translate('auto.components.notes.autosave.failed', 'Could not save note'), {
+          description: error instanceof Error ? error.message : String(error)
+        })
       }
     },
     [editingNoteId, refreshCounts, notes, confirm]
@@ -658,12 +706,7 @@ export function NotesPage(): React.JSX.Element {
             })
           )}
         </div>
-        <SyncFooter
-          linked={isTursoLinked}
-          syncing={syncing}
-          status={syncStatus}
-          onSyncNow={() => void handleSyncNow()}
-        />
+        <SyncFooter linked={isTursoLinked} status={syncStatus} />
       </nav>
 
       {/* Middle rail: searchable note list */}
@@ -681,9 +724,7 @@ export function NotesPage(): React.JSX.Element {
         </div>
         <div className="flex items-center justify-between px-3 pb-1 text-[11px] font-semibold uppercase tracking-[0.05em] text-muted-foreground">
           <span>
-            {activeTag
-              ? activeTag.name
-              : translate(viewListLabelKey(selectedView), selectedView)}
+            {activeTag ? activeTag.name : translate(viewListLabelKey(selectedView), selectedView)}
           </span>
           <span className="font-normal normal-case tracking-normal">
             {translate('auto.components.notes.count', '{{value0}}', {
@@ -693,7 +734,10 @@ export function NotesPage(): React.JSX.Element {
         </div>
         <div className="flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto px-2 pb-2 scrollbar-sleek">
           {visibleNotes.length === 0 ? (
-            <EmptyNotesState onNewNote={() => void handleCreateNote()} hasActiveFilter={selectedTagId !== null || debouncedSearch !== ''} />
+            <EmptyNotesState
+              onNewNote={() => void handleCreateNote()}
+              hasActiveFilter={selectedTagId !== null || debouncedSearch !== ''}
+            />
           ) : (
             visibleNotes.map((note) => (
               <NoteRow
@@ -753,9 +797,18 @@ export function NotesPage(): React.JSX.Element {
 }
 
 const VIEW_COUNTS = {
-  all: { label: 'auto.components.notes.view.all.label', list: 'auto.components.notes.view.all.listLabel' },
-  recent: { label: 'auto.components.notes.view.recent.label', list: 'auto.components.notes.view.recent.listLabel' },
-  pinned: { label: 'auto.components.notes.view.pinned.label', list: 'auto.components.notes.view.pinned.listLabel' }
+  all: {
+    label: 'auto.components.notes.view.all.label',
+    list: 'auto.components.notes.view.all.listLabel'
+  },
+  recent: {
+    label: 'auto.components.notes.view.recent.label',
+    list: 'auto.components.notes.view.recent.listLabel'
+  },
+  pinned: {
+    label: 'auto.components.notes.view.pinned.label',
+    list: 'auto.components.notes.view.pinned.listLabel'
+  }
 } as const
 
 function viewLabelKey(view: NotesViewOption): string {
@@ -891,7 +944,12 @@ function RowIconButton({
 function stripMarkdown(content: string): string {
   return content
     .split('\n')
-    .map((line) => line.replace(/^#{1,6}\s+/, '').replace(/[*_`>~]/g, '').trim())
+    .map((line) =>
+      line
+        .replace(/^#{1,6}\s+/, '')
+        .replace(/[*_`>~]/g, '')
+        .trim()
+    )
     .filter(Boolean)
     .slice(0, 3)
     .join(' ')
@@ -1019,7 +1077,10 @@ function NoteEditor({
               onContentChange(event.target.value)
             }}
             spellCheck
-            placeholder={translate('auto.components.notes.contentPlaceholder', 'Write in Markdown…')}
+            placeholder={translate(
+              'auto.components.notes.contentPlaceholder',
+              'Write in Markdown…'
+            )}
             className="h-full w-full flex-1 resize-none bg-transparent px-6 py-4 font-mono text-[13px] leading-relaxed text-foreground outline-none placeholder:text-muted-foreground/50 scrollbar-editor"
           />
         )}
@@ -1032,9 +1093,7 @@ function NoteEditor({
         ) : (
           <Check className="size-3" />
         )}
-        <span
-          className={cn(saveState === 'error' && 'text-destructive')}
-        >
+        <span className={cn(saveState === 'error' && 'text-destructive')}>
           {saveState === 'saving'
             ? translate('auto.components.notes.autosave.saving', 'Saving…')
             : saveState === 'error'
@@ -1074,14 +1133,10 @@ function EditModeButton({
 
 function SyncFooter({
   linked,
-  syncing,
-  status,
-  onSyncNow
+  status
 }: {
   linked: boolean
-  syncing: boolean
   status: NotesSyncStatus | null
-  onSyncNow: () => void
 }): React.JSX.Element {
   const lastRun = status?.lastRun
   return (
@@ -1097,24 +1152,6 @@ function SyncFooter({
             ? translate('auto.components.notes.sync.linked', 'Turso synced')
             : translate('auto.components.notes.sync.unlinked', 'Turso not linked')}
         </span>
-        {linked ? (
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon-xs"
-                onClick={onSyncNow}
-                disabled={syncing}
-                aria-label={translate('auto.components.notes.sync.now', 'Sync now')}
-              >
-                <RefreshCw className={cn('size-3.5', syncing && 'animate-spin')} />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent side="top" sideOffset={4}>
-              {translate('auto.components.notes.sync.now', 'Sync now')}
-            </TooltipContent>
-          </Tooltip>
-        ) : null}
       </div>
       {linked && lastRun ? (
         <p className="truncate text-[10px] text-muted-foreground/60">
@@ -1157,9 +1194,7 @@ function NewTagDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>
-            {translate('auto.components.notes.tag.newTagTitle', 'New tag')}
-          </DialogTitle>
+          <DialogTitle>{translate('auto.components.notes.tag.newTagTitle', 'New tag')}</DialogTitle>
           <DialogDescription>
             {translate(
               'auto.components.notes.tag.newTagPrompt',
@@ -1217,10 +1252,7 @@ function NoteTagAssignMenu({
           variant="ghost"
           size="icon-sm"
           aria-label={translate('auto.components.notes.assignTag', 'Assign tags')}
-          className={cn(
-            'relative',
-            noneSelected && 'text-muted-foreground/60'
-          )}
+          className={cn('relative', noneSelected && 'text-muted-foreground/60')}
         >
           <Tag className="size-4" />
         </Button>

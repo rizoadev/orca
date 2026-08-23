@@ -4,10 +4,7 @@ import { randomUUID } from 'node:crypto'
 import { app, ipcMain } from 'electron'
 import type { BrowserWindow } from 'electron'
 import type { Store } from '../persistence'
-import type {
-  CreateWorktreeResult,
-  WorktreeStartupLaunch
-} from '../../shared/types'
+import type { CreateWorktreeResult, WorktreeStartupLaunch } from '../../shared/types'
 import { registerRepoHandlers } from '../ipc/repos'
 import { registerWorktreeHandlers } from '../ipc/worktrees'
 import { registerWorkspaceCleanupHandlers } from '../ipc/workspace-cleanup'
@@ -20,6 +17,8 @@ import {
 import { registerDaemonManagementHandlers } from '../ipc/pty-management'
 import { registerSshHandlers } from '../ipc/ssh'
 import { registerRemoteWorkspaceHandlers } from '../ipc/remote-workspace'
+import { registerRemoteShellHandlers } from '../ipc/remote-shell'
+import { registerRemoteFilesHandlers } from '../ipc/remote-files'
 import { browserManager } from '../browser/browser-manager'
 import { hasSystemMediaAccess, requestSystemMediaAccess } from '../browser/browser-media-access'
 import type { OrcaRuntimeService } from '../runtime/orca-runtime'
@@ -114,11 +113,18 @@ export function attachMainWindowServices(
         )
       })
   }
-  registerSshHandlers(store, () => mainWindow, runtime)
+  const { sshStore } = registerSshHandlers(store, () => mainWindow, runtime)
+  registerRemoteShellHandlers({
+    getTarget: (id) => sshStore.getTarget(id),
+    getMainWindow: () => mainWindow
+  })
+  registerRemoteFilesHandlers()
   registerRemoteWorkspaceHandlers(store, () => mainWindow)
   registerFileDropRelay(mainWindow)
   // Why: auto-update disabled — this is a custom build; skip updater setup entirely.
-  pendingAutoUpdaterSetup = () => { /* noop */ }
+  pendingAutoUpdaterSetup = () => {
+    /* noop */
+  }
   registerRuntimeWindowLifecycle(mainWindow, runtime)
 
   const allowedPermissions = new Set(['media', 'fullscreen', 'pointerLock'])

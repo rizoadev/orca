@@ -6,6 +6,8 @@ export type SystemSshBuildArgsOptions = {
   disableControlMaster?: boolean
   suppressOrcaControlMaster?: boolean
   gssapiOnly?: boolean
+  /** Interactive shells need ssh to allocate a remote TTY; relay exec must not. */
+  interactiveTty?: boolean
 }
 
 export function buildSshArgs(target: SshTarget, options?: SystemSshBuildArgsOptions): string[] {
@@ -18,8 +20,11 @@ export function buildSshArgs(target: SshTarget, options?: SystemSshBuildArgsOpti
     args.push('-o', 'GSSAPIAuthentication=yes')
     args.push('-o', 'PreferredAuthentications=gssapi-with-mic')
   }
-  // Forward stdin/stdout for relay communication
-  args.push('-T')
+  // Forward stdin/stdout for relay communication. Interactive shells skip this
+  // so the remote side allocates a PTY (job control, colors, prompts).
+  if (!options?.interactiveTty) {
+    args.push('-T')
+  }
 
   // Why: ControlMaster multiplexes all SSH exec commands over a single connection,
   // eliminating the ~9s handshake overhead per command. Without this, each

@@ -32,6 +32,9 @@ class RemoteBrowseError extends Error {
   }
 }
 
+// Why: how long `close` without a status waits for a late `exit` event before judging by output alone.
+const GRACE_EXIT_WAIT_MS = 300
+
 // Why: relay fs.readDir needs workspace-root ACLs that don't exist until a repo is added, so browse over raw SSH exec.
 export function registerSshBrowseHandler(
   getConnectionManager: () => SshConnectionManager | null
@@ -60,11 +63,21 @@ export function registerSshBrowseHandler(
         if (!(posixError instanceof RemoteBrowseError)) {
           throw posixError
         }
+        // Why: silent failures (no output, no status) are undebuggable from the renderer alone.
+        console.warn(
+          `[ssh-browse] posix attempt failed: dir=${args.dirPath} exit=${posixError.exitCode} msg=${posixError.message}`
+        )
         try {
           return await browseWithWindowsPowerShell(conn, args.dirPath)
         } catch (fallbackError) {
-          // Why: exit 127 (no powershell.exe) → host isn't Windows, surface the original POSIX failure; otherwise PowerShell's own error is the real cause.
-          throw isPosixCommandNotFound(fallbackError) ? posixError : fallbackError
+          // Why: "command not found" for powershell.exe → host isn't Windows; surface the original POSIX failure.
+          if (isPosixCommandNotFound(fallbackError)) {
+            throw posixError
+          }
+          // Why: report both causes so a POSIX failure hidden behind a failing fallback stays debuggable.
+          throw new Error(
+            `Remote listing failed: ${posixError.message}; PowerShell fallback: ${fallbackError instanceof Error ? fallbackError.message : String(fallbackError)}`
+          )
         }
       }
     }
@@ -114,12 +127,18 @@ async function runBrowseCommand(
     const stderr = new SystemSshOutputTail()
     let exitCode: number | null = null
     let settled = false
+    let closed = false
+    let graceTimer: ReturnType<typeof setTimeout> | null = null
     let timeout: ReturnType<typeof setTimeout> | null = null
 
     const cleanup = (): void => {
       if (timeout) {
         clearTimeout(timeout)
         timeout = null
+      }
+      if (graceTimer) {
+        clearTimeout(graceTimer)
+        graceTimer = null
       }
       channel.off('data', onStdoutData)
       channel.stderr.off('data', onStderrData)
@@ -174,32 +193,56 @@ async function runBrowseCommand(
     const onStderrData = (data: Buffer): void => {
       stderr.push(data)
     }
-    // `exit` fires before `close`; capture the code to tell a failed `ls` (that still printed `pwd`) from an empty listing.
+    // `exit` fires before `close` on well-behaved transports; capture the code to tell a failed `ls`
+    // (that still printed `pwd`) from an empty listing.
     const onExit = (code: number | null): void => {
       exitCode = code
+      if (closed) {
+        evaluate()
+      }
     }
     const onError = (error: Error): void => {
       rejectOnce(error)
     }
-    const onClose = (): void => {
-      // Why: a null exitCode (channel closed without exit status) isn't success; don't treat empty stdout as an empty dir.
-      if (exitCode !== 0) {
-        const stderrText = stderr.toString()
-        const msg =
-          stderrText.trim() ||
-          (exitCode === null
-            ? 'Remote listing failed (channel closed without exit status)'
-            : `Remote listing failed (exit ${exitCode})`)
+
+    // Why: some transports close the channel without ever emitting an exit status — even for successful
+    // commands. Give a late `exit` a short grace window, then judge by captured output instead of the
+    // missing status so working listings aren't rejected.
+    const evaluate = (): void => {
+      if (settled) {
+        return
+      }
+      const stdoutText = stdout.toString('utf8')
+      const stderrText = stderr.toString()
+      if (exitCode !== null && exitCode !== 0) {
+        const msg = stderrText.trim() || `Remote listing failed (exit ${exitCode})`
         rejectOnce(new RemoteBrowseError(msg, exitCode))
         return
       }
-      const stderrText = stderr.toString()
-      const stdoutText = stdout.toString('utf8')
-      if (stderrText.trim() && !stdoutText.trim()) {
-        rejectOnce(new Error(stderrText.trim()))
+      if (!stdoutText.trim()) {
+        const msg = stderrText.trim() || 'Remote listing failed (channel closed without output)'
+        rejectOnce(new RemoteBrowseError(msg, exitCode))
         return
       }
+      resolveListing(stdoutText)
+    }
 
+    const onClose = (): void => {
+      closed = true
+      if (exitCode === null && !settled) {
+        graceTimer = setTimeout(() => {
+          graceTimer = null
+          evaluate()
+        }, GRACE_EXIT_WAIT_MS)
+        if (typeof graceTimer.unref === 'function') {
+          graceTimer.unref()
+        }
+        return
+      }
+      evaluate()
+    }
+
+    const resolveListing = (stdoutText: string): void => {
       // Why: Windows OpenSSH exec emits CRLF; split on \r?\n so a trailing \r doesn't defeat the endsWith('/') dir check or leave a stray CR in names.
       const lines = stdoutText.trim().split(/\r?\n/)
       if (lines.length === 0) {
@@ -255,9 +298,16 @@ async function runBrowseCommand(
   })
 }
 
-// Why: exit 127 means powershell.exe wasn't found — the host isn't Windows, so surface the original POSIX failure instead.
+// Why: exit 127 means powershell.exe wasn't found — the host isn't Windows. Some transports drop the
+// exit status, so a matching stderr line counts too.
 function isPosixCommandNotFound(error: unknown): boolean {
-  return error instanceof RemoteBrowseError && error.exitCode === POSIX_COMMAND_NOT_FOUND_EXIT
+  if (!(error instanceof RemoteBrowseError)) {
+    return false
+  }
+  if (error.exitCode === POSIX_COMMAND_NOT_FOUND_EXIT) {
+    return true
+  }
+  return /command not found/i.test(error.message)
 }
 
 // Why: single-quote to block shell injection; ~ needs $HOME since single quotes suppress tilde expansion.

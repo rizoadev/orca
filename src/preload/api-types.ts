@@ -431,6 +431,12 @@ import type {
   EnrichedDetectedPort
 } from '../shared/ssh-types'
 import type {
+  RemoteShellDataEvent,
+  RemoteShellExitEvent,
+  RemoteShellSpawnArgs,
+  RemoteShellSpawnResult
+} from '../shared/remote-shell-types'
+import type {
   CodexUsageBreakdownKind,
   CodexUsageBreakdownRow,
   CodexUsageDailyPoint,
@@ -3450,6 +3456,9 @@ export type PreloadApi = {
     testConnection: (args: {
       targetId: string
     }) => Promise<{ success: boolean; error?: string; state?: SshConnectionState }>
+    testConnectionPreview: (args: {
+      target: Omit<SshTarget, 'id'>
+    }) => Promise<{ success: boolean; error?: string; state?: SshConnectionState }>
     onStateChanged: (
       callback: (data: { targetId: string; state: SshConnectionState }) => void
     ) => () => void
@@ -3487,10 +3496,29 @@ export type PreloadApi = {
         targetId: string
         kind: 'passphrase' | 'password'
         detail: string
+        allowRememberSecret?: boolean
       }) => void
     ) => () => void
     onCredentialResolved: (callback: (data: { requestId: string }) => void) => () => void
-    submitCredential: (args: { requestId: string; value: string | null }) => Promise<void>
+    submitCredential: (args: {
+      requestId: string
+      value: string | null
+      rememberForever?: boolean
+    }) => Promise<void>
+  }
+  remoteFiles: {
+    pickLocalPaths: (args: {
+      mode: 'file' | 'directory'
+      multiple?: boolean
+    }) => Promise<string[] | null>
+  }
+  remoteShell: {
+    spawn: (args: RemoteShellSpawnArgs) => Promise<RemoteShellSpawnResult>
+    input: (args: { shellSessionId: string; data: string }) => Promise<boolean>
+    resize: (args: { shellSessionId: string; cols: number; rows: number }) => Promise<boolean>
+    kill: (args: { shellSessionId: string }) => Promise<boolean>
+    onData: (callback: (data: RemoteShellDataEvent) => void) => () => void
+    onExit: (callback: (data: RemoteShellExitEvent) => void) => () => void
   }
   automations: {
     list: () => Promise<Automation[]>
@@ -3573,6 +3601,7 @@ export type PreloadApi = {
     syncConfig: () => Promise<NotesSyncUserConfig>
     setSyncConfig: (updates: Partial<NotesSyncUserConfig>) => Promise<NotesSyncUserConfig>
     onSyncStatusChanged: (callback: (status: NotesSyncStatus) => void) => () => void
+    onDataChanged: (callback: () => void) => () => void
     exportNotes: () => Promise<NotesExportResult>
     backupNotes: () => Promise<NotesExportResult>
     importNotes: () => Promise<NotesImportResult>

@@ -67,7 +67,8 @@ describe('SSH credential request admission', () => {
       requestId: request.requestId,
       targetId: 'ssh-a',
       kind: 'password',
-      detail: 'example.test'
+      detail: 'example.test',
+      allowRememberSecret: false
     })
     expect(win.webContents.send).toHaveBeenNthCalledWith(2, 'ssh:credential-resolved', {
       requestId: request.requestId

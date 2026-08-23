@@ -617,6 +617,7 @@ export type UISlice = {
   previousViewBeforeOrchestrationBoard: Exclude<TopLevelView, 'orchestration-board'>
   previousViewBeforeNotes: Exclude<TopLevelView, 'notes'>
   previousViewBeforeDocker: Exclude<TopLevelView, 'docker'>
+  previousViewBeforeRemote: Exclude<TopLevelView, 'remote'>
   openIssuesBoardPage: () => void
   closeIssuesBoardPage: () => void
   openAgentDashboardPage: () => void
@@ -627,6 +628,8 @@ export type UISlice = {
   closeNotesPage: () => void
   openDockerPage: () => void
   closeDockerPage: () => void
+  openRemotePage: () => void
+  closeRemotePage: () => void
   /** One-shot focus when opening the board from the right-sidebar list. */
   orchestrationBoardFocusTaskId: string | null
   consumeOrchestrationBoardFocusTaskId: () => string | null
@@ -1192,6 +1195,7 @@ export const createUISlice: StateCreator<AppState, [], [], UISlice> = (set, get)
   previousViewBeforeOrchestrationBoard: 'terminal',
   previousViewBeforeNotes: 'terminal',
   previousViewBeforeDocker: 'terminal',
+  previousViewBeforeRemote: 'terminal',
   setActiveView: (view) => set({ activeView: view }),
   taskPageData: {},
   taskResumeState: undefined,
@@ -1521,6 +1525,16 @@ export const createUISlice: StateCreator<AppState, [], [], UISlice> = (set, get)
   closeDockerPage: () =>
     set((state) => ({
       activeView: state.previousViewBeforeDocker
+    })),
+  openRemotePage: () =>
+    set((state) => ({
+      activeView: 'remote',
+      previousViewBeforeRemote:
+        state.activeView === 'remote' ? state.previousViewBeforeRemote : state.activeView
+    })),
+  closeRemotePage: () =>
+    set((state) => ({
+      activeView: state.previousViewBeforeRemote
     })),
   setNewWorkspaceDraft: (draft) => set({ newWorkspaceDraft: draft }),
   clearNewWorkspaceDraft: () => set({ newWorkspaceDraft: null }),

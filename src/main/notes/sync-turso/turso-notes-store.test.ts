@@ -15,16 +15,18 @@ function result(rows: Row[]): TursoStatementResult {
   }
 }
 
-function createStore(overrides: {
-  notes?: Row[]
-  tags?: Row[]
-  noteTags?: Row[]
-  scriptedExecute?: (sql: string, args?: (string | number | null)[]) => TursoStatementResult
-} = {
-  notes: [],
-  tags: [],
-  noteTags: []
-}) {
+function createStore(
+  overrides: {
+    notes?: Row[]
+    tags?: Row[]
+    noteTags?: Row[]
+    scriptedExecute?: (sql: string, args?: (string | number | null)[]) => TursoStatementResult
+  } = {
+    notes: [],
+    tags: [],
+    noteTags: []
+  }
+) {
   const { notes = [], tags = [], noteTags = [], scriptedExecute } = overrides
   const execute = vi.fn((sql: string, args?: (string | number | null)[]) => {
     if (scriptedExecute) {
@@ -176,5 +178,28 @@ describe('TursoNotesStore', () => {
     expect(batchesSql.some((s) => s.includes('ON CONFLICT(id) DO UPDATE'))).toBe(true)
     // Tags are upserted too.
     expect(batchesSql.some((s) => s.includes('INSERT INTO tags'))).toBe(true)
+  })
+
+  it('updateNote binds the note id to WHERE id = ? (not the first SET column)', async () => {
+    // Why: a regression used args.unshift(id), binding the id to the first SET
+    // slot and leaving WHERE id = <timestamp>. The row never matched, so updates
+    // (pin/unpin, content edits) silently never reached the server.
+    const { store, pipelineBatch } = createStore({ notes: [NOTE_ROW] })
+    await store.updateNote('n1', { pinned: true, content: 'edited' })
+    const updateCall = pipelineBatch.mock.calls.find((c) =>
+      (c[0] as { sql: string }[]).some((b) => b.sql.includes('UPDATE notes'))
+    )
+    expect(updateCall).toBeDefined()
+    const batches = (updateCall as NonNullable<typeof updateCall>)[0] as {
+      sql: string
+      args: unknown[]
+    }[]
+    const batch = batches.find((b) => b.sql.includes('UPDATE notes'))!
+    // The trailing arg must be the id so WHERE id = ? resolves to a real row.
+    expect(batch.args.at(-1)).toBe('n1')
+    // id must not be bound to a SET value position (content/title/pinned are
+    // text/int, not the literal id), and the id appears exactly once at the end.
+    const idPositions = batch.args.filter((a) => a === 'n1').length
+    expect(idPositions).toBe(1)
   })
 })

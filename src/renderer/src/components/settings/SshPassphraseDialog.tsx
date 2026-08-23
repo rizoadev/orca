@@ -19,6 +19,7 @@ export function SshPassphraseDialog(): React.JSX.Element | null {
   const removeRequest = useAppStore((s) => s.removeSshCredentialRequest)
   const [value, setValue] = useState('')
   const [submitting, setSubmitting] = useState(false)
+  const [rememberForever, setRememberForever] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
   const focusFrameRef = useRef<number | null>(null)
 
@@ -35,6 +36,7 @@ export function SshPassphraseDialog(): React.JSX.Element | null {
     if (requestId) {
       setValue('')
       setSubmitting(false)
+      setRememberForever(false)
     }
   }
 
@@ -66,7 +68,11 @@ export function SshPassphraseDialog(): React.JSX.Element | null {
     }
     setSubmitting(true)
     try {
-      await window.api.ssh.submitCredential({ requestId: request.requestId, value })
+      await window.api.ssh.submitCredential({
+        requestId: request.requestId,
+        value,
+        rememberForever: request.allowRememberSecret === true && rememberForever
+      })
       removeRequest(request.requestId)
     } catch (err) {
       toast.error(
@@ -190,6 +196,21 @@ export function SshPassphraseDialog(): React.JSX.Element | null {
             className="h-8 text-sm"
             disabled={submitting}
           />
+          {request.allowRememberSecret === true ? (
+            <label className="mt-2 flex cursor-pointer items-center gap-2 text-xs text-muted-foreground">
+              <input
+                type="checkbox"
+                className="size-3.5 accent-primary"
+                checked={rememberForever}
+                onChange={(e) => setRememberForever(e.target.checked)}
+                disabled={submitting}
+              />
+              {translate(
+                'auto.components.settings.SshPassphraseDialog.rememberPassword',
+                'Save password on this computer'
+              )}
+            </label>
+          ) : null}
         </div>
         <DialogFooter className="mt-1">
           <Button

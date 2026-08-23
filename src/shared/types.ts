@@ -3265,6 +3265,7 @@ export type TopLevelView =
   | 'deepseek-harness'
   | 'openchamber'
   | 'reasonix'
+  | 'remote'
 
 export type PersistedUIState = {
   lastActiveRepoId: string | null

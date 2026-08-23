@@ -19,7 +19,8 @@ const TOP_LEVEL_VIEW_LOOKUP: Record<TopLevelView, true> = {
   docker: true,
   'deepseek-harness': true,
   openchamber: true,
-  reasonix: true
+  reasonix: true,
+  remote: true
 }
 
 export function isTopLevelView(value: unknown): value is TopLevelView {

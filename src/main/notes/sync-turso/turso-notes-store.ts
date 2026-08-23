@@ -132,9 +132,7 @@ export class TursoNotesStore {
     // Why: when filtering by a tag, only include notes that carry it.
     if (tagFilter && tagFilter.length > 0) {
       const placeholders = tagFilter.map(() => '?').join(', ')
-      conditions.push(
-        `id IN (SELECT note_id FROM note_tag WHERE tag_id IN (${placeholders}))`
-      )
+      conditions.push(`id IN (SELECT note_id FROM note_tag WHERE tag_id IN (${placeholders}))`)
       args.push(...tagFilter)
     }
     if (text) {
@@ -187,7 +185,7 @@ export class TursoNotesStore {
       }
       sets.push('updated_at = ?')
       args.push(Date.now())
-      args.unshift(id)
+      args.push(id)
       batches.push({ sql: `UPDATE notes SET ${sets.join(', ')} WHERE id = ?`, args })
     }
     if (input.tagIds !== undefined) {
@@ -219,10 +217,9 @@ export class TursoNotesStore {
     if (!name) {
       return this.list()
     }
-    const exists = await this.client.execute(
-      'SELECT id FROM tags WHERE lower(name) = lower(?)',
-      [name]
-    )
+    const exists = await this.client.execute('SELECT id FROM tags WHERE lower(name) = lower(?)', [
+      name
+    ])
     if (exists.rows.length > 0) {
       return this.list()
     }
@@ -300,7 +297,14 @@ export class TursoNotesStore {
               ON CONFLICT(id) DO UPDATE SET
                 title=excluded.title, content=excluded.content, pinned=excluded.pinned,
                 created_at=excluded.created_at, updated_at=excluded.updated_at`,
-        args: [note.id, note.title, note.content, note.pinned ? 1 : 0, note.createdAt, note.updatedAt]
+        args: [
+          note.id,
+          note.title,
+          note.content,
+          note.pinned ? 1 : 0,
+          note.createdAt,
+          note.updatedAt
+        ]
       })
       batches.push({ sql: 'DELETE FROM note_tag WHERE note_id = ?', args: [note.id] })
       for (const tagId of note.tagIds) {
@@ -363,7 +367,14 @@ export class TursoNotesStore {
               ON CONFLICT(id) DO UPDATE SET
                 title=excluded.title, content=excluded.content, pinned=excluded.pinned,
                 created_at=excluded.created_at, updated_at=excluded.updated_at`,
-        args: [note.id, note.title, note.content, note.pinned ? 1 : 0, note.createdAt, note.updatedAt]
+        args: [
+          note.id,
+          note.title,
+          note.content,
+          note.pinned ? 1 : 0,
+          note.createdAt,
+          note.updatedAt
+        ]
       })
       batches.push({ sql: 'DELETE FROM note_tag WHERE note_id = ?', args: [note.id] })
       for (const tagId of note.tagIds) {

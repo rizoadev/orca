@@ -493,4 +493,53 @@ describe('registerSshBrowseHandler', () => {
       vi.useRealTimers()
     }
   })
+
+  it('resolves a listing when the channel closes without ever emitting an exit status', async () => {
+    vi.useFakeTimers()
+    try {
+      const channel = createMockChannel()
+      const exec = vi.fn().mockResolvedValue(channel)
+      const getConnectionManager = () => ({ getConnection: () => ({ exec }) })
+      registerSshBrowseHandler(getConnectionManager as never)
+
+      const resultPromise = handler(null, { targetId: 'ssh-1', dirPath: '~' })
+      await Promise.resolve()
+      channel.emit('data', Buffer.from('/home/user\nsrc/\nREADME.md\n'))
+      channel.emit('close')
+      const assertion = expect(resultPromise).resolves.toEqual({
+        resolvedPath: '/home/user',
+        entries: [
+          { name: 'src', isDirectory: true },
+          { name: 'README.md', isDirectory: false }
+        ]
+      })
+      await vi.advanceTimersByTimeAsync(400)
+      await assertion
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('resolves immediately when a late exit(0) arrives after close', async () => {
+    vi.useFakeTimers()
+    try {
+      const channel = createMockChannel()
+      const exec = vi.fn().mockResolvedValue(channel)
+      const getConnectionManager = () => ({ getConnection: () => ({ exec }) })
+      registerSshBrowseHandler(getConnectionManager as never)
+
+      const resultPromise = handler(null, { targetId: 'ssh-1', dirPath: '~' })
+      await Promise.resolve()
+      channel.emit('data', Buffer.from('/home/user\nsrc/\n'))
+      channel.emit('close')
+      channel.emit('exit', 0)
+      await expect(resultPromise).resolves.toEqual({
+        resolvedPath: '/home/user',
+        entries: [{ name: 'src', isDirectory: true }]
+      })
+      await vi.advanceTimersByTimeAsync(400)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
 })

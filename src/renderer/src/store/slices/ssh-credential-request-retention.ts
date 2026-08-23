@@ -9,6 +9,8 @@ export type SshCredentialRequest = {
   targetId: string
   kind: 'passphrase' | 'password'
   detail: string
+  /** Only ever true for password requests; gates the "save on this computer" checkbox. */
+  allowRememberSecret?: boolean
 }
 
 export type SshCredentialRequestRetentionBounds = {

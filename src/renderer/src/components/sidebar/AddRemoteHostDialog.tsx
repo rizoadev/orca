@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
 import {
   Dialog,
@@ -13,6 +13,7 @@ import { translate } from '@/i18n/i18n'
 import { useAppStore } from '@/store'
 import {
   EMPTY_FORM,
+  getEditingTargetForSshTarget,
   getSshTargetDraftConnectionFields,
   isRelayGracePeriodValid,
   parseRelayGracePeriodSeconds,
@@ -26,11 +27,14 @@ export type AddRemoteHostMode = 'ssh' | 'server'
 type AddRemoteHostDialogProps = {
   mode: AddRemoteHostMode | null
   onOpenChange: (mode: AddRemoteHostMode | null) => void
+  /** When set together with mode='ssh', the dialog edits this target instead of adding a new one. */
+  editingTarget?: SshTarget | null
 }
 
 export function AddRemoteHostDialog({
   mode,
-  onOpenChange
+  onOpenChange,
+  editingTarget = null
 }: AddRemoteHostDialogProps): React.JSX.Element {
   const open = mode !== null
   // Why: `mode` drives both open-state and which form renders. On close it goes null while the
@@ -45,14 +49,23 @@ export function AddRemoteHostDialog({
   const [pairingCode, setPairingCode] = useState('')
   const [isSaving, setIsSaving] = useState(false)
   const [isImporting, setIsImporting] = useState(false)
+  const [isTesting, setIsTesting] = useState(false)
   const setSshTargetsMetadata = useAppStore((s) => s.setSshTargetsMetadata)
   const recordSshRepoReadoptions = useAppStore((s) => s.recordSshRepoReadoptions)
   const setRuntimeEnvironments = useAppStore((s) => s.setRuntimeEnvironments)
   const refreshRuntimeEnvironmentStatus = useAppStore((s) => s.refreshRuntimeEnvironmentStatus)
   const recordFeatureInteraction = useAppStore((s) => s.recordFeatureInteraction)
 
+  // Why: prefill/reset when the dialog (re)opens so edit sessions don't leak fields into a later add.
+  useEffect(() => {
+    if (mode === 'ssh') {
+      setSshForm(editingTarget ? getEditingTargetForSshTarget(editingTarget) : EMPTY_FORM)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- reset only on open/target change, not on every render
+  }, [mode, editingTarget])
+
   const close = () => {
-    if (isSaving || isImporting) {
+    if (isSaving || isImporting || isTesting) {
       return
     }
     onOpenChange(null)
@@ -69,7 +82,10 @@ export function AddRemoteHostDialog({
     setSshTargetsMetadata(targets)
   }
 
-  const saveSshHost = async () => {
+  /** Validates the SSH form and builds the persistable target payload; shared by save and test. */
+  const buildSshTargetPayload = ():
+    | { ok: true; payload: Omit<SshTarget, 'id'> }
+    | { ok: false } => {
     const { host, configHost, username, port } = getSshTargetDraftConnectionFields(sshForm)
     if (!host) {
       toast.error(
@@ -78,7 +94,7 @@ export function AddRemoteHostDialog({
           'Host or SSH config alias is required.'
         )
       )
-      return
+      return { ok: false }
     }
     if (Number.isNaN(port) || port < 1 || port > 65535) {
       toast.error(
@@ -87,7 +103,7 @@ export function AddRemoteHostDialog({
           'Port must be between 1 and 65535.'
         )
       )
-      return
+      return { ok: false }
     }
     const graceSeconds = parseRelayGracePeriodSeconds(sshForm)
     if (!isRelayGracePeriodValid(sshForm, graceSeconds)) {
@@ -98,34 +114,51 @@ export function AddRemoteHostDialog({
           { value0: MAX_SSH_RELAY_GRACE_PERIOD_SECONDS }
         )
       )
-      return
+      return { ok: false }
     }
 
     const identityFile = sshForm.identityFile.trim() || undefined
     const proxyCommand = sshForm.proxyCommand.trim() || undefined
     const jumpHost = sshForm.jumpHost.trim() || undefined
     const systemSshConnectionReuse = sshForm.systemSshConnectionReuse ? undefined : false
-    const target = {
-      label: sshForm.label.trim() || (username ? `${username}@${host}` : configHost),
-      configHost,
-      host,
-      port,
-      username,
-      relayGracePeriodSeconds: graceSeconds,
-      ...(identityFile ? { identityFile } : {}),
-      ...(proxyCommand ? { proxyCommand } : {}),
-      ...(jumpHost ? { jumpHost } : {}),
-      ...(systemSshConnectionReuse === false ? { systemSshConnectionReuse } : {})
+    return {
+      ok: true,
+      payload: {
+        label: sshForm.label.trim() || (username ? `${username}@${host}` : configHost),
+        configHost,
+        host,
+        port,
+        username,
+        relayGracePeriodSeconds: graceSeconds,
+        ...(identityFile ? { identityFile } : {}),
+        ...(proxyCommand ? { proxyCommand } : {}),
+        ...(jumpHost ? { jumpHost } : {}),
+        ...(systemSshConnectionReuse === false ? { systemSshConnectionReuse } : {})
+      }
     }
+  }
+
+  const saveSshHost = async () => {
+    const built = buildSshTargetPayload()
+    if (!built.ok) {
+      return
+    }
+    const target = built.payload
 
     setIsSaving(true)
     try {
-      const result = await window.api.ssh.addTarget({ target })
-      recordSshRepoReadoptions(result.repoReadoptions)
+      if (editingTarget) {
+        await window.api.ssh.updateTarget({ id: editingTarget.id, updates: target })
+      } else {
+        const result = await window.api.ssh.addTarget({ target })
+        recordSshRepoReadoptions(result.repoReadoptions)
+      }
       await refreshSshTargetMetadata()
       recordFeatureInteraction('ssh')
       toast.success(
-        translate('auto.components.sidebar.AddRemoteHostDialog.sshSaved', 'SSH host added.')
+        editingTarget
+          ? translate('auto.components.sidebar.AddRemoteHostDialog.sshUpdated', 'SSH host updated.')
+          : translate('auto.components.sidebar.AddRemoteHostDialog.sshSaved', 'SSH host added.')
       )
       reset()
       onOpenChange(null)
@@ -134,12 +167,43 @@ export function AddRemoteHostDialog({
         error instanceof Error
           ? error.message
           : translate(
-              'auto.components.sidebar.AddRemoteHostDialog.sshSaveFailed',
-              'Failed to add SSH host.'
+              editingTarget
+                ? 'auto.components.sidebar.AddRemoteHostDialog.sshUpdateFailed'
+                : 'auto.components.sidebar.AddRemoteHostDialog.sshSaveFailed',
+              editingTarget ? 'Failed to update SSH host.' : 'Failed to add SSH host.'
             )
       )
     } finally {
       setIsSaving(false)
+    }
+  }
+
+  const testSshConnection = async () => {
+    const built = buildSshTargetPayload()
+    if (!built.ok) {
+      return
+    }
+    setIsTesting(true)
+    try {
+      // Why: always preview-test the form fields so the user tests exactly what they see, saved or not.
+      const result = await window.api.ssh.testConnectionPreview({ target: built.payload })
+      if (result.success) {
+        toast.success(
+          translate('auto.components.sidebar.AddRemoteHostDialog.testOk', 'Connection successful')
+        )
+      } else {
+        toast.error(
+          result.error ??
+            translate(
+              'auto.components.sidebar.AddRemoteHostDialog.testFailed',
+              'Connection test failed'
+            )
+        )
+      }
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : String(error))
+    } finally {
+      setIsTesting(false)
     }
   }
 
@@ -241,7 +305,12 @@ export function AddRemoteHostDialog({
                   'auto.components.sidebar.AddRemoteHostDialog.serverTitle',
                   'Add remote server'
                 )
-              : translate('auto.components.sidebar.AddRemoteHostDialog.sshTitle', 'Add SSH host')}
+              : editingTarget
+                ? translate(
+                    'auto.components.sidebar.AddRemoteHostDialog.sshEditTitle',
+                    'Edit SSH host'
+                  )
+                : translate('auto.components.sidebar.AddRemoteHostDialog.sshTitle', 'Add SSH host')}
           </DialogTitle>
           <DialogDescription>
             {renderMode === 'server'
@@ -301,16 +370,36 @@ export function AddRemoteHostDialog({
             >
               {translate('auto.components.sidebar.AddRemoteHostDialog.cancel', 'Cancel')}
             </Button>
+            {renderMode === 'ssh' ? (
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={() => void testSshConnection()}
+                disabled={isSaving || isTesting || isImporting}
+              >
+                {isTesting
+                  ? translate('auto.components.sidebar.AddRemoteHostDialog.testing', 'Testing...')
+                  : translate(
+                      'auto.components.sidebar.AddRemoteHostDialog.testConnection',
+                      'Test connection'
+                    )}
+              </Button>
+            ) : null}
             <Button
               type="button"
               onClick={
                 renderMode === 'server' ? () => void saveRemoteServer() : () => void saveSshHost()
               }
-              disabled={isSaving || isImporting}
+              disabled={isSaving || isTesting || isImporting}
             >
               {isSaving
                 ? translate('auto.components.sidebar.AddRemoteHostDialog.saving', 'Saving...')
-                : translate('auto.components.sidebar.AddRemoteHostDialog.save', 'Save')}
+                : renderMode === 'ssh' && editingTarget
+                  ? translate(
+                      'auto.components.sidebar.AddRemoteHostDialog.saveChanges',
+                      'Save changes'
+                    )
+                  : translate('auto.components.sidebar.AddRemoteHostDialog.save', 'Save')}
             </Button>
           </div>
         </DialogFooter>

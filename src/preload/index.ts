@@ -252,6 +252,12 @@ import type {
   EnrichedDetectedPort
 } from '../shared/ssh-types'
 import type {
+  RemoteShellDataEvent,
+  RemoteShellExitEvent,
+  RemoteShellSpawnArgs,
+  RemoteShellSpawnResult
+} from '../shared/remote-shell-types'
+import type {
   AgentStatusClearIpcPayload,
   AgentStatusIpcPayload,
   MigrationUnsupportedPtyEntry
@@ -4504,6 +4510,11 @@ const api = {
     }): Promise<{ success: boolean; error?: string; state?: SshConnectionState }> =>
       ipcRenderer.invoke('ssh:testConnection', args),
 
+    testConnectionPreview: (args: {
+      target: Omit<SshTarget, 'id'>
+    }): Promise<{ success: boolean; error?: string; state?: SshConnectionState }> =>
+      ipcRenderer.invoke('ssh:testConnectionPreview', args),
+
     onStateChanged: (
       callback: (data: { targetId: string; state: SshConnectionState }) => void
     ): (() => void) => {
@@ -4577,6 +4588,7 @@ const api = {
         targetId: string
         kind: 'passphrase' | 'password'
         detail: string
+        allowRememberSecret?: boolean
       }) => void
     ): (() => void) => {
       const listener = (
@@ -4586,6 +4598,7 @@ const api = {
           targetId: string
           kind: 'passphrase' | 'password'
           detail: string
+          allowRememberSecret?: boolean
         }
       ) => callback(data)
       ipcRenderer.on('ssh:credential-request', listener)
@@ -4599,8 +4612,40 @@ const api = {
       return () => ipcRenderer.removeListener('ssh:credential-resolved', listener)
     },
 
-    submitCredential: (args: { requestId: string; value: string | null }): Promise<void> =>
-      ipcRenderer.invoke('ssh:submitCredential', args)
+    submitCredential: (args: {
+      requestId: string
+      value: string | null
+      rememberForever?: boolean
+    }): Promise<void> => ipcRenderer.invoke('ssh:submitCredential', args)
+  },
+
+  remoteFiles: {
+    pickLocalPaths: (args: {
+      mode: 'file' | 'directory'
+      multiple?: boolean
+    }): Promise<string[] | null> => ipcRenderer.invoke('remoteFiles:pickLocalPaths', args)
+  },
+  remoteShell: {
+    spawn: (args: RemoteShellSpawnArgs): Promise<RemoteShellSpawnResult> =>
+      ipcRenderer.invoke('remoteShell:spawn', args),
+    input: (args: { shellSessionId: string; data: string }): Promise<boolean> =>
+      ipcRenderer.invoke('remoteShell:input', args),
+    resize: (args: { shellSessionId: string; cols: number; rows: number }): Promise<boolean> =>
+      ipcRenderer.invoke('remoteShell:resize', args),
+    kill: (args: { shellSessionId: string }): Promise<boolean> =>
+      ipcRenderer.invoke('remoteShell:kill', args),
+    onData: (callback: (data: RemoteShellDataEvent) => void): (() => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, data: RemoteShellDataEvent) =>
+        callback(data)
+      ipcRenderer.on('remoteShell:data', listener)
+      return () => ipcRenderer.removeListener('remoteShell:data', listener)
+    },
+    onExit: (callback: (data: RemoteShellExitEvent) => void): (() => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, data: RemoteShellExitEvent) =>
+        callback(data)
+      ipcRenderer.on('remoteShell:exit', listener)
+      return () => ipcRenderer.removeListener('remoteShell:exit', listener)
+    }
   },
 
   automations: {
@@ -4743,6 +4788,11 @@ const api = {
         callback(status)
       ipcRenderer.on('notes:syncStatusChanged', listener)
       return () => ipcRenderer.removeListener('notes:syncStatusChanged', listener)
+    },
+    onDataChanged: (callback: () => void): (() => void) => {
+      const listener = (): void => callback()
+      ipcRenderer.on('notes:dataChanged', listener)
+      return () => ipcRenderer.removeListener('notes:dataChanged', listener)
     }
   },
 

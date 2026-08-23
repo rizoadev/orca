@@ -326,6 +326,9 @@ const OrchestrationBoardPage = lazy(
 )
 const NotesPage = lazy(() => import('./components/notes/NotesPage'))
 const DockerContainersPage = lazy(() => import('./components/docker/DockerContainersPage'))
+const RemotePage = lazy(() =>
+  import('./components/remote/RemotePage').then((m) => ({ default: m.RemotePage }))
+)
 const WorkspaceSpacePage = lazy(() => import('./components/workspace-space/WorkspaceSpacePage'))
 const MobilePage = lazy(() => import('./components/mobile/MobilePage'))
 const QuickOpen = lazy(() => import('./components/QuickOpen'))
@@ -2279,6 +2282,7 @@ function App(): React.JSX.Element {
                               {activeView === 'reasonix' ? <ReasonixPage /> : null}
                               {activeView === 'openchamber' ? <OpenChamberPage /> : null}
                               {activeView === 'docker' ? <DockerContainersPage /> : null}
+                              {activeView === 'remote' ? <RemotePage /> : null}
                               {activeView === 'terminal' &&
                               creationLayoutActive &&
                               activePendingCreationId ? (
