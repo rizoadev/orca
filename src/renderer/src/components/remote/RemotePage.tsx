@@ -5,6 +5,7 @@ import type { SshTarget } from '../../../../shared/ssh-types'
 import { ServerListPanel } from './ServerListPanel'
 import { RemoteShellPane } from './RemoteShellPane'
 import { RemoteFilesPane } from './RemoteFilesPane'
+import { RemoteFileEditorPane } from './RemoteFileEditorPane'
 import { cn } from '@/lib/utils'
 
 /** Top-level 'remote' view: server list on the left, terminal or file browser on the right. */
@@ -15,6 +16,7 @@ export function RemotePage(): React.JSX.Element {
   const [splitTerminalOpen, setSplitTerminalOpen] = useState(false)
   const [cdRequest, setCdRequest] = useState<{ path: string; nonce: number } | null>(null)
   const cdNonceRef = useRef(0)
+  const [editorPath, setEditorPath] = useState<string | null>(null)
   const selectServer = useAppStore((s) => s.selectServer)
   const clearServerShells = useAppStore((s) => s.clearServerShells)
   const [targets, setTargets] = useState<SshTarget[]>([])
@@ -76,24 +78,37 @@ export function RemotePage(): React.JSX.Element {
             </div>
             <div className="min-h-0 flex-1">
               {remoteActiveTab === 'files' ? (
-                <div className="flex h-full min-h-0 flex-col">
-                  <div className="min-h-0 flex-1">
-                    <RemoteFilesPane
-                      key={`${selectedTarget.id}-files`}
-                      targetId={selectedTarget.id}
-                      onOpenTerminalHere={(dirPath) => {
-                        cdNonceRef.current += 1
-                        setCdRequest({ path: dirPath, nonce: cdNonceRef.current })
-                        setSplitTerminalOpen(true)
-                      }}
-                    />
+                <div className="flex h-full min-h-0">
+                  <div className="flex min-w-0 flex-1 flex-col">
+                    <div className="min-h-0 flex-1">
+                      <RemoteFilesPane
+                        key={`${selectedTarget.id}-files`}
+                        targetId={selectedTarget.id}
+                        onOpenTerminalHere={(dirPath) => {
+                          cdNonceRef.current += 1
+                          setCdRequest({ path: dirPath, nonce: cdNonceRef.current })
+                          setSplitTerminalOpen(true)
+                        }}
+                        onOpenFile={setEditorPath}
+                      />
+                    </div>
+                    {splitTerminalOpen ? (
+                      <div className="h-[38%] min-h-0 shrink-0 border-t border-border/50">
+                        <RemoteShellPane
+                          key={`${selectedTarget.id}-split`}
+                          target={selectedTarget}
+                          cdRequest={cdRequest}
+                        />
+                      </div>
+                    ) : null}
                   </div>
-                  {splitTerminalOpen ? (
-                    <div className="h-[38%] min-h-0 shrink-0 border-t border-border/50">
-                      <RemoteShellPane
-                        key={`${selectedTarget.id}-split`}
-                        target={selectedTarget}
-                        cdRequest={cdRequest}
+                  {editorPath !== null ? (
+                    <div className="w-[45%] min-w-[280px] shrink-0 border-l border-border/50">
+                      <RemoteFileEditorPane
+                        key={`${selectedTarget.id}:${editorPath}`}
+                        targetId={selectedTarget.id}
+                        filePath={editorPath}
+                        onClose={() => setEditorPath(null)}
                       />
                     </div>
                   ) : null}

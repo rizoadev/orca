@@ -2,8 +2,6 @@ import React, { useCallback, useEffect, useState } from 'react'
 import {
   ArrowUp,
   Download,
-  File as FileIcon,
-  Folder,
   FolderUp,
   LoaderCircle,
   RefreshCw,
@@ -12,10 +10,9 @@ import {
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
-import { cn } from '@/lib/utils'
+import { RemoteFileEntries } from './RemoteFileEntries'
+import type { DirEntry } from './dir-entry'
 import { translate } from '@/i18n/i18n'
-
-type DirEntry = { name: string; isDirectory: boolean }
 
 type ConnGate = 'checking' | 'need-connect' | 'connecting' | 'ready'
 
@@ -23,13 +20,16 @@ type RemoteFilesPaneProps = {
   targetId: string
   /** Opens the integrated terminal split and cds it to the given directory. */
   onOpenTerminalHere?: (dirPath: string) => void
+  /** Opens a file in the right-split remote editor. */
+  onOpenFile?: (filePath: string) => void
 }
 
 /** SFTP-style browser over `ssh:browseDir` with transfers reusing the existing
  *  fs:* download and import IPC so system-SSH targets behave like ssh2 ones. */
 export function RemoteFilesPane({
   targetId,
-  onOpenTerminalHere
+  onOpenTerminalHere,
+  onOpenFile
 }: RemoteFilesPaneProps): React.JSX.Element {
   const [dirPath, setDirPath] = useState('~')
   const [resolvedPath, setResolvedPath] = useState('')
@@ -122,29 +122,69 @@ export function RemoteFilesPane({
     void listDir(next)
   }, [resolvedPath, dirPath, listDir])
 
+  // Why: fs:* mutation IPC reject calls whose captured connection generation is missing/stale,
+  // so every transfer must carry a fresh expectation from ssh:getState.
+  const captureExpectation = useCallback(async () => {
+    const state = await window.api.ssh.getState({ targetId })
+    const generation = state?.connectionGeneration
+    if (generation === undefined) {
+      throw new Error(
+        translate(
+          'auto.components.remote.RemoteFilesPane.notConnectedMutation',
+          'Server is not connected — press Connect and try again.'
+        )
+      )
+    }
+    return {
+      expectedExecutionHostId: `ssh:${targetId}` as const,
+      expectedSshTargetId: targetId,
+      expectedSshConnectionGeneration: generation
+    }
+  }, [targetId])
+
+  const downloadEntry = useCallback(
+    async (entry: DirEntry) => {
+      const target = joinRemotePath(resolvedPath, entry.name)
+      setBusyAction('download')
+      try {
+        const expectation = await captureExpectation()
+        const result = entry.isDirectory
+          ? await window.api.fs.downloadFolder({
+              dirPath: target,
+              connectionId: targetId,
+              ...expectation
+            })
+          : await window.api.fs.downloadFile({
+              filePath: target,
+              connectionId: targetId,
+              ...expectation
+            })
+        if (!result.canceled) {
+          toast.success(
+            translate(
+              'auto.components.remote.RemoteFilesPane.downloaded',
+              'Downloaded to {{path}}',
+              {
+                path: result.destinationPath
+              }
+            )
+          )
+        }
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : String(err))
+      } finally {
+        setBusyAction(null)
+      }
+    },
+    [resolvedPath, targetId, captureExpectation]
+  )
+
   const downloadSelected = useCallback(async () => {
     if (!selectedEntry) {
       return
     }
-    const target = joinRemotePath(resolvedPath, selectedEntry.name)
-    setBusyAction('download')
-    try {
-      const result = selectedEntry.isDirectory
-        ? await window.api.fs.downloadFolder({ dirPath: target, connectionId: targetId })
-        : await window.api.fs.downloadFile({ filePath: target, connectionId: targetId })
-      if (!result.canceled) {
-        toast.success(
-          translate('auto.components.remote.RemoteFilesPane.downloaded', 'Downloaded to {{path}}', {
-            path: result.destinationPath
-          })
-        )
-      }
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : String(err))
-    } finally {
-      setBusyAction(null)
-    }
-  }, [selectedEntry, resolvedPath, targetId])
+    await downloadEntry(selectedEntry)
+  }, [selectedEntry, downloadEntry])
 
   const uploadPicked = useCallback(
     async (mode: 'file' | 'directory') => {
@@ -154,10 +194,12 @@ export function RemoteFilesPane({
       }
       setBusyAction(`upload-${mode}`)
       try {
+        const expectation = await captureExpectation()
         const result = await window.api.fs.importExternalPaths({
           sourcePaths: picked,
           destDir: resolvedPath || dirPath,
-          connectionId: targetId
+          connectionId: targetId,
+          ...expectation
         })
         const imported = result.results.filter((r) => r.status === 'imported').length
         const failed = result.results.filter((r) => r.status === 'failed')
@@ -185,7 +227,7 @@ export function RemoteFilesPane({
         setBusyAction(null)
       }
     },
-    [resolvedPath, dirPath, targetId, listDir]
+    [resolvedPath, dirPath, targetId, listDir, captureExpectation]
   )
 
   return (
@@ -303,34 +345,14 @@ export function RemoteFilesPane({
           </div>
         ) : (
           <ul className="space-y-0.5">
-            {entries.map((entry) => (
-              <li key={entry.name}>
-                <button
-                  type="button"
-                  onDoubleClick={() => {
-                    if (!entry.isDirectory) {
-                      return
-                    }
-                    enter(entry)
-                  }}
-                  onClick={() => enter(entry)}
-                  aria-selected={selectedName === entry.name}
-                  className={cn(
-                    'flex w-full items-center gap-2 rounded-md px-2 py-1 text-left text-[13px]',
-                    selectedName === entry.name
-                      ? 'bg-accent text-accent-foreground'
-                      : 'hover:bg-accent/50'
-                  )}
-                >
-                  {entry.isDirectory ? (
-                    <Folder className="size-4 shrink-0 text-sky-500" />
-                  ) : (
-                    <FileIcon className="size-4 shrink-0 text-muted-foreground" />
-                  )}
-                  <span className="truncate">{entry.name}</span>
-                </button>
-              </li>
-            ))}
+            <RemoteFileEntries
+              entries={entries}
+              parentPath={resolvedPath || dirPath}
+              selectedName={selectedName}
+              onSelect={enter}
+              onDownload={(entry) => void downloadEntry(entry)}
+              onOpenFile={onOpenFile}
+            />
           </ul>
         )}
       </div>

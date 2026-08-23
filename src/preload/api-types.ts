@@ -3511,6 +3511,15 @@ export type PreloadApi = {
       mode: 'file' | 'directory'
       multiple?: boolean
     }) => Promise<string[] | null>
+    readFile: (args: {
+      targetId: string
+      filePath: string
+    }) => Promise<{ content: string; isBinary: boolean }>
+    writeFile: (args: {
+      targetId: string
+      filePath: string
+      content: string
+    }) => Promise<{ ok: true }>
   }
   remoteShell: {
     spawn: (args: RemoteShellSpawnArgs) => Promise<RemoteShellSpawnResult>

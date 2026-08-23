@@ -4623,7 +4623,17 @@ const api = {
     pickLocalPaths: (args: {
       mode: 'file' | 'directory'
       multiple?: boolean
-    }): Promise<string[] | null> => ipcRenderer.invoke('remoteFiles:pickLocalPaths', args)
+    }): Promise<string[] | null> => ipcRenderer.invoke('remoteFiles:pickLocalPaths', args),
+    readFile: (args: {
+      targetId: string
+      filePath: string
+    }): Promise<{ content: string; isBinary: boolean }> =>
+      ipcRenderer.invoke('remoteFiles:readFile', args),
+    writeFile: (args: {
+      targetId: string
+      filePath: string
+      content: string
+    }): Promise<{ ok: true }> => ipcRenderer.invoke('remoteFiles:writeFile', args)
   },
   remoteShell: {
     spawn: (args: RemoteShellSpawnArgs): Promise<RemoteShellSpawnResult> =>
