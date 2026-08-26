@@ -42,6 +42,11 @@ import type {
   StrandsIssueChatSendArgs,
   StrandsIssueChatEvent
 } from '../shared/strands-issue-chat-types'
+import { TASK_ORCHESTRATION_IPC } from '../shared/task-orchestration-types'
+import type {
+  TaskOrchestrationSpawnRequest,
+  TaskOrchestrationSpawnResult
+} from '../shared/task-orchestration-types'
 import type {
   AsanaConnectionStatus,
   AsanaConnectArgs,
@@ -5067,6 +5072,12 @@ const api = {
       ipcRenderer.invoke('docker:restartContainer', args),
     removeContainer: (args: DockerContainerActionRequest): Promise<DockerContainerActionResult> =>
       ipcRenderer.invoke('docker:removeContainer', args)
+  },
+  // Why: a PM UI (e.g. Circle) posts a task here; orca turns it into a product
+  // pipeline + autopilot so a dedicated agent is dispatched to work it.
+  taskOrchestration: {
+    spawn: (req: TaskOrchestrationSpawnRequest): Promise<TaskOrchestrationSpawnResult> =>
+      ipcRenderer.invoke(TASK_ORCHESTRATION_IPC.spawn, req)
   }
 }
 

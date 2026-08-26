@@ -42,6 +42,10 @@ import {
   defaultServiceCooldownState,
   type ServiceCooldownState
 } from '../../../shared/service-cooldown-types'
+import type {
+  TaskOrchestrationSpawnRequest,
+  TaskOrchestrationSpawnResult
+} from '../../../shared/task-orchestration-types'
 import {
   getDefaultOnboardingState,
   getDefaultSettings,
@@ -787,6 +791,10 @@ function createWebPreloadApi(): Partial<PreloadApi> {
       },
       stop: async () => {},
       onEvent: () => () => {}
+    },
+    taskOrchestration: {
+      spawn: (_req: TaskOrchestrationSpawnRequest): Promise<TaskOrchestrationSpawnResult> =>
+        Promise.resolve({} as TaskOrchestrationSpawnResult)
     },
     hive: {
       listCredentials: async () => [],

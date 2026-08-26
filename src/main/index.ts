@@ -215,6 +215,8 @@ import { OpenChamberWebManager } from './openchamber/openchamber-web-manager'
 import { registerOpenChamberWebHandlers } from './ipc/openchamber-web'
 import { ServiceCooldownController } from './services/service-cooldown-controller'
 import { registerServiceCooldownHandlers } from './ipc/service-cooldown'
+import { registerTaskOrchestrationHandlers } from './ipc/task-orchestration'
+import { startTaskOrchestrationGateway } from './services/task-orchestration-gateway'
 import { resetHarnessRefCountsFor } from './services/harness-lifecycle'
 import { stopAllPortScanners } from './ssh/ssh-port-scanner'
 import { createHeadlessAutomationOutputSnapshotBuffer } from './automations/headless-dispatch'
@@ -2188,6 +2190,12 @@ app.whenReady().then(async () => {
     for (const pipeline of activePipelines) {
       watchProductPipeline(pipeline.id, orchDb, runtimeService)
     }
+    // Why: register the Circle/PM task-orchestration IPC once the orchestration
+    // DB exists. A PM task arriving over IPC becomes a pipeline + autopilot run.
+    registerTaskOrchestrationHandlers(orchDb)
+    // Why: also expose the same capability over localhost HTTP so a browser PM
+    // UI (Circle) can spawn tasks and poll agent progress without Electron IPC.
+    startTaskOrchestrationGateway(orchDb)
     if (activePipelines.length > 0) {
       console.log(
         `[orchestration] Re-watching ${activePipelines.length} active pipeline(s) on startup`

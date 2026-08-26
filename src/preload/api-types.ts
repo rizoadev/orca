@@ -581,6 +581,10 @@ import type {
   StrandsIssueChatEvent
 } from '../shared/strands-issue-chat-types'
 import type {
+  TaskOrchestrationSpawnRequest,
+  TaskOrchestrationSpawnResult
+} from '../shared/task-orchestration-types'
+import type {
   Note,
   NoteCreateInput,
   NoteSearchQuery,
@@ -2751,6 +2755,9 @@ export type PreloadApi = {
     send: (args: StrandsIssueChatSendArgs) => Promise<void>
     stop: (sessionId: string) => Promise<void>
     onEvent: (callback: (event: StrandsIssueChatEvent) => void) => () => void
+  }
+  taskOrchestration: {
+    spawn: (req: TaskOrchestrationSpawnRequest) => Promise<TaskOrchestrationSpawnResult>
   }
   piIssueChat: {
     start: (args: PiIssueChatStartArgs) => Promise<PiIssueChatSessionSnapshot>

@@ -1260,6 +1260,29 @@ export class OrchestrationDb {
     return this.getTask(id)
   }
 
+  /** PM-board edits to the human title/description without touching scope or status. */
+  updateTaskContent(id: string, content: { title?: string; spec?: string }): TaskRow | undefined {
+    const task = this.getTask(id)
+    if (!task) {
+      return undefined
+    }
+    const title = content.title !== undefined ? content.title : (task.task_title ?? '')
+    const spec = content.spec !== undefined ? content.spec : task.spec
+    const display = buildOrchestrationTaskDisplayMetadata({
+      spec,
+      taskTitle: title
+    })
+    assertOrchestrationWriteFits('Task', [title, spec, display.taskTitle, display.displayName])
+    this.db
+      .prepare(
+        `UPDATE tasks
+         SET task_title = ?, display_name = ?, spec = ?
+         WHERE id = ?`
+      )
+      .run(display.taskTitle || null, display.displayName || null, spec, id)
+    return this.getTask(id)
+  }
+
   updateTaskStatus(id: string, status: TaskStatus, result?: string): TaskRow | undefined {
     assertOrchestrationWriteFits('Task result', [result])
     const completedAt =
@@ -1552,6 +1575,12 @@ export class OrchestrationDb {
       )
       .run(id, input.taskId, author, input.role?.trim() || null, kind, body, parentId)
     return this.getTaskComment(id)!
+  }
+
+  /** Remove a single comment (used by PM boards to drop labels / delete notes). */
+  deleteTaskComment(commentId: string): boolean {
+    const res = this.db.prepare('DELETE FROM task_comments WHERE id = ?').run(commentId)
+    return res.changes > 0
   }
 
   getTaskComment(id: string): TaskCommentRow | undefined {
