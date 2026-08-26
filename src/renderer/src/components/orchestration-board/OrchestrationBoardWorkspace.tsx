@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { GanttChartSquare, Kanban, Table2 } from 'lucide-react'
+import { Building2, GanttChartSquare, Kanban, Table2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { translate } from '@/i18n/i18n'
 import {
@@ -10,8 +10,9 @@ import {
 import { OrchestrationBoardColumn } from './OrchestrationBoardColumn'
 import { OrchestrationTableView } from './OrchestrationTableView'
 import { OrchestrationGanttView } from './OrchestrationGanttView'
+import { OrcaOfficePage } from './OrcaOfficePage'
 
-export type OrchestrationWorkspaceView = 'table' | 'gantt' | 'kanban'
+export type OrchestrationWorkspaceView = 'table' | 'gantt' | 'kanban' | 'office'
 
 const VIEW_OPTIONS: {
   id: OrchestrationWorkspaceView
@@ -20,7 +21,8 @@ const VIEW_OPTIONS: {
 }[] = [
   { id: 'table', label: 'Table', icon: Table2 },
   { id: 'gantt', label: 'Gantt', icon: GanttChartSquare },
-  { id: 'kanban', label: 'Kanban', icon: Kanban }
+  { id: 'kanban', label: 'Kanban', icon: Kanban },
+  { id: 'office', label: 'Office', icon: Building2 }
 ]
 
 // Why: the full board hosts the dense three-view workspace; the right sidebar
@@ -81,6 +83,8 @@ export function OrchestrationBoardWorkspace({
           <OrchestrationTableView tasks={tasks} onSelectTask={onSelectTask} />
         ) : view === 'gantt' ? (
           <OrchestrationGanttView tasks={tasks} onSelectTask={onSelectTask} />
+        ) : view === 'office' ? (
+          <OrcaOfficePage tasks={tasks} />
         ) : (
           <div className="flex min-h-0 flex-1 gap-3 overflow-x-auto p-3 scrollbar-sleek">
             {ORCHESTRATION_BOARD_COLUMNS.map((column) => (
