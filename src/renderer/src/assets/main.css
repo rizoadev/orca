@@ -414,6 +414,20 @@
   color: var(--foreground);
 }
 
+/* Why: full path sits under the workspace line, so it needs its own clamp
+   tighter than the copy column to stay inside the hero band. */
+.pet-hero-path {
+  max-width: 270px;
+  margin: 2px 0 0;
+  overflow: hidden;
+  color: var(--muted-foreground);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  opacity: 0.72;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .pet-hero-scene {
   position: relative;
   flex: 1;
@@ -709,6 +723,9 @@
     display: none;
   }
   .pet-hero-workspace {
+    max-width: 150px;
+  }
+  .pet-hero-path {
     max-width: 150px;
   }
   .pet-hero-pet {

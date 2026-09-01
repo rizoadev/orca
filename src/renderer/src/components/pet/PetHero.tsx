@@ -52,6 +52,7 @@ export default function PetHero({ worktreeId }: { worktreeId: string }): React.J
           const repo = state.repos.find((repo) => repo.id === worktree.repoId)
           return {
             branch: branchName(worktree.branch),
+            path: worktree.path,
             projectName: repo?.displayName ?? null,
             remoteUrl: repo?.gitRemoteIdentity?.remoteUrl ?? null
           }
@@ -167,6 +168,11 @@ export default function PetHero({ worktreeId }: { worktreeId: string }): React.J
             </a>
           )}
         </p>
+        {workspace?.path && (
+          <p className="pet-hero-path" title={workspace.path}>
+            {workspace.path}
+          </p>
+        )}
       </div>
       <div className="pet-hero-scene" aria-hidden="true">
         <div className="pet-hero-stars">
