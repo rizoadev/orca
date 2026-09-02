@@ -44,6 +44,7 @@ function HostStack({ animation }: { animation: 'none' | 'default' }) {
       <Stack.Screen name="[hostId]/accounts" options={{ title: 'Accounts' }} />
       <Stack.Screen name="[hostId]/tasks" options={{ title: 'Tasks' }} />
       <Stack.Screen name="[hostId]/session/[worktreeId]" options={{ title: 'Terminal' }} />
+      <Stack.Screen name="[hostId]/pi-chat/[worktreeId]" options={{ title: 'Pi Chat' }} />
       <Stack.Screen
         name="[hostId]/source-control/[worktreeId]"
         options={{ title: 'Source Control' }}

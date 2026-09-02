@@ -264,9 +264,7 @@ import type {
   TerminalGestureInputBucket,
   TerminalGestureInputQueue
 } from './mobile-session-route-types'
-
 const TERMINAL_KEYBOARD_DISMISS_ACTION_SHEET_FALLBACK_MS = 450
-
 function MarkdownReader({
   documentId,
   doc,
@@ -307,7 +305,6 @@ function MarkdownReader({
       </View>
     )
   }
-
   const statusText = doc.saveError
     ? doc.saveError
     : doc.readOnlyReason
@@ -319,7 +316,6 @@ function MarkdownReader({
   const showCopy = doc.saveError || !doc.editable
   const showSave = doc.isDirty || doc.saving
   const showFloatingActions = statusText || showRefresh || showCopy || showSave
-
   return (
     <View style={styles.markdownEditor}>
       <MobileRichMarkdownEditor
@@ -392,7 +388,6 @@ function MarkdownReader({
     </View>
   )
 }
-
 function DiffLineRow({
   line,
   title,
@@ -532,7 +527,6 @@ function DiffLineRow({
     </View>
   )
 }
-
 function FileReader({
   doc,
   title,
@@ -580,17 +574,14 @@ function FileReader({
     }
     return map
   }, [diffCommentsForFile])
-
   const startComment = useCallback((lineNumber: number) => {
     setActiveCommentLine(lineNumber)
     setCommentDraft('')
   }, [])
-
   const cancelComment = useCallback(() => {
     setActiveCommentLine(null)
     setCommentDraft('')
   }, [])
-
   const submitComment = useCallback(
     (lineNumber: number) => {
       if (!diffCommentActions) {
@@ -605,7 +596,6 @@ function FileReader({
     },
     [commentDraft, diffCommentActions, relativePath]
   )
-
   const renderDiffLine: ListRenderItem<RenderableDiffLine> = useCallback(
     ({ item, index }) => (
       <DiffLineRow
@@ -4376,6 +4366,10 @@ export default function SessionScreen() {
     const params = new URLSearchParams({ name: worktreeName || '' })
     router.push(`/h/${hostId}/agent-history/${encodeURIComponent(worktreeId)}?${params.toString()}`)
   }
+  const openPiChat = () =>
+    router.push(
+      `/h/${hostId}/pi-chat/${encodeURIComponent(worktreeId)}?name=${encodeURIComponent(worktreeName || '')}`
+    )
   const showAgentSessionHistoryAction =
     !isFolderWorkspaceRoute && !isFloatingWorkspaceRoute && agentSessionHistorySupported === true
   const showChecksAction = shouldShowSessionHeaderChecksAction({
@@ -4383,7 +4377,10 @@ export default function SessionScreen() {
     repoContextLoaded: prRepoContextLoaded,
     hostedChecksSupported: prIsGithubRepo
   })
-  const showHeaderMoreButton = showAgentSessionHistoryAction || showChecksAction
+  const showHeaderMoreButton =
+    showAgentSessionHistoryAction ||
+    showChecksAction ||
+    (!isFolderWorkspaceRoute && !isFloatingWorkspaceRoute && connState === 'connected')
 
   return (
     <View ref={setMobileSessionRootRef} style={styles.container}>
@@ -5075,6 +5072,10 @@ export default function SessionScreen() {
         visible={showHeaderMoreActions}
         showAgentSessionHistory={showAgentSessionHistoryAction}
         showChecks={showChecksAction}
+        showPiChat={
+          !isFolderWorkspaceRoute && !isFloatingWorkspaceRoute && connState === 'connected'
+        }
+        onOpenPiChat={openPiChat}
         onOpenAgentSessionHistory={openAgentSessionHistory}
         onOpenChecks={() => handlePanelTap('pr')}
         onClose={() => setShowHeaderMoreActions(false)}
