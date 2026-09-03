@@ -2608,6 +2608,21 @@
   transform-origin: center;
 }
 
+/* Native chat typing indicator — indeterminate working bar that sweeps back
+   and forth inside its fixed-width track. */
+@keyframes native-chat-working-bar-sweep {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(300%);
+  }
+}
+
+.native-chat-working-bar {
+  animation: native-chat-working-bar-sweep 1.6s ease-in-out infinite;
+}
+
 /* CLI feature tip — terminal cursor inside the agent-control command. */
 @keyframes cli-tip-caret {
   0%,

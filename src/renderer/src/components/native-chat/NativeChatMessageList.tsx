@@ -115,6 +115,12 @@ function TypingIndicatorRow(): React.JSX.Element {
           />
         ))}
       </div>
+      {/* Why: indeterminate progress bar under the typing dots — the dots read as
+          "starting", the bar as "actively working". Space is reserved (fixed
+          heights) so the composer doesn't jump when the state flips. */}
+      <div className="ml-3 h-0.5 w-24 overflow-hidden rounded-full bg-border/60">
+        <div className="native-chat-working-bar h-full w-1/3 rounded-full bg-muted-foreground/50" />
+      </div>
     </div>
   )
 }
