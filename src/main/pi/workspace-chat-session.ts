@@ -102,7 +102,7 @@ async function startOrResumeRecord(
   const existing = sessions.get(args.sessionId)
   // Why: `new` and `{ type: 'open' }` both target a different conversation file
   // than the warm one, so both must force a fresh create (stop + re-start).
-  const forcesFresh = args.sessionMode === 'new' || args.sessionMode?.type === 'open'
+  const forcesFresh = args.sessionMode === 'new' || typeof args.sessionMode === 'object'
   if (existing && !forcesFresh) {
     return existing
   }

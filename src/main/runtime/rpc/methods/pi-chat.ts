@@ -23,6 +23,9 @@ const PiChatSession = z.object({
   worktreeId: z.string().min(1, 'Missing worktree id'),
   systemPrompt: z.string().optional(),
   modelRef: z.string().optional(),
+  // Why: mobile clients reuse one sessionId across tabs; this token disambiguates
+  // concurrent subscriptions so cleanup does not kill a sibling stream.
+  subscriptionId: z.string().min(1).optional(),
   sessionMode: z
     .union([
       z.literal('continue'),

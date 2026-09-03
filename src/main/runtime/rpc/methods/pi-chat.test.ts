@@ -29,6 +29,21 @@ function method(name: string): RpcAnyMethod {
   return found
 }
 
+// Why: RpcAnyMethod is a union; parsing through method.params before calling
+// handler narrows the params type and schema-validates in one step.
+async function call(
+  name: string,
+  params: Record<string, unknown> | null,
+  ctx: RpcContext
+): Promise<unknown> {
+  const m = method(name)
+  const parsed = m.params ? m.params.parse(params) : undefined
+  // Why: RpcAnyMethod is a union whose merged call signature requires the emit
+  // arg; every method under test here is one-shot, so cast to that shape.
+  const oneshot = m as { handler: (params: unknown, ctx: RpcContext) => Promise<unknown> }
+  return await oneshot.handler(parsed, ctx)
+}
+
 function makeRuntime() {
   return {
     resolveWorktreePath: vi.fn(async (worktreeId: string) => {
@@ -74,7 +89,8 @@ beforeEach(() => {
 describe('piChat.start', () => {
   it('resolves the worktree path and returns a session snapshot', async () => {
     const runtime = makeRuntime()
-    const result = await method('piChat.start').handler(
+    const result = await call(
+      'piChat.start',
       { sessionId: 'pi-chat:w1', worktreeId: 'repo::/wt' },
       makeContext(runtime)
     )
@@ -86,7 +102,8 @@ describe('piChat.start', () => {
   it('creates the session when none exists yet', async () => {
     const runtime = makeRuntime()
     engine.getPiChatSession.mockResolvedValueOnce(null)
-    await method('piChat.start').handler(
+    await call(
+      'piChat.start',
       { sessionId: 'pi-chat:w1', worktreeId: 'repo::/wt' },
       makeContext(runtime)
     )
@@ -108,7 +125,8 @@ describe('piChat.start', () => {
 describe('piChat.send', () => {
   it('forwards the message and returns the snapshot', async () => {
     const runtime = makeRuntime()
-    const result = await method('piChat.send').handler(
+    const result = await call(
+      'piChat.send',
       { sessionId: 'pi-chat:w2', worktreeId: 'repo::/wt', text: 'hello' },
       makeContext(runtime)
     )
@@ -163,7 +181,7 @@ describe('piChat.subscribe', () => {
 describe('piChat.listModels', () => {
   it('returns a model list', async () => {
     const runtime = makeRuntime()
-    const result = await method('piChat.listModels').handler(null, makeContext(runtime))
+    const result = await call('piChat.listModels', null, makeContext(runtime))
     expect(result).toHaveLength(1)
   })
 })
@@ -171,7 +189,11 @@ describe('piChat.listModels', () => {
 describe('piChat.unsubscribe', () => {
   it('cleans up subscriptions by prefix', async () => {
     const runtime = makeRuntime()
-    await method('piChat.unsubscribe').handler(null, makeContext(runtime))
+    await call(
+      'piChat.unsubscribe',
+      { sessionId: 'pi-chat:w1', worktreeId: 'repo::/wt' },
+      makeContext(runtime)
+    )
     expect(runtime.cleanupSubscriptionsByPrefix).toHaveBeenCalledWith('piChat:conn-1:')
   })
 })

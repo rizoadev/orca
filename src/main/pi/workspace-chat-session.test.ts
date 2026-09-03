@@ -208,7 +208,8 @@ describe('sendPiChatMessage', () => {
     await expect(
       sendPiChatMessage('pi-chat:w6', 'repo::/wt', 'second', resolveWorktreePath)
     ).rejects.toThrow('still responding')
-    resolvePrompt?.()
+    // Why: TS narrows the closure-assigned variable to null/never; widen before the optional call.
+    ;(resolvePrompt as (() => void) | null)?.()
     await firstSend
   })
 
