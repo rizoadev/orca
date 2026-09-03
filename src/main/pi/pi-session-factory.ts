@@ -15,9 +15,9 @@ export function sessionFileSlug(sessionId: string): string {
   return sessionId.replace(/[^a-zA-Z0-9_-]/g, '-').slice(0, 80)
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export type CreatePiSessionResult = {
+  // Why: the SDK session object has no stable public type across pi SDK versions.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   agentSession: any
   modelId: string
   provider: string
@@ -95,8 +95,8 @@ export async function createPiSession(
   // Why: lazy import keeps Electron main startup fast when chat panel is not open.
   const {
     createAgentSession,
-    AuthStorage,
     ModelRegistry,
+    ModelRuntime,
     SessionManager,
     DefaultResourceLoader,
     getAgentDir
@@ -109,10 +109,13 @@ export async function createPiSession(
     args.sessionId,
     args.modelRef ?? 'none'
   )
-  // Why: ModelRegistry + AuthStorage is the model+auth runtime (auth.json + models.json);
-  // the older ModelRuntime facade was removed from the SDK.
-  const authStorage = AuthStorage.create(join(agentDir, 'auth.json'))
-  const modelRegistry = ModelRegistry.create(authStorage, join(agentDir, 'models.json'))
+  // Why: SDK >= 0.84 replaced AuthStorage/ModelRegistry.create with async
+  // ModelRuntime.create (auth.json + models.json); ModelRegistry is now a facade.
+  const modelRuntime = await ModelRuntime.create({
+    authPath: join(agentDir, 'auth.json'),
+    modelsPath: join(agentDir, 'models.json')
+  })
+  const modelRegistry = new ModelRegistry(modelRuntime)
 
   // Resolve model from modelRef if provided (matches ~/.pi/agent/models.json keys)
   let model: unknown
@@ -182,8 +185,7 @@ export async function createPiSession(
     ...(model ? { model: model as never } : {}),
     resourceLoader: loader,
     sessionManager,
-    modelRegistry,
-    authStorage,
+    modelRuntime,
     tools: ['read', 'bash', 'edit', 'write']
   })
 

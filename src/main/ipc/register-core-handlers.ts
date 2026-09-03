@@ -19,6 +19,7 @@ import { registerJiraHandlers } from './jira'
 import { registerAsanaHandlers } from './asana'
 import { registerS3Handlers } from './s3'
 import { registerFeedbackHandlers } from './feedback'
+import { registerGotPlanHandlers } from './got-plan'
 import { registerCrashReportingHandlers } from './crash-reporting'
 import { registerExportHandlers } from './export'
 import { registerNotesHandlers } from './notes'
@@ -162,6 +163,7 @@ export function registerCoreHandlers(
   registerAsanaHandlers()
   registerS3Handlers()
   registerFeedbackHandlers()
+  registerGotPlanHandlers()
   if (crashReports) {
     registerCrashReportingHandlers(crashReports)
   }

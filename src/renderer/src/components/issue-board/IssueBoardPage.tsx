@@ -263,6 +263,7 @@ export default function IssueBoardPage(): React.JSX.Element {
             open={createOpen}
             provider="gitlab"
             repoLabel={activeRepo.displayName || activeRepo.path}
+            repoPath={activeRepo.path}
             submitting={createSubmitting}
             onOpenChange={setCreateOpen}
             onSubmit={(input) => {

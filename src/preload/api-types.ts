@@ -2129,6 +2129,12 @@ export type PreloadApi = {
       }
     ) => Promise<Omit<GitLabWorkItem, 'repoId'> | null>
   }
+  got: {
+    generatePlan: (args: {
+      repoPath: string
+      taskDescription: string
+    }) => Promise<{ ok: true; plan: string } | { ok: false; error: string }>
+  }
   linear: {
     connect: (args: {
       apiKey: string

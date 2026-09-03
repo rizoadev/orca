@@ -1701,6 +1701,14 @@ const api = {
   // Why: GitLab bindings live in `./gitlab` so `gl.*` changes don't conflict on every upstream sync of this central file.
   gl: glApi,
 
+  got: {
+    generatePlan: (args: {
+      repoPath: string
+      taskDescription: string
+    }): Promise<{ ok: true; plan: string } | { ok: false; error: string }> =>
+      ipcRenderer.invoke('got:generatePlan', args)
+  },
+
   linear: {
     connect: (args: {
       apiKey: string

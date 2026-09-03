@@ -1,3 +1,6 @@
+/* eslint-disable max-lines -- Why: the panel owns the whole issues sidebar
+ * orchestration (list fetching, filters, issue/PR actions, detail modal wiring);
+ * the GoT change is a one-prop pass-through. */
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import { Plus, RefreshCw } from 'lucide-react'
 import { toast } from 'sonner'
@@ -245,10 +248,7 @@ export default function IssuesPanel({ isVisible }: { isVisible: boolean }): Reac
           {
             description: result.task.id,
             action: {
-              label: translate(
-                'auto.components.right.sidebar.issuesPanel.openBoard',
-                'Board'
-              ),
+              label: translate('auto.components.right.sidebar.issuesPanel.openBoard', 'Board'),
               onClick: () => openOrchestrationBoardPage()
             }
           }
@@ -466,6 +466,7 @@ export default function IssuesPanel({ isVisible }: { isVisible: boolean }): Reac
         open={createOpen}
         provider={provider}
         repoLabel={activeRepo.displayName || activeRepo.path}
+        repoPath={activeRepo.path}
         submitting={createSubmitting}
         onOpenChange={setCreateOpen}
         onSubmit={handleCreateIssue}
