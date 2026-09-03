@@ -1,3 +1,6 @@
+/* eslint-disable max-lines -- Why: this file centralizes App/feature-wall/relaunch/
+ * workspace/IO/inspector/picker handlers — splitting them pushes IPC surface
+ * discovery across files for no real cohesion gain. */
 import { spawn } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import path from 'node:path'
@@ -36,6 +39,24 @@ const MAC_SELECTED_INPUT_SOURCES_JSON_COMMAND = [
 
 type RegisterAppHandlersOptions = {
   onBeforeRelaunch?: () => void | Promise<void>
+}
+
+async function pickFile(event: IpcMainInvokeEvent, defaultPath?: string): Promise<string | null> {
+  // Why: any-file picker for the editor's Ctrl+O; start at the worktree root
+  // when known, fall back to the floating-workspace default. No file-type
+  // filter so users can open anything (TSX, JSON, images in viewers, etc.).
+  const options: Electron.OpenDialogOptions = {
+    defaultPath: defaultPath ?? (await ensureDefaultFloatingWorkspacePath()),
+    properties: ['openFile']
+  }
+  const parentWindow = BrowserWindow.fromWebContents(event.sender)
+  const result = parentWindow
+    ? await dialog.showOpenDialog(parentWindow, options)
+    : await dialog.showOpenDialog(options)
+  if (result.canceled || result.filePaths.length === 0) {
+    return null
+  }
+  return result.filePaths[0]
 }
 
 async function pickFloatingMarkdownDocument(
@@ -318,6 +339,10 @@ export function registerAppHandlers(store: Store, options: RegisterAppHandlersOp
   ipcMain.handle('app:getFloatingMarkdownDirectory', () => ensureDefaultFloatingWorkspacePath())
 
   ipcMain.handle('app:pickFloatingMarkdownDocument', (event) => pickFloatingMarkdownDocument(event))
+
+  ipcMain.handle('app:pickFile', (event, args?: { defaultPath?: string }) =>
+    pickFile(event, args?.defaultPath)
+  )
 
   ipcMain.handle('app:pickFloatingWorkspaceDirectory', (event) =>
     pickFloatingWorkspaceDirectory(event, store)

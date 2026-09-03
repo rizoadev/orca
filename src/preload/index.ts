@@ -598,6 +598,8 @@ const api = {
       ipcRenderer.invoke('app:getFloatingMarkdownDirectory'),
     pickFloatingMarkdownDocument: (): Promise<MarkdownDocument | null> =>
       ipcRenderer.invoke('app:pickFloatingMarkdownDocument'),
+    pickFile: (args?: { defaultPath?: string }): Promise<string | null> =>
+      ipcRenderer.invoke('app:pickFile', args),
     pickFloatingWorkspaceDirectory: (): Promise<string | null> =>
       ipcRenderer.invoke('app:pickFloatingWorkspaceDirectory'),
     writeTerminalRenderDesyncEvidence: (args: WriteTerminalRenderDesyncEvidenceArgs) =>

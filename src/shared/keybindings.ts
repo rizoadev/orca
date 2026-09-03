@@ -87,6 +87,7 @@ export type KeybindingActionId =
   | 'browser.hardReload'
   | 'browser.focusAddressBar'
   | 'browser.grabElement'
+  | 'editor.openFile'
   | 'editor.find'
   | 'editor.replace'
   | 'editor.save'
@@ -821,6 +822,16 @@ export const KEYBINDING_DEFINITIONS: readonly KeybindingDefinition[] = [
     scope: 'browser',
     searchKeywords: ['shortcut', 'browser', 'grab', 'copy', 'element'],
     defaultBindings: platformBindings(['Mod+C'])
+  },
+  {
+    id: 'editor.openFile',
+    title: 'Open File',
+    group: 'Editors',
+    // Why: scope 'editor' lets editor-tab focus win while still allowing the
+    // global App-level handler to catch it from sidebar/tab-bar focus.
+    scope: 'editor',
+    searchKeywords: ['shortcut', 'editor', 'file', 'open', 'pick'],
+    defaultBindings: platformBindings(['Mod+O'])
   },
   {
     id: 'editor.find',

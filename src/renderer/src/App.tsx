@@ -120,6 +120,9 @@ import {
   ORCA_UPDATER_QUIT_AND_INSTALL_ABORTED_EVENT
 } from '../../shared/updater-renderer-events'
 import { ORCA_RENDERER_UNLOAD_PREVENTED_EVENT } from '../../shared/renderer-shutdown-events'
+import { detectLanguage } from '@/lib/language-detect'
+import { findWorktreeById } from '@/store/slices/worktree-helpers'
+import { computeRelativePath, findWorktreeContainingPath } from '@/lib/editor-file-router'
 import {
   buildWorkspaceSessionPayload,
   shouldPersistWorkspaceSession
@@ -1566,6 +1569,49 @@ function App(): React.JSX.Element {
         actions.showRightSidebarSearch(query ? { query } : undefined)
       }
 
+      // Why: Ctrl+O opens a native file picker and routes the chosen file to
+      // its containing worktree. Longest-path-prefix wins so a file picked from
+      // a subdirectory lands in the right workspace when several worktrees
+      // share an ancestor. Files outside every known worktree get a toast so
+      // the user can either add a repo or pick a different file.
+      const openEditorFile = async (defaultPath: string | null): Promise<void> => {
+        try {
+          const picked = await window.api.app.pickFile(defaultPath ? { defaultPath } : undefined)
+          if (!picked) {
+            return
+          }
+          const stateAtPick = useAppStore.getState()
+          const target = findWorktreeContainingPath(stateAtPick.worktreesByRepo, picked)
+          if (!target) {
+            toast.error(
+              translate(
+                'auto.App.openEditorFile.outsideWorkspace',
+                'Picked file is outside any open worktree. Add the repo, then try again.'
+              )
+            )
+            return
+          }
+          const relativePath = computeRelativePath(target.path, picked)
+          stateAtPick.openFile(
+            {
+              filePath: picked,
+              relativePath,
+              worktreeId: target.id,
+              language: detectLanguage(picked),
+              mode: 'edit'
+            },
+            { preview: false }
+          )
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err)
+          toast.error(
+            translate('auto.App.openEditorFile.failed', 'Failed to open file: {{message}}', {
+              message
+            })
+          )
+        }
+      }
+
       if (matchShortcut('sidebar.search.toggle') && canRevealRightSidebar) {
         // With a folder selected in the explorer, Cmd/Ctrl+Shift+F means "Find in Folder" — seed the include pattern with it, not a text search.
         const selectedFolderRelativePath =
@@ -1742,6 +1788,22 @@ function App(): React.JSX.Element {
         input.preventDefault()
         notifyTerminalCapture('sidebar.explorer.toggle')
         actions.showRightSidebarFiles()
+        return
+      }
+
+      // Cmd/Ctrl+O — open any file into a worktree editor tab. Picker is rooted
+      // at the active worktree when known; the picked path is matched to its
+      // containing worktree by longest prefix so cross-worktree picks land in
+      // the right workspace.
+      if (matchShortcut('editor.openFile')) {
+        input.preventDefault()
+        notifyTerminalCapture('editor.openFile')
+        const state = useAppStore.getState()
+        const activeWorktree = activeWorktreeId
+          ? findWorktreeById(state.worktreesByRepo, activeWorktreeId)
+          : null
+        const defaultPath = activeWorktree?.path
+        void openEditorFile(defaultPath ?? null)
         return
       }
 

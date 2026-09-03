@@ -1093,6 +1093,10 @@ export type AppApi = {
   /** Opens a native picker for markdown documents, rooted in the floating
    *  workspace, and authorizes the selected file for editor reads/writes. */
   pickFloatingMarkdownDocument: () => Promise<MarkdownDocument | null>
+  /** Opens a native file picker rooted at the supplied path (or the floating
+   *  workspace directory when omitted). Returns the absolute path or null when
+   *  the user cancels. No file-type filter so any extension is pickable. */
+  pickFile: (args?: { defaultPath?: string }) => Promise<string | null>
   /** Opens a native directory picker and authorizes the selected directory
    *  for Floating Workspace markdown file creation. */
   pickFloatingWorkspaceDirectory: () => Promise<string | null>
