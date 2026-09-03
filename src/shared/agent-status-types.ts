@@ -128,6 +128,11 @@ export type AgentStatusEntry = {
   interactivePrompt?: string
   /** Most recent assistant message preview, when the hook carried one. */
   lastAssistantMessage?: string
+  /** Most recent reasoning preview (chain-of-thought), when the hook carried one.
+   *  Why: providers like OpenCode emit `part.type === "reasoning"` parts; we coalesce
+   *  them into a capped preview so the chatbox can stream a thinking-aside bubble
+   *  alongside the main reply without pulling raw thinking into the transcript. */
+  lastReasoningMessage?: string
   /** True when this `done` was reached via interrupt, not normal completion
    *  (agent-reported or Orca's guarded fallback). Undefined otherwise. */
   interrupted?: boolean
@@ -170,6 +175,11 @@ export type AgentStatusPayload = {
    *  AgentStatusEntry field for semantics. Not truncated like toolInput. */
   interactivePrompt?: string
   lastAssistantMessage?: string
+  /** Most recent reasoning/chain-of-thought preview, when the hook carried
+   *  one (e.g. OpenCode `part.type === "reasoning"`). Mirrors
+   *  `lastAssistantMessage` semantics — capped preview, trailing-edge coalesced,
+   *  cleared when the turn completes. */
+  lastReasoningMessage?: string
   interrupted?: boolean
   /** Live in-process children of the reporting session. See AgentStatusEntry. */
   subagents?: AgentSubagentSnapshot[]
@@ -365,6 +375,10 @@ function normalizeAgentStatusObject(parsed: unknown): ParsedAgentStatusPayload |
     ),
     lastAssistantMessage: normalizeOptionalMultilineField(
       obj.lastAssistantMessage,
+      AGENT_STATUS_ASSISTANT_MESSAGE_MAX_LENGTH
+    ),
+    lastReasoningMessage: normalizeOptionalMultilineField(
+      obj.lastReasoningMessage,
       AGENT_STATUS_ASSISTANT_MESSAGE_MAX_LENGTH
     ),
     // Why: only meaningful on `done`; coerce to undefined elsewhere so it can't leak stale truth across transitions.

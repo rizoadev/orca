@@ -710,6 +710,8 @@ export type RuntimeWorktreeAgentRow = {
   /** Explicit UI label for orchestration task rows, or null outside dispatch. */
   displayName: string | null
   lastAssistantMessage: string | null
+  /** Reasoning preview, when the hook carried one (OpenCode `part.type === "reasoning"`). */
+  lastReasoningMessage: string | null
   toolName: string | null
   toolInput: string | null
   interrupted: boolean

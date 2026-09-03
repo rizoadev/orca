@@ -507,6 +507,12 @@ export type ToolSnapshot = {
   hasToolInputField?: boolean
   lastAssistantMessage?: string
   clearLastAssistantMessage?: boolean
+  /** Reasoning/chain-of-thought preview extracted from providers that emit it
+   *  as a separate part (OpenCode `part.type === "reasoning"`). Mirrors the
+   *  inheritance pattern of `lastAssistantMessage` so streaming chunks keep
+   *  extending the latest snapshot. */
+  lastReasoningMessage?: string
+  clearLastReasoningMessage?: boolean
 }
 
 function resolveToolState(
@@ -541,7 +547,10 @@ function resolveToolState(
     interactivePrompt: update.interactivePrompt,
     lastAssistantMessage: update.clearLastAssistantMessage
       ? undefined
-      : (update.lastAssistantMessage ?? previous.lastAssistantMessage)
+      : (update.lastAssistantMessage ?? previous.lastAssistantMessage),
+    lastReasoningMessage: update.clearLastReasoningMessage
+      ? undefined
+      : (update.lastReasoningMessage ?? previous.lastReasoningMessage)
   }
   state.lastToolByPaneKey.set(paneKey, merged)
   return merged
@@ -1578,6 +1587,12 @@ function extractOpenCodeToolFields(
     const text = readString(hookPayload, 'text')
     if (text) {
       return { lastAssistantMessage: capOpenCodeHookText(text) }
+    }
+  }
+  if (eventName === 'MessagePart' && hookPayload.role === 'reasoning') {
+    const text = readString(hookPayload, 'text')
+    if (text) {
+      return { lastReasoningMessage: capOpenCodeHookText(text) }
     }
   }
   if (eventName === 'AskUserQuestion') {
@@ -2639,6 +2654,7 @@ function buildClaudeStatusPayload(
     toolInput: snapshot.toolInput,
     interactivePrompt: snapshot.interactivePrompt,
     lastAssistantMessage: snapshot.lastAssistantMessage,
+    lastReasoningMessage: snapshot.lastReasoningMessage,
     interrupted: options.interrupted,
     subagents: claudeRosterToSnapshots(state.claudeSubagentRosterByPaneKey.get(paneKey))
   })
@@ -2695,6 +2711,7 @@ function normalizeDevinEvent(
       toolInput: snapshot.toolInput,
       interactivePrompt: snapshot.interactivePrompt,
       lastAssistantMessage: snapshot.lastAssistantMessage,
+      lastReasoningMessage: snapshot.lastReasoningMessage,
       interrupted
     })
   )
@@ -2754,6 +2771,7 @@ function normalizeKimiEvent(
       toolName: snapshot.toolName,
       toolInput: snapshot.toolInput,
       lastAssistantMessage: snapshot.lastAssistantMessage,
+      lastReasoningMessage: snapshot.lastReasoningMessage,
       interrupted
     })
   )
@@ -2799,7 +2817,8 @@ function normalizeGeminiEvent(
       toolName: snapshot.toolName,
       toolInput: snapshot.toolInput,
       interactivePrompt: snapshot.interactivePrompt,
-      lastAssistantMessage: snapshot.lastAssistantMessage
+      lastAssistantMessage: snapshot.lastAssistantMessage,
+      lastReasoningMessage: snapshot.lastReasoningMessage
     })
   )
 }
@@ -2873,7 +2892,8 @@ function normalizeAntigravityEvent(
       toolName: snapshot.toolName,
       toolInput: snapshot.toolInput,
       interactivePrompt: snapshot.interactivePrompt,
-      lastAssistantMessage: snapshot.lastAssistantMessage
+      lastAssistantMessage: snapshot.lastAssistantMessage,
+      lastReasoningMessage: snapshot.lastReasoningMessage
     })
   )
   // Why: Antigravity can emit Stop with fullyIdle=false between tool steps; only a fully idle Stop is terminal, else the sidebar bounces done -> working and ignores later tool updates.
@@ -2953,6 +2973,7 @@ function normalizeAmpEvent(
       toolInput: snapshot.toolInput,
       interactivePrompt: snapshot.interactivePrompt,
       lastAssistantMessage: snapshot.lastAssistantMessage,
+      lastReasoningMessage: snapshot.lastReasoningMessage,
       interrupted
     })
   )
@@ -3189,6 +3210,7 @@ function buildCodexStatusPayload(
     toolInput: snapshot.toolInput,
     interactivePrompt: snapshot.interactivePrompt,
     lastAssistantMessage: snapshot.lastAssistantMessage,
+    lastReasoningMessage: snapshot.lastReasoningMessage,
     subagents: codexRosterToSnapshots(state.codexSubagentRosterByPaneKey.get(paneKey))
   })
 }
@@ -3345,7 +3367,8 @@ function normalizeOpenCodeFamilyEvent(
       toolName: snapshot.toolName,
       toolInput: snapshot.toolInput,
       interactivePrompt: snapshot.interactivePrompt,
-      lastAssistantMessage: snapshot.lastAssistantMessage
+      lastAssistantMessage: snapshot.lastAssistantMessage,
+      lastReasoningMessage: snapshot.lastReasoningMessage
     })
   )
 }
@@ -3406,6 +3429,7 @@ function normalizeCursorEvent(
       toolInput: snapshot.toolInput,
       interactivePrompt: snapshot.interactivePrompt,
       lastAssistantMessage: snapshot.lastAssistantMessage,
+      lastReasoningMessage: snapshot.lastReasoningMessage,
       interrupted
     })
   )
@@ -3468,7 +3492,8 @@ function normalizeCopilotEvent(
       toolName: snapshot.toolName,
       toolInput: snapshot.toolInput,
       interactivePrompt: snapshot.interactivePrompt,
-      lastAssistantMessage: snapshot.lastAssistantMessage
+      lastAssistantMessage: snapshot.lastAssistantMessage,
+      lastReasoningMessage: snapshot.lastReasoningMessage
     })
   )
 }
@@ -3527,7 +3552,8 @@ function normalizePiCompatibleEvent(
       toolName: snapshot.toolName,
       toolInput: snapshot.toolInput,
       interactivePrompt: snapshot.interactivePrompt,
-      lastAssistantMessage: snapshot.lastAssistantMessage
+      lastAssistantMessage: snapshot.lastAssistantMessage,
+      lastReasoningMessage: snapshot.lastReasoningMessage
     })
   )
 }
@@ -3594,7 +3620,8 @@ function normalizeDroidEvent(
       toolName: snapshot.toolName,
       toolInput: snapshot.toolInput,
       interactivePrompt: snapshot.interactivePrompt,
-      lastAssistantMessage: snapshot.lastAssistantMessage
+      lastAssistantMessage: snapshot.lastAssistantMessage,
+      lastReasoningMessage: snapshot.lastReasoningMessage
     })
   )
 }
@@ -3633,7 +3660,8 @@ function normalizeCommandCodeEvent(
       toolName: snapshot.toolName,
       toolInput: snapshot.toolInput,
       interactivePrompt: snapshot.interactivePrompt,
-      lastAssistantMessage: snapshot.lastAssistantMessage
+      lastAssistantMessage: snapshot.lastAssistantMessage,
+      lastReasoningMessage: snapshot.lastReasoningMessage
     })
   )
 }
@@ -3719,7 +3747,8 @@ function normalizeGrokEvent(
       toolName: snapshot.toolName,
       toolInput: snapshot.toolInput,
       interactivePrompt: snapshot.interactivePrompt,
-      lastAssistantMessage: snapshot.lastAssistantMessage
+      lastAssistantMessage: snapshot.lastAssistantMessage,
+      lastReasoningMessage: snapshot.lastReasoningMessage
     })
   )
 }
@@ -3768,7 +3797,8 @@ function normalizeHermesEvent(
       toolName: snapshot.toolName,
       toolInput: snapshot.toolInput,
       interactivePrompt: snapshot.interactivePrompt,
-      lastAssistantMessage: snapshot.lastAssistantMessage
+      lastAssistantMessage: snapshot.lastAssistantMessage,
+      lastReasoningMessage: snapshot.lastReasoningMessage
     })
   )
 }

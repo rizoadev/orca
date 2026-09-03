@@ -7,6 +7,7 @@ import {
   type NativeChatSessionStatus
 } from '../../../../shared/native-chat-types'
 import { NATIVE_CHAT_STREAMING_ID } from '../../../../shared/native-chat-streaming'
+import { NATIVE_CHAT_REASONING_ID } from '../../../../shared/native-chat-reasoning-streaming'
 import { normalizeImageTranscriptMessages } from './native-chat-image-transcript-markers'
 import { isLaunchPromptMessageId, isPendingMessageId } from './native-chat-pending'
 
@@ -91,11 +92,18 @@ function supersedes(candidate: NativeChatMessage, existing: NativeChatMessage): 
 // of the optimistic composer echoes, which carry finite `sentAt` timestamps that
 // would otherwise sort past it. Rank first, then timestamp within a tier.
 function messageSortRank(message: NativeChatMessage): number {
-  if (message.id === NATIVE_CHAT_STREAMING_ID) {
+  // Why: reasoning streams before the assistant reply it precedes; both
+  // synthetic bubbles trail real content but lead optimistic echoes so the
+  // user sees the in-flight agent thinking, then replying, then the queued
+  // user prompt follows.
+  if (message.id === NATIVE_CHAT_REASONING_ID) {
     return 1
   }
-  if (isPendingMessageId(message.id) || isLaunchPromptMessageId(message.id)) {
+  if (message.id === NATIVE_CHAT_STREAMING_ID) {
     return 2
+  }
+  if (isPendingMessageId(message.id) || isLaunchPromptMessageId(message.id)) {
+    return 3
   }
   return 0
 }

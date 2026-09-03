@@ -400,6 +400,7 @@ function equivalentParsedAgentStatusPayload(
     a.toolInput === b.toolInput &&
     a.interactivePrompt === b.interactivePrompt &&
     a.lastAssistantMessage === b.lastAssistantMessage &&
+    a.lastReasoningMessage === b.lastReasoningMessage &&
     a.interrupted === b.interrupted
   )
 }

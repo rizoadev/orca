@@ -1855,6 +1855,11 @@ export const createAgentStatusSlice: StateCreator<AppState, [], [], AgentStatusS
           // card; parseAgentStatusPayload clears it on tool/state change.
           interactivePrompt: payload.interactivePrompt,
           lastAssistantMessage: payload.lastAssistantMessage,
+          // Why: reasoning preview streams from providers that emit a separate
+          // reasoning part (OpenCode `part.type === "reasoning"`). Mirroring
+          // the assistant-message field so the chatbox can render a live
+          // thinking-aside bubble without re-wiring the hook channel.
+          lastReasoningMessage: payload.lastReasoningMessage,
           // Why: reused panes can start non-orchestrated work; only final done rows keep the
           // previous lineage fallback so completed children stay grouped.
           orchestration,
@@ -1908,6 +1913,7 @@ export const createAgentStatusSlice: StateCreator<AppState, [], [], AgentStatusS
             entry.toolName !== existing.toolName ||
             entry.toolInput !== existing.toolInput ||
             entry.lastAssistantMessage !== existing.lastAssistantMessage ||
+            entry.lastReasoningMessage !== existing.lastReasoningMessage ||
             entry.orchestration !== existing.orchestration ||
             entry.subagents !== existing.subagents ||
             entry.providerSession !== existing.providerSession ||

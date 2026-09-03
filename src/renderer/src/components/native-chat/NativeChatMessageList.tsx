@@ -1,5 +1,9 @@
+/* eslint-disable max-lines -- Why: the chat list owns row renderers for
+ *  every role (user/assistant/reasoning/tool runs) plus grouping and scroll
+ *  recovery. Splitting only shifts coupling between the components without
+ *  shrinking the public surface. */
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { ArrowDown, ArrowUp, Image as ImageIcon } from 'lucide-react'
+import { ArrowDown, ArrowUp, ChevronDown, Image as ImageIcon } from 'lucide-react'
 import CommentMarkdown, {
   type CommentMarkdownLinkClickHandler
 } from '@/components/sidebar/CommentMarkdown'
@@ -20,6 +24,7 @@ import { isNativeChatPastedImagePath } from './native-chat-image-paste'
 import { NativeChatToolRun } from './NativeChatToolRun'
 import { NativeChatCopyButton } from './NativeChatCopyButton'
 import { NATIVE_CHAT_STREAMING_ID } from '../../../../shared/native-chat-streaming'
+import { NATIVE_CHAT_REASONING_ID } from '../../../../shared/native-chat-reasoning-streaming'
 
 function geometryOf(el: HTMLElement): ScrollGeometry {
   return { scrollTop: el.scrollTop, scrollHeight: el.scrollHeight, clientHeight: el.clientHeight }
@@ -121,6 +126,91 @@ function TypingIndicatorRow(): React.JSX.Element {
       <div className="ml-3 h-0.5 w-24 overflow-hidden rounded-full bg-border/60">
         <div className="native-chat-working-bar h-full w-1/3 rounded-full bg-muted-foreground/50" />
       </div>
+    </div>
+  )
+}
+
+/** One reasoning block: collapsible quote-style bubble. Active streams
+ *  (NATIVE_CHAT_REASONING_ID) render expanded by default so the live preview
+ *  keeps streaming into the user's eye line; persisted reasoning rows land
+ *  collapsed so the chatbox doesn't drown in past thinking. */
+function ReasoningRow({
+  message,
+  expandSignal,
+  allowFileUriLinks = false
+}: {
+  message: NativeChatMessage
+  expandSignal: boolean
+  allowFileUriLinks?: boolean
+}): React.JSX.Element | null {
+  const { prose, tools } = useMemo(() => splitNativeChatBlocks(message.blocks), [message.blocks])
+  const markdown = proseToMarkdown(prose)
+  const hasImages = prose.some((block) => block.type === 'image-ref')
+  const isStreaming = message.id === NATIVE_CHAT_REASONING_ID
+  const [expanded, setExpanded] = useState(isStreaming)
+  const preview = useMemo(() => {
+    const trimmed = markdown.trim()
+    if (trimmed.length <= 120) {
+      return trimmed
+    }
+    return `${trimmed.slice(0, 120).trimEnd()}...`
+  }, [markdown])
+  useEffect(() => {
+    setExpanded(isStreaming ? true : expandSignal)
+  }, [expandSignal, isStreaming])
+
+  if (markdown.length === 0 && !hasImages && tools.length === 0) {
+    return null
+  }
+
+  return (
+    <div
+      className={cn(
+        'group relative max-w-full text-[13px] leading-relaxed',
+        isStreaming
+          ? 'border-l-2 border-primary/60 bg-primary/5 pl-3 pr-3 py-2 italic text-muted-foreground'
+          : 'border-l-2 border-border/60 pl-3 pr-2 py-1 text-muted-foreground/90'
+      )}
+    >
+      <button
+        type="button"
+        onClick={() => setExpanded((value) => !value)}
+        className="flex w-full items-center gap-2 text-left"
+        aria-expanded={expanded}
+      >
+        <ChevronDown
+          className={cn(
+            'size-3.5 shrink-0 text-muted-foreground/70 transition-transform',
+            expanded ? '' : '-rotate-90'
+          )}
+        />
+        <span className="font-medium not-italic text-[12px] text-muted-foreground">
+          {translate(
+            isStreaming
+              ? 'components.native-chat.reasoning.streaming'
+              : 'components.native-chat.reasoning.collapsed',
+            isStreaming ? 'Thinking...' : 'Thinking'
+          )}
+        </span>
+        {expanded ? null : (
+          <span className="truncate font-mono text-[11px] text-muted-foreground/70">{preview}</span>
+        )}
+      </button>
+      {expanded ? (
+        <div className="mt-1.5">
+          {markdown ? (
+            <CommentMarkdown
+              content={markdown}
+              variant="document"
+              className="text-[13px] italic"
+              allowFileUriLinks={allowFileUriLinks}
+            />
+          ) : null}
+          {tools.length > 0 ? (
+            <NativeChatToolRun blocks={tools} expandSignal={expandSignal} />
+          ) : null}
+        </div>
+      ) : null}
     </div>
   )
 }
@@ -280,8 +370,15 @@ export function NativeChatMessageList({
     () => foldToolMessages(orderNativeChatMessages(stripNoiseMessages(session.messages))),
     [session.messages]
   )
+  // Why: hide the bouncing-dot indicator while a streaming reply (assistant
+  // or reasoning) is already rendering — the bubbles convey activity directly,
+  // so doubling them up creates a redundant animated row.
   const showTypingIndicator =
-    isWorking && !messages.some((message) => message.id === NATIVE_CHAT_STREAMING_ID)
+    isWorking &&
+    !messages.some(
+      (message) =>
+        message.id === NATIVE_CHAT_STREAMING_ID || message.id === NATIVE_CHAT_REASONING_ID
+    )
 
   // When an older page prepends, the scroll content grows above the viewport.
   // Capture the pre-render scroll height so the layout effect can restore the
@@ -405,17 +502,26 @@ export function NativeChatMessageList({
               </button>
             </div>
           ) : null}
-          {messages.map((message) => (
-            <MessageRow
-              key={message.id}
-              message={message}
-              expandSignal={expandSignal}
-              onScrollMessageToTop={scrollMessageToTop}
-              onLinkClick={onLinkClick}
-              allowFileUriLinks={allowFileUriLinks}
-              deliveryFailed={failedDeliveryMessageIds?.has(message.id) === true}
-            />
-          ))}
+          {messages.map((message) =>
+            message.role === 'reasoning' ? (
+              <ReasoningRow
+                key={message.id}
+                message={message}
+                expandSignal={expandSignal}
+                allowFileUriLinks={allowFileUriLinks}
+              />
+            ) : (
+              <MessageRow
+                key={message.id}
+                message={message}
+                expandSignal={expandSignal}
+                onScrollMessageToTop={scrollMessageToTop}
+                onLinkClick={onLinkClick}
+                allowFileUriLinks={allowFileUriLinks}
+                deliveryFailed={failedDeliveryMessageIds?.has(message.id) === true}
+              />
+            )
+          )}
           {showTypingIndicator ? <TypingIndicatorRow /> : null}
         </div>
       </div>

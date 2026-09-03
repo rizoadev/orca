@@ -8402,6 +8402,8 @@ export class OrcaRuntimeService {
       (previous.payload.agentType ?? null) !== (payload.agentType ?? null) ||
       (previous.payload.toolName ?? null) !== (payload.toolName ?? null) ||
       (previous.payload.interactivePrompt ?? null) !== (payload.interactivePrompt ?? null) ||
+      (previous.payload.lastAssistantMessage ?? null) !== (payload.lastAssistantMessage ?? null) ||
+      (previous.payload.lastReasoningMessage ?? null) !== (payload.lastReasoningMessage ?? null) ||
       (previous.payload.interrupted ?? false) !== (payload.interrupted ?? false)
     )
   }
@@ -14663,6 +14665,7 @@ export class OrcaRuntimeService {
         agentType: string | null
         prompt: string
         lastAssistantMessage: string | null
+        lastReasoningMessage: string | null
         toolName: string | null
         toolInput: string | null
         interrupted: boolean
@@ -14680,6 +14683,7 @@ export class OrcaRuntimeService {
         agentType: payload.agentType ?? null,
         prompt: payload.prompt,
         lastAssistantMessage: payload.lastAssistantMessage ?? null,
+        lastReasoningMessage: payload.lastReasoningMessage ?? null,
         toolName: payload.toolName ?? null,
         toolInput: payload.toolInput ?? null,
         interrupted: payload.interrupted ?? false,
@@ -14702,6 +14706,7 @@ export class OrcaRuntimeService {
         agentType: entry.agentType ?? null,
         prompt: entry.prompt,
         lastAssistantMessage: entry.lastAssistantMessage ?? null,
+        lastReasoningMessage: entry.lastReasoningMessage ?? null,
         toolName: entry.toolName ?? null,
         toolInput: entry.toolInput ?? null,
         interrupted: entry.interrupted ?? false,
@@ -14744,6 +14749,7 @@ export class OrcaRuntimeService {
         taskTitle,
         displayName,
         lastAssistantMessage: src.lastAssistantMessage,
+        lastReasoningMessage: src.lastReasoningMessage,
         toolName: src.toolName,
         toolInput: src.toolInput,
         interrupted: src.interrupted,

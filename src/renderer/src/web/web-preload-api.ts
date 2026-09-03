@@ -565,6 +565,9 @@ function createWebPreloadApi(): Partial<PreloadApi> {
       getFloatingMarkdownDirectory: () => Promise.resolve(''),
       pickFloatingMarkdownDocument: () => Promise.resolve(null),
       pickFloatingWorkspaceDirectory: () => Promise.resolve(null),
+      // Why: the browser fallback never resolves a real file path; returning null
+      // matches the desktop picker's cancel outcome so the editor can fall back.
+      pickFile: () => Promise.resolve(null),
       // Browser fallback has no app-owned userData dir; reject so the sentinel can't claim sensitive evidence was persisted.
       writeTerminalRenderDesyncEvidence: () =>
         Promise.reject(

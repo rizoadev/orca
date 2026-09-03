@@ -1,3 +1,6 @@
+/* eslint-disable max-lines -- Why: NativeChatView is the canonical
+ *  chatbox orchestrator — message assembly, hook/scratch/streaming previews,
+ *  composer state, scroll recovery. Splitting only hides coupling. */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useShallow } from 'zustand/react/shallow'
 import { useAppStore } from '../../store'
@@ -37,6 +40,10 @@ import {
   deriveNativeChatStreamingText,
   nativeChatStreamingMessage
 } from '../../../../shared/native-chat-streaming'
+import {
+  deriveNativeChatReasoningText,
+  nativeChatReasoningMessage
+} from '../../../../shared/native-chat-reasoning-streaming'
 import {
   shouldFocusNativeChatComposerFromEditingKey,
   shouldFocusNativeChatPaneFromPointerTarget,
@@ -146,6 +153,10 @@ function NativeChatResolvedView({
   // The agent's in-progress reply preview (hook), shown as a live streaming
   // bubble while it works — before the completed turn flushes to the transcript.
   const hookPreview = useAppStore((s) => s.agentStatusByPaneKey[paneKey]?.lastAssistantMessage)
+  // Why: companion reasoning preview (chain-of-thought) streamed from providers
+  // that emit a separate reasoning part (OpenCode). Mirrors hookPreview so the
+  // chatbox can render a thinking-aside bubble that grows alongside the reply.
+  const hookReasoning = useAppStore((s) => s.agentStatusByPaneKey[paneKey]?.lastReasoningMessage)
   // Why: Stop suppression must clear on a newer working epoch even when status
   // never leaves 'working' (interrupt + immediate next turn coalesced).
   const hookWorkingEpoch = useAppStore(
@@ -300,8 +311,20 @@ function NativeChatResolvedView({
       working: liveWorking
     })
   }, [sessionAfterCommandBoundaries.messages, pendingMessages, hookPreview, liveWorking])
+  const streamingReasoningText = useMemo(() => {
+    return deriveNativeChatReasoningText({
+      messages: sessionAfterCommandBoundaries.messages,
+      previewText: hookReasoning,
+      working: liveWorking
+    })
+  }, [sessionAfterCommandBoundaries.messages, hookReasoning, liveWorking])
   const sessionWithPending = useMemo<typeof session>(() => {
-    if (pending.length === 0 && commandMarkers.length === 0 && !streamingText) {
+    if (
+      pending.length === 0 &&
+      commandMarkers.length === 0 &&
+      !streamingText &&
+      !streamingReasoningText
+    ) {
       return sessionAfterCommandBoundaries
     }
     return {
@@ -309,11 +332,19 @@ function NativeChatResolvedView({
       messages: [
         ...sessionAfterCommandBoundaries.messages,
         ...commandMarkersAsMessages(commandMarkers),
+        ...(streamingReasoningText ? [nativeChatReasoningMessage(streamingReasoningText)] : []),
         ...(streamingText ? [nativeChatStreamingMessage(streamingText)] : []),
         ...pendingMessages
       ]
     }
-  }, [sessionAfterCommandBoundaries, pending, pendingMessages, commandMarkers, streamingText])
+  }, [
+    sessionAfterCommandBoundaries,
+    pending,
+    pendingMessages,
+    commandMarkers,
+    streamingText,
+    streamingReasoningText
+  ])
   // Derive the view state from the pending-augmented session so a send into an
   // otherwise-empty conversation flips to the list (showing the queued bubble)
   // instead of staying on the empty state.
