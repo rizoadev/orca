@@ -1927,7 +1927,8 @@ export default function GitLabItemDialog({
                         </Button>
                       </div>
                     ) : null}
-                    <CommentMarkdown content={details.body} />
+                    {/* Why: document variant enables mermaid diagram rendering in the description. */}
+                    <CommentMarkdown content={details.body} variant="document" />
                   </div>
                 ) : (
                   <div>
@@ -2168,7 +2169,7 @@ export default function GitLabItemDialog({
                     </div>
                   ) : details?.body ? (
                     <div className="rounded-lg border border-border/50 bg-card/50 px-4 py-4 shadow-xs">
-                      <CommentMarkdown content={details.body} />
+                      <CommentMarkdown content={details.body} variant="document" />
                     </div>
                   ) : (
                     <p className="text-sm text-muted-foreground">
