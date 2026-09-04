@@ -1,23 +1,15 @@
 /**
  * In-modal pi agent chat for issues: message list + composer + model picker + session management.
+ * Header and message-list rendering live in sibling components; this module owns
+ * session state, the event subscription, and the composer.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useAppStore } from '@/store'
-import {
-  ChevronDown,
-  Clock,
-  LoaderCircle,
-  Plus,
-  Send,
-  Sparkles,
-  Terminal,
-  Trash2,
-  Wrench
-} from 'lucide-react'
+import { Send, Square } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import CommentMarkdown from '@/components/sidebar/CommentMarkdown'
 import { cn } from '@/lib/utils'
-import { ReasoningBubble } from './issue-strands-reasoning-bubble'
+import { IssueStrandsChatHeader } from './issue-strands-chat-header'
+import { IssueStrandsChatMessages, groupMessagesForRender } from './issue-strands-chat-messages'
 import type {
   PiIssueChatEvent,
   PiIssueChatMessage,
@@ -34,10 +26,6 @@ export type IssueStrandsChatPanelProps = {
   className?: string
 }
 
-type ChatRenderItem =
-  | { kind: 'message'; message: PiIssueChatMessage }
-  | { kind: 'tools'; tools: PiIssueChatMessage[] }
-
 function upsertMessage(
   messages: PiIssueChatMessage[],
   message: PiIssueChatMessage
@@ -49,48 +37,6 @@ function upsertMessage(
     return next
   }
   return [...messages, message]
-}
-
-function groupMessagesForRender(messages: PiIssueChatMessage[]): ChatRenderItem[] {
-  const items: ChatRenderItem[] = []
-  let toolBatch: PiIssueChatMessage[] = []
-  for (const message of messages) {
-    if (message.role === 'tool') {
-      toolBatch.push(message)
-    } else {
-      if (toolBatch.length > 0) {
-        items.push({ kind: 'tools', tools: toolBatch })
-        toolBatch = []
-      }
-      items.push({ kind: 'message', message })
-    }
-  }
-  if (toolBatch.length > 0) {
-    items.push({ kind: 'tools', tools: toolBatch })
-  }
-  return items
-}
-
-function groupByProvider(models: PiModelOption[]): Record<string, PiModelOption[]> {
-  const out: Record<string, PiModelOption[]> = {}
-  for (const m of models) {
-    ;(out[m.provider] ??= []).push(m)
-  }
-  return out
-}
-
-function formatRelativeTime(epochMs: number): string {
-  const diff = Date.now() - epochMs
-  if (diff < 60000) {
-    return 'just now'
-  }
-  if (diff < 3600000) {
-    return `${Math.floor(diff / 60000)}m ago`
-  }
-  if (diff < 86400000) {
-    return `${Math.floor(diff / 3600000)}h ago`
-  }
-  return `${Math.floor(diff / 86400000)}d ago`
 }
 
 export function IssueStrandsChatPanel({
@@ -340,8 +286,17 @@ export function IssueStrandsChatPanel({
     [draft, starting, status]
   )
   const renderItems = useMemo(() => groupMessagesForRender(messages), [messages])
-  const groupedModels = useMemo(() => groupByProvider(models), [models])
-
+  // Why: the live thinking-aside is the LAST reasoning message (it sits above
+  // its assistant reply, so "last item" is wrong). Auto-expand only that one
+  // while the agent runs; earlier turns' reasoning stays collapsed.
+  const lastReasoningId = useMemo(() => {
+    for (let idx = messages.length - 1; idx >= 0; idx -= 1) {
+      if (messages[idx]?.role === 'reasoning') {
+        return messages[idx]!.id
+      }
+    }
+    return null
+  }, [messages])
   const handleSend = async (): Promise<void> => {
     const text = draft.trim()
     if (!text || sendInFlight.current || status === 'running') {
@@ -364,6 +319,16 @@ export function IssueStrandsChatPanel({
     }
   }
 
+  // Why: force-stop aborts the in-flight turn but keeps the session warm, so
+  // the user can immediately continue. Mirrors the composer's send guard.
+  const handleStop = (): void => {
+    const piApi = window.api.piIssueChat
+    if (!piApi) {
+      return
+    }
+    void piApi.stop(sessionId)
+  }
+
   return (
     <div
       className={cn(
@@ -371,195 +336,38 @@ export function IssueStrandsChatPanel({
         className
       )}
     >
-      {/* Header */}
-      <div className="flex shrink-0 items-center gap-1.5 border-b border-border/50 px-3 py-2">
-        <Sparkles className="size-3.5 shrink-0 text-muted-foreground" />
+      <IssueStrandsChatHeader
+        starting={starting}
+        switching={switching}
+        status={status}
+        modelLabel={modelLabel}
+        models={models}
+        sessions={sessions}
+        pickerOpen={pickerOpen}
+        historyOpen={historyOpen}
+        pickerRef={pickerRef}
+        historyRef={historyRef}
+        onTogglePicker={() => setPickerOpen((v) => !v)}
+        onToggleHistory={() => {
+          setHistoryOpen((v) => !v)
+          if (!historyOpen) {
+            void refreshSessions()
+          }
+        }}
+        onSelectModel={(ref) => void handleModelSelect(ref)}
+        onNewSession={() => void handleNewSession()}
+        onSwitchSession={(path) => void handleSwitchSession(path)}
+        onDeleteSession={(e, path) => void handleDeleteSession(e, path)}
+      />
 
-        {/* Model picker */}
-        <div ref={pickerRef} className="relative min-w-0 flex-1">
-          <button
-            className="flex min-w-0 items-center gap-1 text-xs text-muted-foreground hover:text-foreground disabled:opacity-50"
-            disabled={starting || switching}
-            onClick={() => setPickerOpen((v) => !v)}
-            title="Switch model"
-          >
-            <span className="truncate">
-              {switching ? 'Switching…' : (modelLabel ?? 'Issue chat · pi')}
-            </span>
-            <ChevronDown className="size-3 shrink-0 opacity-60" />
-          </button>
-          {pickerOpen && models.length > 0 && (
-            <div className="absolute left-0 top-full z-50 mt-1 max-h-72 w-72 overflow-y-auto rounded-md border border-border bg-popover shadow-lg">
-              {Object.entries(groupedModels).map(([provider, pModels]) => (
-                <div key={provider}>
-                  <div className="sticky top-0 bg-popover px-2 py-1 font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
-                    {provider}
-                  </div>
-                  {pModels.map((m) => (
-                    <button
-                      key={m.ref}
-                      className={cn(
-                        'w-full px-3 py-1.5 text-left text-xs hover:bg-accent hover:text-accent-foreground',
-                        modelLabel === `${m.provider}/${m.modelId}` && 'bg-accent/40 font-medium'
-                      )}
-                      onClick={() => void handleModelSelect(m.ref)}
-                    >
-                      <span className="block truncate">
-                        {m.name !== m.modelId ? m.name : m.modelId}
-                      </span>
-                      <span className="text-[10px] text-muted-foreground">
-                        {Math.round(m.contextWindow / 1000)}k ctx
-                      </span>
-                    </button>
-                  ))}
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-
-        {/* Session history */}
-        <div ref={historyRef} className="relative shrink-0">
-          <button
-            className="flex items-center justify-center rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
-            title="Session history"
-            onClick={() => {
-              setHistoryOpen((v) => !v)
-              if (!historyOpen) {
-                void refreshSessions()
-              }
-            }}
-          >
-            <Clock className="size-3.5" />
-          </button>
-          {historyOpen && (
-            <div className="absolute right-0 top-full z-50 mt-1 w-72 overflow-hidden rounded-md border border-border bg-popover shadow-lg">
-              <div className="flex items-center justify-between border-b border-border/50 px-3 py-2">
-                <span className="text-xs font-medium">Session history</span>
-                <button
-                  className="flex items-center gap-1 rounded px-2 py-1 text-[11px] text-muted-foreground hover:bg-muted hover:text-foreground"
-                  onClick={() => void handleNewSession()}
-                >
-                  <Plus className="size-3" />
-                  New chat
-                </button>
-              </div>
-              <div className="max-h-56 overflow-y-auto">
-                {sessions.length === 0 && (
-                  <p className="px-3 py-4 text-center text-xs text-muted-foreground">
-                    No saved sessions
-                  </p>
-                )}
-                {sessions.map((s) => (
-                  <button
-                    key={s.path}
-                    className={cn(
-                      'group flex w-full items-start gap-2 px-3 py-2 text-left hover:bg-accent',
-                      s.isActive && 'bg-accent/30'
-                    )}
-                    onClick={() => void handleSwitchSession(s.path)}
-                  >
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-xs">{s.firstMessage || '(empty session)'}</p>
-                      <p className="text-[10px] text-muted-foreground">
-                        {formatRelativeTime(s.createdAt)}
-                        {s.isActive ? ' · active' : ''}
-                      </p>
-                    </div>
-                    <button
-                      className="shrink-0 rounded p-0.5 opacity-0 hover:bg-destructive/20 hover:text-destructive group-hover:opacity-100"
-                      onClick={(e) => void handleDeleteSession(e, s.path)}
-                      title="Delete"
-                    >
-                      <Trash2 className="size-3" />
-                    </button>
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
-
-        {status === 'running' && (
-          <LoaderCircle className="size-3.5 shrink-0 animate-spin text-muted-foreground" />
-        )}
-      </div>
-
-      {/* Messages */}
-      <div ref={listRef} className="min-h-0 flex-1 overflow-y-auto px-3 py-3">
-        {starting && messages.length === 0 && (
-          <div className="flex items-center gap-2 text-xs text-muted-foreground">
-            <LoaderCircle className="size-3.5 animate-spin" />
-            <span>Starting pi agent…</span>
-          </div>
-        )}
-        {!starting && messages.length === 0 && status !== 'error' && (
-          <p className="text-sm text-muted-foreground">
-            Ask pi anything about this issue. It can read files, run commands, and edit code.
-          </p>
-        )}
-        <div className="flex flex-col gap-3">
-          {renderItems.map((item, i) => {
-            if (item.kind === 'tools') {
-              return (
-                <div key={`tools-${i}`} className="flex flex-wrap gap-1">
-                  {item.tools.map((t) => (
-                    <span
-                      key={t.id}
-                      className="inline-flex items-center gap-1 rounded-md bg-muted/60 px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground"
-                    >
-                      <Wrench className="size-2.5" />
-                      {t.toolName ?? t.content}
-                    </span>
-                  ))}
-                </div>
-              )
-            }
-            const { message } = item
-            if (message.role === 'reasoning') {
-              return (
-                <ReasoningBubble
-                  key={message.id}
-                  message={message}
-                  streaming={status === 'running' && i === renderItems.length - 1}
-                />
-              )
-            }
-            if (message.role === 'system') {
-              return (
-                <p key={message.id} className="text-xs text-destructive">
-                  {message.content}
-                </p>
-              )
-            }
-            if (message.role === 'user') {
-              return (
-                <div key={message.id} className="flex justify-end">
-                  <div className="max-w-[85%] rounded-lg bg-primary px-3 py-2 text-sm text-primary-foreground">
-                    {message.content}
-                  </div>
-                </div>
-              )
-            }
-            return (
-              <div key={message.id} className="flex gap-2">
-                <Terminal className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" />
-                <div className="min-w-0 flex-1 text-sm">
-                  <CommentMarkdown content={message.content} />
-                </div>
-              </div>
-            )
-          })}
-          {status === 'running' &&
-            messages.at(-1)?.role !== 'assistant' &&
-            messages.at(-1)?.role !== 'reasoning' && (
-              <div className="flex gap-2">
-                <Terminal className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" />
-                <LoaderCircle className="size-3.5 animate-spin text-muted-foreground" />
-              </div>
-            )}
-        </div>
-      </div>
+      <IssueStrandsChatMessages
+        messages={messages}
+        renderItems={renderItems}
+        status={status}
+        starting={starting}
+        lastReasoningId={lastReasoningId}
+        listRef={listRef}
+      />
 
       {/* Composer */}
       <div className="shrink-0 border-t border-border/50 p-2">
@@ -581,15 +389,27 @@ export function IssueStrandsChatPanel({
               }
             }}
           />
-          <Button
-            size="icon"
-            variant="ghost"
-            className="size-9 shrink-0"
-            disabled={!canSend}
-            onClick={() => void handleSend()}
-          >
-            <Send className="size-3.5" />
-          </Button>
+          {status === 'running' ? (
+            <Button
+              size="icon"
+              variant="ghost"
+              className="size-9 shrink-0"
+              onClick={handleStop}
+              title="Stop"
+            >
+              <Square className="size-3.5 fill-current" />
+            </Button>
+          ) : (
+            <Button
+              size="icon"
+              variant="ghost"
+              className="size-9 shrink-0"
+              disabled={!canSend}
+              onClick={() => void handleSend()}
+            >
+              <Send className="size-3.5" />
+            </Button>
+          )}
         </div>
       </div>
     </div>

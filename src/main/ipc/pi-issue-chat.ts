@@ -14,7 +14,8 @@ import {
   detachPiIssueChatSession,
   sendPiIssueChatMessage,
   startPiIssueChatSession,
-  stopPiIssueChatSession
+  stopPiIssueChatSession,
+  abortPiIssueChatTurn
 } from '../pi/issue-chat-session'
 import { listPiModels, setPiSessionModel } from '../pi/pi-model-registry'
 import { listPiIssueSessions, deletePiIssueSession } from '../pi/pi-session-manager'
@@ -76,7 +77,10 @@ export function registerPiIssueChatHandlers(): void {
     if (typeof sessionId !== 'string' || !sessionId) {
       return
     }
-    stopPiIssueChatSession(sessionId)
+    // Why: force-stop aborts the in-flight turn but keeps the session warm so
+    // the user can immediately continue the conversation. Teardown lives in
+    // newSession/switchSession/delete, not here.
+    abortPiIssueChatTurn(sessionId)
   })
 
   // Why: detach is a soft disconnect — panel unmounts but session stays warm.
@@ -105,7 +109,9 @@ export function registerPiIssueChatHandlers(): void {
   ipcMain.handle(
     'piIssueChat:listSessions',
     async (_event, args: { sessionId: string; cwd: string }): Promise<PiSessionInfo[]> => {
-      if (!args?.sessionId || !args.cwd) { return [] }
+      if (!args?.sessionId || !args.cwd) {
+        return []
+      }
       const record = getSessionsMap().get(args.sessionId)
       return listPiIssueSessions(args.cwd, args.sessionId, record?.sessionFile)
     }
@@ -119,22 +125,29 @@ export function registerPiIssueChatHandlers(): void {
       }
       // Stop existing warm session so start creates a fresh one
       stopPiIssueChatSession(args.sessionId)
-      return startPiIssueChatSession(
-        { ...args, sessionMode: 'new' },
-        (payload) => emitToSender(event.sender, payload)
+      return startPiIssueChatSession({ ...args, sessionMode: 'new' }, (payload) =>
+        emitToSender(event.sender, payload)
       )
     }
   )
 
   ipcMain.handle(
     'piIssueChat:switchSession',
-    async (event, args: { sessionId: string; cwd: string; issueContext: string; sessionPath: string }): Promise<PiIssueChatSessionSnapshot> => {
+    async (
+      event,
+      args: { sessionId: string; cwd: string; issueContext: string; sessionPath: string }
+    ): Promise<PiIssueChatSessionSnapshot> => {
       if (!args?.sessionId || !args.cwd || !args.sessionPath) {
         throw new Error('Invalid piIssueChat:switchSession args')
       }
       stopPiIssueChatSession(args.sessionId)
       return startPiIssueChatSession(
-        { sessionId: args.sessionId, cwd: args.cwd, issueContext: args.issueContext, sessionMode: { type: 'open', path: args.sessionPath } },
+        {
+          sessionId: args.sessionId,
+          cwd: args.cwd,
+          issueContext: args.issueContext,
+          sessionMode: { type: 'open', path: args.sessionPath }
+        },
         (payload) => emitToSender(event.sender, payload)
       )
     }
@@ -143,7 +156,9 @@ export function registerPiIssueChatHandlers(): void {
   ipcMain.handle(
     'piIssueChat:deleteSession',
     async (_event, args: { sessionId: string; sessionPath: string }): Promise<void> => {
-      if (!args?.sessionPath) { return }
+      if (!args?.sessionPath) {
+        return
+      }
       deletePiIssueSession(args.sessionPath)
       // If deleting active session, stop it so next open starts fresh
       const record = getSessionsMap().get(args.sessionId)

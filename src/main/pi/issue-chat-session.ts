@@ -12,7 +12,7 @@ import type {
   PiIssueChatStatus
 } from '../../shared/pi-issue-chat-types'
 import { createPiSession, ISSUE_SESSIONS_DIR_DEFAULT, piLog } from './pi-session-factory'
-import { applyThinkingDelta, applyThinkingEnd } from './pi-reasoning-stream'
+import { attachSdkSubscription } from './issue-chat-sdk-events'
 
 type Emitter = (event: PiIssueChatEvent) => void
 
@@ -27,10 +27,15 @@ type SessionRecord = {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   agentSession: any
   running: boolean
+  /** Set when the user force-stops the in-flight turn; send() treats the
+   *  resulting prompt() resolution/rejection as a clean stop, not an error. */
+  aborted: boolean
   /** Active emitter — set when panel attaches, cleared on detach. */
   currentEmit: Emitter | null
   currentAssistantId: string | null
   currentAssistantContent: string
+  /** Full accumulated assistant text including any inline <thinking> markup. */
+  currentAssistantRaw: string
   currentAssistantEmitted: boolean
   /** Streaming reasoning (thinking) state — mirrors the assistant fields. */
   currentReasoningId: string | null
@@ -75,113 +80,6 @@ function snapshot(record: SessionRecord): PiIssueChatSessionSnapshot {
 }
 
 /** Wire permanent SDK event subscription on a new record. */
-function attachSdkSubscription(record: SessionRecord): void {
-  record.agentSession.subscribe(
-    (event: {
-      type: string
-      assistantMessageEvent?: { type: string; delta?: string; name?: string; content?: string }
-      message?: { role: string; content: { type: string; text?: string }[] }
-    }) => {
-      const emit = record.currentEmit
-      piLog(
-        'sdk-event type=%s emit=%s assistantId=%s',
-        event.type,
-        emit ? 'yes' : 'NO',
-        record.currentAssistantId ?? 'null'
-      )
-      if (!emit) {
-        return
-      }
-      const { sessionId } = record
-
-      // ── streaming: text_delta ───────────────────────────────────────────────
-      if (event.type === 'message_update') {
-        const inner = event.assistantMessageEvent
-        if (!inner) {
-          return
-        }
-
-        if (inner.type === 'text_delta' && typeof inner.delta === 'string') {
-          record.currentAssistantContent += inner.delta
-          if (!record.currentAssistantEmitted && record.currentAssistantId) {
-            const message: PiIssueChatMessage = {
-              id: record.currentAssistantId,
-              role: 'assistant',
-              content: record.currentAssistantContent,
-              createdAt: Date.now()
-            }
-            record.messages.push(message)
-            record.currentAssistantEmitted = true
-            emit({ type: 'message', sessionId, message })
-          } else if (record.currentAssistantId) {
-            const idx = record.messages.findIndex((m) => m.id === record.currentAssistantId)
-            if (idx >= 0) {
-              record.messages[idx] = {
-                ...record.messages[idx]!,
-                content: record.currentAssistantContent
-              }
-            }
-            emit({
-              type: 'assistantDelta',
-              sessionId,
-              messageId: record.currentAssistantId,
-              delta: inner.delta
-            })
-          }
-          return
-        }
-        if (inner.type === 'tool_start' && inner.name) {
-          const toolMessage = msg('tool', inner.name, inner.name)
-          record.messages.push(toolMessage)
-          emit({ type: 'tool', sessionId, toolName: inner.name, messageId: toolMessage.id })
-          emit({ type: 'message', sessionId, message: toolMessage })
-        }
-        // ── streaming: thinking (reasoning) ───────────────────────────────────
-        // Why: providers with extended thinking emit thinking_delta before the
-        // visible reply. Surface it as a separate 'reasoning' message so the
-        // chatbox renders a live thinking-aside (spoiler) that grows in
-        // realtime, then collapses once the assistant answer lands.
-        if (inner.type === 'thinking_delta' && typeof inner.delta === 'string') {
-          applyThinkingDelta(record, record.messages, inner.delta, sessionId, emit)
-          return
-        }
-        if (inner.type === 'thinking_end' && typeof inner.content === 'string') {
-          applyThinkingEnd(record, record.messages, inner.content, sessionId, emit)
-          return
-        }
-        return
-      }
-
-      // Non-streaming fallback: message_end with full content
-      // Why: some providers don't emit text_delta, only message_end.
-      if (
-        event.type === 'message_end' &&
-        event.message?.role === 'assistant' &&
-        !record.currentAssistantEmitted &&
-        record.currentAssistantId
-      ) {
-        const text = event.message.content
-          .filter((b) => b.type === 'text' && typeof b.text === 'string')
-          .map((b) => b.text ?? '')
-          .join('')
-        if (!text) {
-          return
-        }
-        record.currentAssistantContent = text
-        const message: PiIssueChatMessage = {
-          id: record.currentAssistantId,
-          role: 'assistant',
-          content: text,
-          createdAt: Date.now()
-        }
-        record.messages.push(message)
-        record.currentAssistantEmitted = true
-        emit({ type: 'message', sessionId, message })
-      }
-    }
-  )
-}
-
 export async function startPiIssueChatSession(
   args: PiIssueChatStartArgs,
   emit: Emitter
@@ -236,9 +134,11 @@ export async function startPiIssueChatSession(
     provider,
     agentSession,
     running: false,
+    aborted: false,
     currentEmit: emit,
     currentAssistantId: null,
     currentAssistantContent: '',
+    currentAssistantRaw: '',
     currentAssistantEmitted: false,
     currentReasoningId: null,
     currentReasoningContent: '',
@@ -306,8 +206,10 @@ export async function sendPiIssueChatMessage(
   record.running = true
   record.status = 'running'
   record.error = undefined
+  record.aborted = false
   record.currentAssistantId = randomUUID()
   record.currentAssistantContent = ''
+  record.currentAssistantRaw = ''
   record.currentAssistantEmitted = false
   record.currentReasoningId = null
   record.currentReasoningContent = ''
@@ -317,27 +219,53 @@ export async function sendPiIssueChatMessage(
   try {
     piLog('calling prompt', sessionId, trimmed.slice(0, 60))
     await record.agentSession.prompt(trimmed)
-    piLog(
-      'prompt done emitted=%s content=%s',
-      record.currentAssistantEmitted,
-      record.currentAssistantContent.slice(0, 80)
-    )
-    record.status = 'idle'
-    record.currentAssistantId = null
-    emit({ type: 'status', sessionId, status: 'idle' })
+    finishTurn(record, sessionId, emit, { kind: 'idle' })
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
     piLog('prompt ERROR', message)
-    record.status = 'error'
-    record.error = message
-    record.currentAssistantId = null
-    const errMsg = msg('system', `Error: ${message}`)
-    record.messages.push(errMsg)
-    emit({ type: 'message', sessionId, message: errMsg })
-    emit({ type: 'status', sessionId, status: 'error', error: message })
+    finishTurn(record, sessionId, emit, { kind: 'error', message })
   } finally {
     record.running = false
   }
+}
+
+/** Resolve a turn to idle or error. A user force-stop is a neutral 'Stopped.'
+ *  note, never a red error — the user chose to stop. */
+function finishTurn(
+  record: SessionRecord,
+  sessionId: string,
+  emit: Emitter,
+  outcome: { kind: 'idle' } | { kind: 'error'; message: string }
+): void {
+  record.currentAssistantId = null
+  if (outcome.kind === 'error' && !record.aborted) {
+    record.status = 'error'
+    record.error = outcome.message
+    const errMsg = msg('system', `Error: ${outcome.message}`)
+    record.messages.push(errMsg)
+    emit({ type: 'message', sessionId, message: errMsg })
+    emit({ type: 'status', sessionId, status: 'error', error: outcome.message })
+    return
+  }
+  record.status = 'idle'
+  if (record.aborted) {
+    const stopMsg = msg('system', 'Stopped.')
+    record.messages.push(stopMsg)
+    emit({ type: 'message', sessionId, message: stopMsg })
+  }
+  emit({ type: 'status', sessionId, status: 'idle' })
+}
+
+/** Force-stop the in-flight turn, keeping the session warm for a follow-up. */
+export function abortPiIssueChatTurn(sessionId: string): void {
+  const record = sessions.get(sessionId)
+  if (!record || !record.running) {
+    return
+  }
+  record.aborted = true
+  void Promise.resolve(record.agentSession?.abort?.()).catch(() => {
+    /* abort rejection is handled by send()'s aborted branch */
+  })
 }
 
 export function clearAllPiIssueChatSessionsForTests(): void {
