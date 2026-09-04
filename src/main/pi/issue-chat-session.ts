@@ -12,6 +12,7 @@ import type {
   PiIssueChatStatus
 } from '../../shared/pi-issue-chat-types'
 import { createPiSession, ISSUE_SESSIONS_DIR_DEFAULT, piLog } from './pi-session-factory'
+import { applyThinkingDelta, applyThinkingEnd } from './pi-reasoning-stream'
 
 type Emitter = (event: PiIssueChatEvent) => void
 
@@ -31,6 +32,10 @@ type SessionRecord = {
   currentAssistantId: string | null
   currentAssistantContent: string
   currentAssistantEmitted: boolean
+  /** Streaming reasoning (thinking) state — mirrors the assistant fields. */
+  currentReasoningId: string | null
+  currentReasoningContent: string
+  currentReasoningEmitted: boolean
   /** Path to the active session JSONL file (for history UI). */
   sessionFile: string | undefined
   /** Stored issue context for session reconstruction (new/switch). */
@@ -74,12 +79,19 @@ function attachSdkSubscription(record: SessionRecord): void {
   record.agentSession.subscribe(
     (event: {
       type: string
-      assistantMessageEvent?: { type: string; delta?: string; name?: string }
+      assistantMessageEvent?: { type: string; delta?: string; name?: string; content?: string }
       message?: { role: string; content: { type: string; text?: string }[] }
     }) => {
       const emit = record.currentEmit
-      piLog('sdk-event type=%s emit=%s assistantId=%s', event.type, emit ? 'yes' : 'NO', record.currentAssistantId ?? 'null')
-      if (!emit) { return }
+      piLog(
+        'sdk-event type=%s emit=%s assistantId=%s',
+        event.type,
+        emit ? 'yes' : 'NO',
+        record.currentAssistantId ?? 'null'
+      )
+      if (!emit) {
+        return
+      }
       const { sessionId } = record
 
       // ── streaming: text_delta ───────────────────────────────────────────────
@@ -123,6 +135,19 @@ function attachSdkSubscription(record: SessionRecord): void {
           record.messages.push(toolMessage)
           emit({ type: 'tool', sessionId, toolName: inner.name, messageId: toolMessage.id })
           emit({ type: 'message', sessionId, message: toolMessage })
+        }
+        // ── streaming: thinking (reasoning) ───────────────────────────────────
+        // Why: providers with extended thinking emit thinking_delta before the
+        // visible reply. Surface it as a separate 'reasoning' message so the
+        // chatbox renders a live thinking-aside (spoiler) that grows in
+        // realtime, then collapses once the assistant answer lands.
+        if (inner.type === 'thinking_delta' && typeof inner.delta === 'string') {
+          applyThinkingDelta(record, record.messages, inner.delta, sessionId, emit)
+          return
+        }
+        if (inner.type === 'thinking_end' && typeof inner.content === 'string') {
+          applyThinkingEnd(record, record.messages, inner.content, sessionId, emit)
+          return
         }
         return
       }
@@ -215,6 +240,9 @@ export async function startPiIssueChatSession(
     currentAssistantId: null,
     currentAssistantContent: '',
     currentAssistantEmitted: false,
+    currentReasoningId: null,
+    currentReasoningContent: '',
+    currentReasoningEmitted: false,
     sessionFile,
     issueContext: args.issueContext
   }
@@ -281,6 +309,9 @@ export async function sendPiIssueChatMessage(
   record.currentAssistantId = randomUUID()
   record.currentAssistantContent = ''
   record.currentAssistantEmitted = false
+  record.currentReasoningId = null
+  record.currentReasoningContent = ''
+  record.currentReasoningEmitted = false
   emit({ type: 'status', sessionId, status: 'running' })
 
   try {

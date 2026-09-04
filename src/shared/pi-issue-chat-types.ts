@@ -1,6 +1,6 @@
 /** Wire types for the issue-modal pi chat (in-process AgentSession, not terminal native-chat). */
 
-export type PiIssueChatRole = 'user' | 'assistant' | 'tool' | 'system'
+export type PiIssueChatRole = 'user' | 'assistant' | 'tool' | 'system' | 'reasoning'
 
 export type PiIssueChatMessage = {
   id: string
@@ -70,5 +70,6 @@ export type PiIssueChatEvent =
   | { type: 'snapshot'; session: PiIssueChatSessionSnapshot }
   | { type: 'message'; sessionId: string; message: PiIssueChatMessage }
   | { type: 'assistantDelta'; sessionId: string; messageId: string; delta: string }
+  | { type: 'reasoningDelta'; sessionId: string; messageId: string; delta: string }
   | { type: 'status'; sessionId: string; status: PiIssueChatStatus; error?: string }
   | { type: 'tool'; sessionId: string; toolName: string; messageId: string }
