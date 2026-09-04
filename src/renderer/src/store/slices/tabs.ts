@@ -316,7 +316,8 @@ function isReplaceablePreviewContentType(contentType: Tab['contentType']): boole
     contentType === 'conflict-review' ||
     contentType === 'check-details' ||
     contentType === 'issue-details' ||
-    contentType === 'orchestration-task'
+    contentType === 'orchestration-task' ||
+    contentType === 'source-control'
   )
 }
 
@@ -463,7 +464,8 @@ function deriveActiveSurfaceForWorktree(
       activeUnifiedTab.contentType === 'conflict-review' ||
       activeUnifiedTab.contentType === 'check-details' ||
       activeUnifiedTab.contentType === 'issue-details' ||
-      activeUnifiedTab.contentType === 'orchestration-task'
+      activeUnifiedTab.contentType === 'orchestration-task' ||
+      activeUnifiedTab.contentType === 'source-control'
         ? activeUnifiedTab.entityId
         : fileStillOpen
           ? restoredFileId

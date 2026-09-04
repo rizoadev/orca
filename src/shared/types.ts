@@ -797,6 +797,7 @@ export type TabContentType =
   | 'check-details'
   | 'issue-details'
   | 'orchestration-task'
+  | 'source-control'
   | 'browser'
   | 'simulator'
 

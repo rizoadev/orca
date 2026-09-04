@@ -38,6 +38,8 @@ const OrchestrationTaskDetailHost = lazy(() =>
   }))
 )
 
+const SourceControlPanel = lazy(() => import('@/components/right-sidebar/SourceControl'))
+
 const MonacoEditor = lazy(() => import('./MonacoEditor'))
 const DiffViewer = lazy(() => import('./DiffViewer'))
 const CombinedDiffViewer = lazy(() => import('./CombinedDiffViewer'))
@@ -668,6 +670,24 @@ export function EditorContent({
             layout="embedded"
             onClose={() => closeFile(activeFile.id)}
           />
+        </Suspense>
+      </div>
+    )
+  }
+
+  if (activeFile.mode === 'source-control') {
+    // Why: reuse the right-sidebar Source Control panel as a full main-box tab body; variant='main'
+    // makes it ignore sidebar-only couplings (branch-visibility gate, tab-change selection reset).
+    return (
+      <div className="flex h-full min-h-0 flex-col overflow-hidden">
+        <Suspense
+          fallback={
+            <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
+              Loading source control…
+            </div>
+          }
+        >
+          <SourceControlPanel variant="main" />
         </Suspense>
       </div>
     )

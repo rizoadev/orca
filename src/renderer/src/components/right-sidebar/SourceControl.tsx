@@ -789,7 +789,11 @@ export function clearRemoteActionErrorsForCompletedConflictOperations({
   return next ?? remoteActionErrors
 }
 
-function SourceControlInner(): React.JSX.Element {
+function SourceControlInner({
+  variant = 'sidebar'
+}: {
+  variant?: 'sidebar' | 'main'
+}): React.JSX.Element {
   const sourceControlRef = useRef<HTMLDivElement | null>(null)
   // Why: virtualize against the panel's shared scroller; use state (not a ref) so lists re-render and start observing once the element attaches.
   const [fileListScrollElement, setFileListScrollElement] = useState<HTMLDivElement | null>(null)
@@ -904,6 +908,7 @@ function SourceControlInner(): React.JSX.Element {
   const setGitStatus = useAppStore((s) => s.setGitStatus)
   const updateWorktreeGitIdentity = useAppStore((s) => s.updateWorktreeGitIdentity)
   const beginGitBranchCompareRequest = useAppStore((s) => s.beginGitBranchCompareRequest)
+  const openSourceControlTab = useAppStore((s) => s.openSourceControlTab)
   const setGitBranchCompareResult = useAppStore((s) => s.setGitBranchCompareResult)
   const clearGitBranchCompare = useAppStore((s) => s.clearGitBranchCompare)
   const fetchUpstreamStatus = useAppStore((s) => s.fetchUpstreamStatus)
@@ -1246,8 +1251,9 @@ function SourceControlInner(): React.JSX.Element {
     record: activePullRequestGenerationRecord
   })
   const rightSidebarOpen = useAppStore((s) => s.rightSidebarOpen)
-  // Why: the sidebar stays mounted when closed, so gate polling on tab AND open or branchCompare/PR fetch would run with no visible consumer.
-  const isBranchVisible = rightSidebarTab === 'source-control' && rightSidebarOpen
+  // Why: the sidebar stays mounted when closed, so gate polling on tab AND open or branchCompare/PR fetch would run with no visible consumer. A main-area tab is always a visible consumer, so it drives the fetch regardless of sidebar state.
+  const isBranchVisible =
+    variant === 'main' || (rightSidebarTab === 'source-control' && rightSidebarOpen)
 
   const refreshActiveGitStatus = useCallback(
     async (signal?: AbortSignal): Promise<void> => {
@@ -4472,10 +4478,14 @@ function SourceControlInner(): React.JSX.Element {
     })
   }, [settings, sourceControlViewMode, updateSettings])
 
-  // Clear selection on worktree or tab change
+  // Clear selection on worktree or tab change. A main-area tab isn't tied to
+  // the sidebar tab, so its reset key ignores rightSidebarTab — only a worktree
+  // switch clears it there.
+  const selectionResetKey =
+    variant === 'main' ? activeWorktreeId : `${activeWorktreeId}:${rightSidebarTab}`
   useEffect(() => {
     clearSelection()
-  }, [activeWorktreeId, rightSidebarTab, clearSelection])
+  }, [selectionResetKey, clearSelection])
 
   const flatEntriesByKey = useMemo(
     () => new Map(visibleSelectionEntries.map((entry) => [entry.key, entry])),
@@ -5465,6 +5475,9 @@ function SourceControlInner(): React.JSX.Element {
           filterExpanded={filterExpanded}
           onFilterQueryChange={setFilterQuery}
           onFilterExpandedChange={setFilterExpanded}
+          onOpenInMainArea={
+            variant === 'sidebar' ? () => openSourceControlTab(currentWorktreeId) : undefined
+          }
           visibleCreatePrHeaderAction={visibleCreatePrHeaderAction}
           hostedReview={hostedReview}
           isCreatePrIntentInFlight={isCreatePrIntentInFlight}

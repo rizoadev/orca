@@ -160,7 +160,8 @@ export function isTransientEditorContentType(contentType: TabContentType): boole
     contentType === 'conflict-review' ||
     contentType === 'check-details' ||
     contentType === 'issue-details' ||
-    contentType === 'orchestration-task'
+    contentType === 'orchestration-task' ||
+    contentType === 'source-control'
   )
 }
 

@@ -21,6 +21,7 @@ import {
   getOrchestrationTaskDetailsTabLabel,
   type OpenOrchestrationTaskDetailsState
 } from '@/components/editor/orchestration-task-details-tab'
+import { buildSourceControlTabId } from '@/components/editor/source-control-tab'
 import { openHttpLink, type HttpLinkSourceOwner } from '@/lib/http-link-routing'
 import { getConnectionIdForFileFromState } from '@/lib/connection-owner-resolution'
 import { isLocalPathOpenBlocked, showLocalPathOpenBlockedToast } from '@/lib/local-path-open-guard'
@@ -281,6 +282,7 @@ export type OpenFile = {
     | 'check-details'
     | 'issue-details'
     | 'orchestration-task'
+    | 'source-control'
 }
 
 export type ActivityBarPosition = 'top' | 'side'
@@ -563,6 +565,7 @@ export type EditorSlice = {
     state: Pick<OpenCheckRunDetailsState, 'details' | 'loading' | 'error'>
   ) => void
   openIssueDetails: (worktreeId: string, issueDetails: OpenIssueDetailsState) => void
+  openSourceControlTab: (worktreeId: string) => void
   openOrchestrationTaskDetails: (
     worktreeId: string,
     taskDetails: OpenOrchestrationTaskDetailsState
@@ -732,7 +735,8 @@ function openWorkspaceEditorItem(
     | 'conflict-review'
     | 'check-details'
     | 'issue-details'
-    | 'orchestration-task',
+    | 'orchestration-task'
+    | 'source-control',
   isPreview?: boolean,
   targetGroupId?: string
 ): string {
@@ -766,7 +770,8 @@ function isEditorTabContentType(contentType: Tab['contentType']): boolean {
     contentType === 'conflict-review' ||
     contentType === 'check-details' ||
     contentType === 'issue-details' ||
-    contentType === 'orchestration-task'
+    contentType === 'orchestration-task' ||
+    contentType === 'source-control'
   )
 }
 
@@ -1624,7 +1629,8 @@ export const createEditorSlice: StateCreator<AppState, [], [], EditorSlice> = (s
       | 'conflict-review'
       | 'check-details'
       | 'issue-details'
-      | 'orchestration-task' =
+      | 'orchestration-task'
+      | 'source-control' =
       file.mode === 'conflict-review'
         ? 'conflict-review'
         : file.mode === 'check-details'
@@ -1633,9 +1639,11 @@ export const createEditorSlice: StateCreator<AppState, [], [], EditorSlice> = (s
             ? 'issue-details'
             : file.mode === 'orchestration-task'
               ? 'orchestration-task'
-              : file.mode === 'diff'
-                ? 'diff'
-                : 'editor'
+              : file.mode === 'source-control'
+                ? 'source-control'
+                : file.mode === 'diff'
+                  ? 'diff'
+                  : 'editor'
     let editorItemTargetGroupId = options?.targetGroupId
     set((s) => {
       const worktreeId = file.worktreeId
@@ -3466,9 +3474,7 @@ export const createEditorSlice: StateCreator<AppState, [], [], EditorSlice> = (s
       // Prefer the worktree's existing orchestration-task slot (stable id, or legacy per-task ids).
       const existing =
         s.openFiles.find((f) => f.id === id && f.worktreeId === worktreeId) ??
-        s.openFiles.find(
-          (f) => f.worktreeId === worktreeId && f.mode === 'orchestration-task'
-        )
+        s.openFiles.find((f) => f.worktreeId === worktreeId && f.mode === 'orchestration-task')
       const targetId = existing?.id ?? id
       if (existing) {
         return {
@@ -3513,10 +3519,58 @@ export const createEditorSlice: StateCreator<AppState, [], [], EditorSlice> = (s
     })
     const state = get()
     const activeId =
-      state.openFiles.find(
-        (f) => f.worktreeId === worktreeId && f.mode === 'orchestration-task'
-      )?.id ?? id
+      state.openFiles.find((f) => f.worktreeId === worktreeId && f.mode === 'orchestration-task')
+        ?.id ?? id
     void openWorkspaceEditorItem(get(), activeId, worktreeId, label, 'orchestration-task')
+  },
+
+  // Why: open Source Control as a project main-box tab (workspace stays put; right sidebar remains).
+  // One stable tab id per worktree so re-opening replaces the existing main view instead of stacking tabs.
+  openSourceControlTab: (worktreeId) => {
+    const id = buildSourceControlTabId(worktreeId)
+    const label = 'Source Control'
+    // Why: keep File Explorer / right-sidebar project context on the worktree being viewed.
+    if (get().activeWorktreeId !== worktreeId) {
+      get().setActiveWorktree(worktreeId)
+    }
+    set((s) => {
+      const existing = s.openFiles.find((f) => f.id === id && f.worktreeId === worktreeId)
+      if (existing) {
+        return {
+          openFiles: s.openFiles.map((f) =>
+            f.id === id
+              ? {
+                  ...f,
+                  mode: 'source-control' as const,
+                  relativePath: label,
+                  language: 'plaintext'
+                }
+              : f
+          ),
+          activeFileId: id,
+          activeTabType: 'editor',
+          activeFileIdByWorktree: { ...s.activeFileIdByWorktree, [worktreeId]: id },
+          activeTabTypeByWorktree: { ...s.activeTabTypeByWorktree, [worktreeId]: 'editor' }
+        }
+      }
+      const newFile: OpenFile = {
+        id,
+        filePath: id,
+        relativePath: label,
+        worktreeId,
+        language: 'plaintext',
+        isDirty: false,
+        mode: 'source-control'
+      }
+      return {
+        openFiles: [...s.openFiles, newFile],
+        activeFileId: id,
+        activeTabType: 'editor',
+        activeFileIdByWorktree: { ...s.activeFileIdByWorktree, [worktreeId]: id },
+        activeTabTypeByWorktree: { ...s.activeTabTypeByWorktree, [worktreeId]: 'editor' }
+      }
+    })
+    void openWorkspaceEditorItem(get(), id, worktreeId, label, 'source-control')
   },
 
   // Why: sidebar detail fetches can finish after the full-details tab is open; update the snapshot without stealing focus.
@@ -4873,7 +4927,8 @@ function reconcileOpenFilesForStatus(
       file.mode === 'conflict-review' ||
       file.mode === 'check-details' ||
       file.mode === 'issue-details' ||
-      file.mode === 'orchestration-task'
+      file.mode === 'orchestration-task' ||
+      file.mode === 'source-control'
     ) {
       return [file]
     }

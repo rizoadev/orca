@@ -308,7 +308,8 @@ function EditorPanelInner({
     if (
       activeFile.mode === 'check-details' ||
       activeFile.mode === 'issue-details' ||
-      activeFile.mode === 'orchestration-task'
+      activeFile.mode === 'orchestration-task' ||
+      activeFile.mode === 'source-control'
     ) {
       return
     }

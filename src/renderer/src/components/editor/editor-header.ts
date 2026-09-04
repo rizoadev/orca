@@ -33,6 +33,16 @@ export function getEditorHeaderCopyState(file: OpenFile): EditorHeaderCopyState 
     }
   }
 
+  if (file.mode === 'source-control') {
+    // Why: synthetic main-box tab with no on-disk path; show a fixed title, nothing to copy.
+    return {
+      copyText: null,
+      copyToastLabel: '',
+      pathLabel: 'Source Control',
+      pathTitle: 'Source Control'
+    }
+  }
+
   const isCombinedDiff =
     file.mode === 'diff' &&
     (file.diffSource === 'combined-all' ||

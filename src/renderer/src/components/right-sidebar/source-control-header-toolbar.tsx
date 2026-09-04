@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef } from 'react'
-import { GitPullRequestArrow, Loader2, Search, X } from 'lucide-react'
+import { GitPullRequestArrow, Loader2, Maximize2, Search, X } from 'lucide-react'
 import type {
   GitBranchCompareSummary,
   GitUpstreamStatus,
@@ -41,6 +41,8 @@ type SourceControlHeaderToolbarProps = {
   compareBaseRef: string | null
   upstreamStatus?: GitUpstreamStatus
   manualReviewUrl?: string | null
+  // Why: only the sidebar instance passes this to pop the panel into a main-box tab; the main-tab instance omits it.
+  onOpenInMainArea?: () => void
 }
 
 function HostedReviewToolbarLink({
@@ -145,7 +147,8 @@ export function SourceControlHeaderToolbar({
   branchSummary,
   compareBaseRef,
   upstreamStatus,
-  manualReviewUrl
+  manualReviewUrl,
+  onOpenInMainArea
 }: SourceControlHeaderToolbarProps): React.JSX.Element {
   const filterInputRef = useRef<HTMLInputElement>(null)
   const normalizedFilter = filterQuery.trim()
@@ -214,6 +217,34 @@ export function SourceControlHeaderToolbar({
             {visibleCreatePrHeaderAction && !hostedReview ? (
               // Why: keep filter/overflow pinned right without stretching Create PR.
               <span className="min-w-0 flex-1" aria-hidden="true" />
+            ) : null}
+            {onOpenInMainArea ? (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button
+                    type="button"
+                    data-testid="source-control-open-in-main"
+                    className="relative inline-flex size-7 shrink-0 items-center justify-center rounded-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                    onClick={onOpenInMainArea}
+                    aria-label={translate(
+                      'auto.components.right.sidebar.SourceControl.openInMainArea',
+                      'Open Source Control in main area'
+                    )}
+                    title={translate(
+                      'auto.components.right.sidebar.SourceControl.openInMainArea',
+                      'Open Source Control in main area'
+                    )}
+                  >
+                    <Maximize2 className="size-3.5" />
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent side="bottom">
+                  {translate(
+                    'auto.components.right.sidebar.SourceControl.openInMainArea',
+                    'Open Source Control in main area'
+                  )}
+                </TooltipContent>
+              </Tooltip>
             ) : null}
             <button
               type="button"

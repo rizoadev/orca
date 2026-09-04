@@ -4889,3 +4889,31 @@ describe('read-only editor tabs (AI Vault View Log)', () => {
     expect(store.getState().editorDrafts[LOG_PATH]).toBeUndefined()
   })
 })
+
+describe('createEditorSlice openSourceControlTab', () => {
+  it('opens a stable source-control virtual tab and activates it', () => {
+    const store = createEditorStore()
+    store.getState().openSourceControlTab('wt-1')
+    const state = store.getState()
+    const tab = state.openFiles.find((f) => f.id === 'wt-1::source-control')
+    expect(tab).toMatchObject({
+      mode: 'source-control',
+      relativePath: 'Source Control',
+      worktreeId: 'wt-1',
+      isDirty: false
+    })
+    expect(state.activeFileId).toBe('wt-1::source-control')
+    expect(state.activeTabType).toBe('editor')
+    expect(state.activeFileIdByWorktree['wt-1']).toBe('wt-1::source-control')
+  })
+
+  it('reuses the same tab instead of stacking on repeat', () => {
+    const store = createEditorStore()
+    store.getState().openSourceControlTab('wt-1')
+    const before = store.getState().openFiles.length
+    store.getState().openSourceControlTab('wt-1')
+    const after = store.getState().openFiles
+    expect(after.length).toBe(before)
+    expect(after.filter((f) => f.mode === 'source-control')).toHaveLength(1)
+  })
+})
