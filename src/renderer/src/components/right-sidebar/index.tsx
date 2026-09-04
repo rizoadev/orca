@@ -14,7 +14,8 @@ import {
   FileCode2,
   Timer,
   Youtube,
-  Send
+  Send,
+  Phone
 } from 'lucide-react'
 import { useAppStore } from '@/store'
 import type { ActiveRightSidebarTab } from '@/store/slices/editor'
@@ -194,6 +195,12 @@ function RightSidebarInner(): React.JSX.Element {
         id: 'remote-chat',
         icon: MessageCircle,
         title: translate('auto.components.right.sidebar.index.remoteChat', 'Remote chat'),
+        shortcut: ''
+      },
+      {
+        id: 'voice-call',
+        icon: Phone,
+        title: translate('auto.components.right.sidebar.index.voiceCall', 'Voice call'),
         shortcut: ''
       },
       {

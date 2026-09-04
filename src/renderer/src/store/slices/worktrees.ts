@@ -2040,6 +2040,7 @@ function buildWorktreePurgeState(s: AppState, worktreeIds: string[]): Partial<Ap
         tab === 'ports' ||
         tab === 'hive' ||
         tab === 'remote-chat' ||
+        tab === 'voice-call' ||
         tab === 'todos' ||
         tab === 'snippets' ||
         tab === 'pomodoro' ||

@@ -279,6 +279,11 @@ import type {
   SpeechModelState,
   SpeechTranscriptEvent
 } from '../shared/speech-types'
+import type {
+  VoiceCallEvent,
+  VoiceCallSendArgs,
+  VoiceCallStartArgs
+} from '../shared/voice-call-types'
 import type { TelemetryConsentState } from '../shared/telemetry-consent-types'
 import type { PreflightRuntimeContext, RefreshAgentsResult } from './api-types'
 import type { AgentKind, LaunchSource, RequestKind } from '../shared/telemetry-events'
@@ -5066,6 +5071,26 @@ const api = {
         callback(data)
       ipcRenderer.on('speech:error', listener)
       return () => ipcRenderer.removeListener('speech:error', listener)
+    }
+  },
+
+  voiceCall: {
+    getApiKeyStatus: (): Promise<{ configured: boolean }> =>
+      ipcRenderer.invoke('voiceCall:getApiKeyStatus'),
+    saveApiKey: (apiKey: string): Promise<{ configured: boolean }> =>
+      ipcRenderer.invoke('voiceCall:saveApiKey', apiKey),
+    clearApiKey: (): Promise<{ configured: boolean }> =>
+      ipcRenderer.invoke('voiceCall:clearApiKey'),
+    start: (callId: string, args: VoiceCallStartArgs): Promise<void> =>
+      ipcRenderer.invoke('voiceCall:start', callId, args),
+    send: (callId: string, args: VoiceCallSendArgs): Promise<void> =>
+      ipcRenderer.invoke('voiceCall:send', callId, args),
+    close: (callId: string): Promise<void> => ipcRenderer.invoke('voiceCall:close', callId),
+    onEvent: (callback: (event: VoiceCallEvent) => void): (() => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, data: VoiceCallEvent): void =>
+        callback(data)
+      ipcRenderer.on('voiceCall:event', listener)
+      return () => ipcRenderer.removeListener('voiceCall:event', listener)
     }
   },
 

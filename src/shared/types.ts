@@ -3229,6 +3229,7 @@ export type RightSidebarTab =
   | 'ports'
   | 'hive'
   | 'remote-chat'
+  | 'voice-call'
   | 'todos'
   | 'snippets'
   | 'pomodoro'

@@ -411,6 +411,11 @@ import type {
   SpeechTranscriptEvent
 } from '../shared/speech-types'
 import type {
+  VoiceCallEvent,
+  VoiceCallSendArgs,
+  VoiceCallStartArgs
+} from '../shared/voice-call-types'
+import type {
   WorkspaceSpaceAnalyzeResult,
   WorkspaceSpaceScanProgress
 } from '../shared/workspace-space-types'
@@ -3772,6 +3777,15 @@ export type PreloadApi = {
     onReady: (callback: (data: SpeechLifecycleEvent) => void) => () => void
     onStopped: (callback: (data: SpeechLifecycleEvent) => void) => () => void
     onError: (callback: (data: SpeechErrorEvent) => void) => () => void
+  }
+  voiceCall: {
+    getApiKeyStatus: () => Promise<{ configured: boolean }>
+    saveApiKey: (apiKey: string) => Promise<{ configured: boolean }>
+    clearApiKey: () => Promise<{ configured: boolean }>
+    start: (callId: string, args: VoiceCallStartArgs) => Promise<void>
+    send: (callId: string, args: VoiceCallSendArgs) => Promise<void>
+    close: (callId: string) => Promise<void>
+    onEvent: (callback: (event: VoiceCallEvent) => void) => () => void
   }
   docker: {
     listContainers: (args?: {

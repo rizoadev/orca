@@ -13,6 +13,7 @@ const AiVaultPanel = lazy(() => import('./AiVaultPanel'))
 const FolderWorkspaceWorktreesPanel = lazy(() => import('./FolderWorkspaceWorktreesPanel'))
 const FolderWorkspacePrChecksPanel = lazy(() => import('./FolderWorkspacePrChecksPanel'))
 const RemoteChatPanel = lazy(() => import('./remote-chat-panel'))
+const VoiceCallPanel = lazy(() => import('./VoiceCallPanel'))
 const ProjectTodoPanel = lazy(() => import('./ProjectTodoPanel'))
 const GitLabSnippetsPanel = lazy(() => import('./GitLabSnippetsPanel'))
 const OrchestrationPanel = lazy(() => import('./OrchestrationPanel'))
@@ -84,6 +85,7 @@ export function RightSidebarPanelContent({
         {effectiveTab === 'remote-chat' && (
           <RemoteChatPanel isVisible={rightSidebarOpen && effectiveTab === 'remote-chat'} />
         )}
+        {effectiveTab === 'voice-call' && <VoiceCallPanel />}
         {effectiveTab === 'todos' && (
           <ProjectTodoPanel isVisible={rightSidebarOpen && effectiveTab === 'todos'} />
         )}
