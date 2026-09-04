@@ -10,6 +10,7 @@ import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { IssueStrandsChatHeader } from './issue-strands-chat-header'
 import { IssueStrandsChatMessages, groupMessagesForRender } from './issue-strands-chat-messages'
+import { upsertPiMessage } from './pi-chat-reduce'
 import type {
   PiIssueChatEvent,
   PiIssueChatMessage,
@@ -24,19 +25,6 @@ export type IssueStrandsChatPanelProps = {
   cwd: string
   issueContext: string
   className?: string
-}
-
-function upsertMessage(
-  messages: PiIssueChatMessage[],
-  message: PiIssueChatMessage
-): PiIssueChatMessage[] {
-  const idx = messages.findIndex((m) => m.id === message.id)
-  if (idx >= 0) {
-    const next = [...messages]
-    next[idx] = message
-    return next
-  }
-  return [...messages, message]
 }
 
 export function IssueStrandsChatPanel({
@@ -144,7 +132,7 @@ export function IssueStrandsChatPanel({
         return
       }
       if (event.type === 'message') {
-        setMessages((c) => upsertMessage(c, event.message))
+        setMessages((c) => upsertPiMessage(c, event.message))
         return
       }
       if (event.type === 'assistantDelta') {

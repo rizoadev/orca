@@ -19,6 +19,18 @@ export function upsertPiMessage(
     next[idx] = message
     return next
   }
+  // A new reasoning aside must read above the assistant reply it precedes. The
+  // backend splices it there, but events reach the panel in emit order — so if
+  // the model streamed answer text before its thinking, insert reasoning just
+  // before the trailing assistant instead of appending it below.
+  if (message.role === 'reasoning') {
+    const lastAssistant = list.findLastIndex((m) => m.role === 'assistant')
+    if (lastAssistant >= 0) {
+      const next = [...list]
+      next.splice(lastAssistant, 0, message)
+      return next
+    }
+  }
   return [...list, message]
 }
 

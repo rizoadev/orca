@@ -6,6 +6,10 @@
     "../src/main/**/*",
     "../src/preload/**/*",
     "../src/shared/**/*",
+    // Why: pi-reasoning-order.test.ts asserts the reasoning/assistant ordering
+    // invariant holds identically in the main emitter and the panel reducer.
+    // pi-chat-reduce.ts is pure logic over shared types, so it typechecks here.
+    "../src/renderer/src/components/right-sidebar/pi-chat-reduce.ts",
     "../src/relay/**/*",
     "../src/types/**/*"
   ],

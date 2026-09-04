@@ -38,8 +38,14 @@ function toolMsg(name: string): PiIssueChatMessage {
 function handleSdkEvent(target: SdkEventTarget, event: SdkEvent): void {
   const emit = target.currentEmit
   piLog(
-    'sdk-event type=%s emit=%s assistantId=%s',
+    'sdk-event type=%s inner=%s deltaLen=%s emit=%s assistantId=%s',
     event.type,
+    event.assistantMessageEvent?.type ?? '-',
+    String(
+      event.assistantMessageEvent?.delta?.length ??
+        event.assistantMessageEvent?.content?.length ??
+        0
+    ),
     emit ? 'yes' : 'NO',
     target.currentAssistantId ?? 'null'
   )
