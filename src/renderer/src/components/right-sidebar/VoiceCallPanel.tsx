@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Mic, MicOff, Phone, Send, TerminalSquare, Volume2, KeyRound } from 'lucide-react'
+import { Mic, MicOff, Phone, Send, Square, KeyRound } from 'lucide-react'
 import { Button } from '../ui/button'
 import { Input } from '../ui/input'
 import { Tooltip, TooltipContent, TooltipTrigger } from '../ui/tooltip'
 import { VoiceCallTranscript, type VoiceCallLogEntry } from './voice-call-transcript'
+import { VoiceCallControls } from './voice-call-controls'
 import { reducePiEvent } from './pi-chat-reduce'
 import { useAudioPlayback } from '../../hooks/use-audio-playback'
 import { useVoiceMic } from '../../hooks/use-voice-mic'
@@ -22,20 +23,6 @@ const STATUS_LABEL: Record<VoiceCallStatus, string> = {
   working: 'Pi SDK mengerjakan…',
   error: 'Error'
 }
-
-// Gemini Live prebuilt voices; Leda is the house default (matches the harness).
-const VOICE_OPTIONS = [
-  'Leda',
-  'Aoede',
-  'Puck',
-  'Charon',
-  'Kore',
-  'Fenrir',
-  'Orus',
-  'Enceladus',
-  'Iapetus',
-  'Umbriel'
-]
 
 let entrySeq = 0
 function nextId(): string {
@@ -71,6 +58,11 @@ export function VoiceCallPanel(): React.JSX.Element {
 
   const { enqueue, stop: stopPlayback } = useAudioPlayback(rate)
   const scrollRef = useRef<HTMLDivElement | null>(null)
+  // After Stop, Gemini may still stream tail audio for the cancelled turn; drop
+  // it until the next user utterance begins a fresh turn.
+  const droppedRef = useRef(false)
+
+  const isBusy = status === 'thinking' || status === 'working' || status === 'speaking'
 
   const appendEntry = useCallback((entry: VoiceCallLogEntry) => {
     setLog((prev) => [...prev, entry])
@@ -81,6 +73,9 @@ export function VoiceCallPanel(): React.JSX.Element {
     const off = window.api.voiceCall.onEvent((event: VoiceCallEvent) => {
       switch (event.type) {
         case 'status':
+          if (event.status === 'thinking' || event.status === 'working') {
+            droppedRef.current = false
+          }
           setStatus(event.status)
           if (event.status === 'working') {
             setLog((prev) => [
@@ -90,9 +85,25 @@ export function VoiceCallPanel(): React.JSX.Element {
           }
           break
         case 'userTranscript':
-          appendEntry({ id: nextId(), role: 'user', text: event.text, streaming: false })
+          droppedRef.current = false
+          // Live caption: each event is a new spoken segment, so grow the
+          // trailing user bubble instead of stacking one per segment.
+          setLog((prev) => {
+            const last = prev.at(-1)
+            if (last && last.role === 'user' && last.streaming) {
+              const merged = {
+                ...last,
+                text: `${last.text} ${event.text}`.replace(/\s+/g, ' ').trim()
+              }
+              return [...prev.slice(0, -1), merged]
+            }
+            return [...prev, { id: nextId(), role: 'user', text: event.text, streaming: true }]
+          })
           break
         case 'geminiTranscript':
+          if (droppedRef.current) {
+            break
+          }
           setLog((prev) => {
             const last = prev.at(-1)
             if (last && last.role === 'gemini' && last.streaming) {
@@ -106,6 +117,9 @@ export function VoiceCallPanel(): React.JSX.Element {
           })
           break
         case 'audioChunk':
+          if (droppedRef.current) {
+            break
+          }
           enqueue(event.data, event.sampleRate)
           setStatus('speaking')
           break
@@ -186,6 +200,19 @@ export function VoiceCallPanel(): React.JSX.Element {
     }
   }, [])
 
+  // Keep the hands-free session's mode/context in sync so a mic-driven turn
+  // (finalized on silence) knows chat-vs-coding and which workspace/model.
+  useEffect(() => {
+    if (!keyConfigured) {
+      return
+    }
+    void window.api.voiceCall.setContext(callIdRef.current, {
+      coding: codingMode,
+      ...(cwd ? { cwd } : {}),
+      ...(piModel ? { piModelRef: piModel } : {})
+    })
+  }, [keyConfigured, codingMode, cwd, piModel])
+
   const send = useCallback(
     (text: string) => {
       const trimmed = text.trim()
@@ -204,19 +231,22 @@ export function VoiceCallPanel(): React.JSX.Element {
     [activeWorktreeId, codingMode, cwd, piModel]
   )
 
-  // ── mic → STT → send (push-to-talk) ───────────────────────────────────────
-  const mic = useVoiceMic({
-    sessionId: 'voice-call',
-    onFinal: (text) => {
-      send(text)
-    }
-  })
+  // ── hands-free mic → Gemini audio → auto-send on silence ──────────────────
+  const mic = useVoiceMic({ callId: callIdRef.current })
   const toggleMic = useCallback(() => {
     if (!mic.listening) {
-      stopPlayback()
+      stopPlayback() // don't let Gemini's own audio bleed into the open mic
     }
     mic.toggle()
   }, [mic, stopPlayback])
+
+  // Force-stop the current/pending turn: abort the Pi coding task, cancel any
+  // queued mic dispatch, and drop Gemini's in-flight audio.
+  const stopVoice = useCallback(() => {
+    droppedRef.current = true
+    stopPlayback()
+    void window.api.voiceCall.stop(callIdRef.current)
+  }, [stopPlayback])
 
   const saveKey = useCallback(() => {
     const trimmed = keyInput.trim()
@@ -271,62 +301,17 @@ export function VoiceCallPanel(): React.JSX.Element {
             {STATUS_LABEL[status]}
           </span>
         </div>
-        <div className="flex items-center gap-1">
-          <select
-            value={voice}
-            onChange={(e) => setVoice(e.target.value)}
-            aria-label="Gemini voice"
-            className="h-6 rounded border border-border bg-transparent px-1 text-[10px] text-muted-foreground focus:outline-none"
-          >
-            {VOICE_OPTIONS.map((v) => (
-              <option key={v} value={v}>
-                {v}
-              </option>
-            ))}
-          </select>
-          <select
-            value={piModel}
-            onChange={(e) => setPiModel(e.target.value)}
-            aria-label="Pi SDK model"
-            title="Model Pi SDK untuk coding task"
-            className="h-6 max-w-[8rem] truncate rounded border border-border bg-transparent px-1 text-[10px] text-muted-foreground focus:outline-none"
-          >
-            <option value="">Pi: default</option>
-            {piModels.map((m) => (
-              <option key={m.ref} value={m.ref}>
-                {m.name}
-              </option>
-            ))}
-          </select>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                size="icon"
-                variant={codingMode ? 'default' : 'ghost'}
-                className="h-6 w-6"
-                onClick={() => setCodingMode((v) => !v)}
-              >
-                <TerminalSquare className="h-3.5 w-3.5" />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent side="bottom">
-              {codingMode ? 'Coding mode: ON (Pi SDK)' : 'Coding mode: OFF (chat saja)'}
-            </TooltipContent>
-          </Tooltip>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                size="icon"
-                variant="ghost"
-                className="h-6 w-6"
-                onClick={() => setRate((r) => (r >= 1.5 ? 1 : +(r + 0.1).toFixed(1)))}
-              >
-                <Volume2 className="h-3.5 w-3.5" />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent side="bottom">Kecepatan bicara: {rate.toFixed(1)}×</TooltipContent>
-          </Tooltip>
-        </div>
+        <VoiceCallControls
+          voice={voice}
+          onVoice={setVoice}
+          piModel={piModel}
+          onPiModel={setPiModel}
+          piModels={piModels}
+          codingMode={codingMode}
+          onCodingMode={() => setCodingMode((v) => !v)}
+          rate={rate}
+          onRate={() => setRate((r) => (r >= 1.5 ? 1 : +(r + 0.1).toFixed(1)))}
+        />
       </div>
 
       {/* transcript */}
@@ -342,8 +327,16 @@ export function VoiceCallPanel(): React.JSX.Element {
             </button>
           </div>
         ) : mic.listening ? (
-          <div className="mb-1.5 truncate px-1 text-[10px] text-muted-foreground">
-            {mic.partial ? `“${mic.partial}”` : 'Mendengar…'}
+          <div className="mb-1.5 flex items-center gap-2 px-1">
+            <div className="h-1 flex-1 overflow-hidden rounded-full bg-muted">
+              <div
+                className="h-full rounded-full bg-primary transition-[width] duration-75"
+                style={{ width: `${Math.round(mic.level * 100)}%` }}
+              />
+            </div>
+            <span className="shrink-0 text-[10px] text-muted-foreground">
+              Mendengar… berhenti bicara utk kirim
+            </span>
           </div>
         ) : null}
         <div className="flex items-center gap-2">
@@ -358,8 +351,25 @@ export function VoiceCallPanel(): React.JSX.Element {
                 {mic.listening ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
               </Button>
             </TooltipTrigger>
-            <TooltipContent side="top">{mic.listening ? 'Stop & kirim' : 'Bicara'}</TooltipContent>
+            <TooltipContent side="top">
+              {mic.listening ? 'Matikan mic' : 'Mic on — hands-free, auto-kirim saat diam'}
+            </TooltipContent>
           </Tooltip>
+          {isBusy ? (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  size="icon"
+                  variant="destructive"
+                  className="h-8 w-8 shrink-0"
+                  onClick={stopVoice}
+                >
+                  <Square className="h-4 w-4" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="top">Stop — hentikan Pi / Gemini</TooltipContent>
+            </Tooltip>
+          ) : null}
           <Input
             value={input}
             onChange={(e) => setInput(e.target.value)}

@@ -5,7 +5,16 @@ import type {
   VoiceCallStartArgs
 } from '../../shared/voice-call-types'
 import { clearGeminiApiKey, hasGeminiApiKey, saveGeminiApiKey } from '../voice/gemini-api-key-store'
-import { closeVoiceCall, sendVoiceCall, startVoiceCall } from '../voice/voice-call-session'
+import {
+  closeVoiceCall,
+  sendVoiceCall,
+  startVoiceCall,
+  voiceCallSendAudioChunk,
+  voiceCallSendAudioStreamEnd,
+  voiceCallSetContext,
+  voiceCallStop
+} from '../voice/voice-call-session'
+import type { VoiceCallContext } from '../../shared/voice-call-types'
 
 function emitToSender(sender: WebContents, event: VoiceCallEvent): void {
   if (sender.isDestroyed()) {
@@ -44,6 +53,32 @@ export function registerVoiceCallHandlers(): void {
   ipcMain.handle('voiceCall:close', (_event, callId: string) => {
     if (typeof callId === 'string' && callId) {
       closeVoiceCall(callId)
+    }
+  })
+
+  ipcMain.handle('voiceCall:stop', (_event, callId: string) => {
+    if (typeof callId === 'string' && callId) {
+      voiceCallStop(callId)
+    }
+  })
+
+  ipcMain.handle('voiceCall:setContext', (_event, callId: string, ctx: VoiceCallContext) => {
+    if (typeof callId === 'string' && callId) {
+      voiceCallSetContext(callId, ctx)
+    }
+  })
+
+  // High-frequency, fire-and-forget: use `on` (not `handle`) so the renderer
+  // never awaits a promise per ~500 ms audio frame.
+  ipcMain.on('voiceCall:audioChunk', (_event, callId: string, base64: string) => {
+    if (typeof callId === 'string' && callId && typeof base64 === 'string') {
+      voiceCallSendAudioChunk(callId, base64)
+    }
+  })
+
+  ipcMain.on('voiceCall:audioStreamEnd', (_event, callId: string) => {
+    if (typeof callId === 'string' && callId) {
+      voiceCallSendAudioStreamEnd(callId)
     }
   })
 }

@@ -413,7 +413,8 @@ import type {
 import type {
   VoiceCallEvent,
   VoiceCallSendArgs,
-  VoiceCallStartArgs
+  VoiceCallStartArgs,
+  VoiceCallContext
 } from '../shared/voice-call-types'
 import type {
   WorkspaceSpaceAnalyzeResult,
@@ -3785,6 +3786,10 @@ export type PreloadApi = {
     start: (callId: string, args: VoiceCallStartArgs) => Promise<void>
     send: (callId: string, args: VoiceCallSendArgs) => Promise<void>
     close: (callId: string) => Promise<void>
+    stop: (callId: string) => Promise<void>
+    setContext: (callId: string, ctx: VoiceCallContext) => Promise<void>
+    sendAudioChunk: (callId: string, base64: string) => void
+    sendAudioStreamEnd: (callId: string) => void
     onEvent: (callback: (event: VoiceCallEvent) => void) => () => void
   }
   docker: {

@@ -282,7 +282,8 @@ import type {
 import type {
   VoiceCallEvent,
   VoiceCallSendArgs,
-  VoiceCallStartArgs
+  VoiceCallStartArgs,
+  VoiceCallContext
 } from '../shared/voice-call-types'
 import type { TelemetryConsentState } from '../shared/telemetry-consent-types'
 import type { PreflightRuntimeContext, RefreshAgentsResult } from './api-types'
@@ -5086,6 +5087,14 @@ const api = {
     send: (callId: string, args: VoiceCallSendArgs): Promise<void> =>
       ipcRenderer.invoke('voiceCall:send', callId, args),
     close: (callId: string): Promise<void> => ipcRenderer.invoke('voiceCall:close', callId),
+    stop: (callId: string): Promise<void> => ipcRenderer.invoke('voiceCall:stop', callId),
+    setContext: (callId: string, ctx: VoiceCallContext): Promise<void> =>
+      ipcRenderer.invoke('voiceCall:setContext', callId, ctx),
+    // Fire-and-forget audio frames from the mic worklet — no invoke round-trip.
+    sendAudioChunk: (callId: string, base64: string): void =>
+      ipcRenderer.send('voiceCall:audioChunk', callId, base64),
+    sendAudioStreamEnd: (callId: string): void =>
+      ipcRenderer.send('voiceCall:audioStreamEnd', callId),
     onEvent: (callback: (event: VoiceCallEvent) => void): (() => void) => {
       const listener = (_event: Electron.IpcRendererEvent, data: VoiceCallEvent): void =>
         callback(data)

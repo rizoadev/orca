@@ -14,6 +14,8 @@ const WS_URL =
 export type GeminiLiveHandlers = {
   onReady?: () => void
   onTranscript?: (text: string, final: boolean) => void
+  /** Transcription of the user's spoken audio (input side), for turn capture. */
+  onUserTranscript?: (text: string) => void
   /** base64 PCM16 mono audio chunk + its sample rate (Gemini returns 24 kHz). */
   onAudio?: (dataBase64: string, sampleRate: number) => void
   onTurnComplete?: () => void
@@ -84,6 +86,7 @@ export class GeminiLiveClient {
       }
       const content = message.serverContent as
         | {
+            inputTranscription?: { text?: string }
             outputTranscription?: { text?: string }
             modelTurn?: { parts?: { inlineData?: { mimeType?: string; data?: string } }[] }
             turnComplete?: boolean
@@ -91,6 +94,10 @@ export class GeminiLiveClient {
         | undefined
       if (!content) {
         return
+      }
+      const inText = content.inputTranscription?.text
+      if (inText) {
+        this.handlers.onUserTranscript?.(inText)
       }
       const outText = content.outputTranscription?.text
       if (outText) {
@@ -121,6 +128,28 @@ export class GeminiLiveClient {
       return false
     }
     this.socket.send(JSON.stringify({ realtimeInput: { text } }))
+    return true
+  }
+
+  /** Stream a base64 PCM16 mono 16 kHz mic chunk for transcription + VAD. */
+  sendAudioChunk(base64Pcm16k: string): boolean {
+    if (!this.socket || this.socket.readyState !== WebSocket.OPEN || !this.ready) {
+      return false
+    }
+    this.socket.send(
+      JSON.stringify({
+        realtimeInput: { audio: { data: base64Pcm16k, mimeType: 'audio/pcm;rate=16000' } }
+      })
+    )
+    return true
+  }
+
+  /** Signal the end of the current mic utterance so Gemini finalizes it. */
+  sendAudioStreamEnd(): boolean {
+    if (!this.socket || this.socket.readyState !== WebSocket.OPEN || !this.ready) {
+      return false
+    }
+    this.socket.send(JSON.stringify({ realtimeInput: { audioStreamEnd: true } }))
     return true
   }
 

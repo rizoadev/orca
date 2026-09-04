@@ -20,11 +20,13 @@ import { GeminiLiveClient } from './gemini-live-client'
 import { readGeminiApiKey } from './gemini-api-key-store'
 import { piLog } from '../pi/pi-session-factory'
 import {
+  abortPiIssueChatTurn,
   getPiIssueChatSession,
   sendPiIssueChatMessage,
   startPiIssueChatSession,
   stopPiIssueChatSession
 } from '../pi/issue-chat-session'
+import { ackPrompt, reportPrompt } from './voice-call-prompts'
 
 type Emit = (event: VoiceCallEvent) => void
 
@@ -36,33 +38,23 @@ type VoiceSession = {
   piSessionId: string
   piModelRefUsed: string
   closed: boolean
+  // Hands-free audio-input state: the panel sets the mode/context; the mic
+  // worklet streams PCM chunks and a streamEnd finalizes the utterance into a
+  // turn once Gemini's input transcription settles.
+  coding: boolean
+  cwd: string
+  piModelRef: string
+  transcriptParts: string[]
+  settleTimer: ReturnType<typeof setTimeout> | null
+  // True while Gemini/Pi is producing a reply. Mic chunks are dropped during a
+  // turn so the always-open mic never re-captures Gemini's own voice and loops.
+  busy: boolean
+  // Bumped on every new turn and on stop; an in-flight runTurn bails once its
+  // captured token no longer matches, so Stop / a newer utterance can cancel it.
+  turnToken: number
 }
 
 const sessions = new Map<string, VoiceSession>()
-
-// Why: a fixed instruction yields a canned-sounding acknowledgement. Feeding
-// the real task + asking for variety lets Gemini Live produce a natural, varied
-// ack each time instead of the same "Baik, aku akan cek…" every turn.
-function ackPrompt(task: string): string {
-  return (
-    '[CODING_ACK] User baru saja menugaskan coding task ini: ' +
-    `"${task.slice(0, 400)}".\n` +
-    'Ucapkan acknowledgement singkat (1 kalimat, Bahasa Indonesia lisan) bahwa kamu ' +
-    'akan langsung mengerjakannya. Variasikan gaya bahasamu setiap kali — natural, ' +
-    'hangat, jangan kaku, dan jangan mengulang kalimat yang sama persis dengan ' +
-    'sebelumnya. Boleh singgung sekilas apa yang akan kamu kerjakan. Jangan mengklaim ' +
-    'sudah selesai dan jangan menyebut tool internal.'
-  )
-}
-
-function reportPrompt(task: string, report: string): string {
-  return (
-    '[PI_CODING_REPORT]\n' +
-    `Task user: ${task}\n` +
-    `Report Pi SDK: ${report.slice(0, 14000)}\n` +
-    'Laporkan hasilnya dalam Bahasa Indonesia secara singkat berdasarkan report ini.'
-  )
-}
 
 /** Resolve the next Gemini turnComplete (or immediately if already closed). */
 function waitForTurn(session: VoiceSession): Promise<void> {
@@ -97,6 +89,13 @@ export function startVoiceCall(callId: string, args: VoiceCallStartArgs, emit: E
     piSessionId: `voice:${callId}`,
     piModelRefUsed: '',
     closed: false,
+    coding: false,
+    cwd: '',
+    piModelRef: '',
+    transcriptParts: [],
+    settleTimer: null,
+    busy: false,
+    turnToken: 0,
     // placeholder; replaced below once handlers can reference the session
     client: null as unknown as GeminiLiveClient
   }
@@ -111,6 +110,12 @@ export function startVoiceCall(callId: string, args: VoiceCallStartArgs, emit: E
         }
       },
       onAudio: (data, sampleRate) => emit({ type: 'audioChunk', data, sampleRate }),
+      onUserTranscript: (text) => {
+        // Each input-transcription event is a new spoken segment; accumulate for
+        // dispatch and surface it live as a caption.
+        session.transcriptParts.push(text)
+        emit({ type: 'userTranscript', text })
+      },
       onTurnComplete: () => {
         emit({ type: 'turnComplete' })
         flushTurnWaiters(session)
@@ -120,6 +125,8 @@ export function startVoiceCall(callId: string, args: VoiceCallStartArgs, emit: E
       },
       onError: (error) => {
         piLog('voice gemini error', error.message)
+        session.busy = false
+        flushTurnWaiters(session)
         emit({ type: 'status', status: 'error', error: error.message })
       }
     }
@@ -127,6 +134,61 @@ export function startVoiceCall(callId: string, args: VoiceCallStartArgs, emit: E
   sessions.set(callId, session)
   emit({ type: 'status', status: 'connecting' })
   session.client.connect()
+}
+
+/** Run one conversational turn from resolved text. Shared by the typed path
+ *  and the hands-free mic path (which dispatches the transcribed utterance). */
+async function runTurn(
+  session: VoiceSession,
+  text: string,
+  opts: { coding: boolean; cwd?: string; piModelRef?: string }
+): Promise<void> {
+  // A new turn supersedes any in-flight one; Stop bumps the token too. Each
+  // await below is followed by a staleness check so an aborted turn stops
+  // cleanly instead of marching on to the next stage.
+  const myToken = ++session.turnToken
+  const stale = (): boolean => session.closed || session.turnToken !== myToken
+  session.busy = true
+
+  if (!opts.coding) {
+    session.emit({ type: 'status', status: 'thinking' })
+    if (!session.client.sendText(text)) {
+      session.busy = false
+      session.emit({
+        type: 'status',
+        status: 'error',
+        error: 'Gemini Live not ready. Reopen the tab.'
+      })
+      return
+    }
+    await waitForTurn(session)
+    if (!stale()) {
+      session.busy = false
+    }
+    return
+  }
+
+  // ── coding flow: ack → Pi task → spoken report ────────────────────────────
+  session.emit({ type: 'status', status: 'thinking' })
+  session.client.sendText(ackPrompt(text))
+  await waitForTurn(session)
+  if (stale()) {
+    return
+  }
+
+  session.emit({ type: 'status', status: 'working' })
+  const report = await runPiCodingTask(session, text, opts)
+  if (stale()) {
+    return
+  }
+  session.emit({ type: 'report', text: report })
+
+  session.emit({ type: 'status', status: 'thinking' })
+  session.client.sendText(reportPrompt(text, report))
+  await waitForTurn(session)
+  if (!stale()) {
+    session.busy = false
+  }
 }
 
 export async function sendVoiceCall(callId: string, args: VoiceCallSendArgs): Promise<void> {
@@ -139,42 +201,94 @@ export async function sendVoiceCall(callId: string, args: VoiceCallSendArgs): Pr
     return
   }
   session.emit({ type: 'userTranscript', text })
+  await runTurn(session, text, {
+    coding: !!args.coding,
+    cwd: args.cwd,
+    piModelRef: args.piModelRef
+  })
+}
 
-  if (!args.coding) {
-    session.emit({ type: 'status', status: 'thinking' })
-    if (!session.client.sendText(text)) {
-      session.emit({
-        type: 'status',
-        status: 'error',
-        error: 'Gemini Live not ready. Reopen the tab.'
-      })
+/** Force-stop the current/pending turn: cancel a queued dispatch, abort any
+ *  running Pi coding task (the warm session stays alive), release the awaiting
+ *  turn, and return to listening. Gemini's in-flight audio is dropped client-
+ *  side by the panel. */
+export function voiceCallStop(callId: string): void {
+  const session = sessions.get(callId)
+  if (!session || session.closed) {
+    return
+  }
+  session.turnToken += 1
+  if (session.settleTimer) {
+    clearTimeout(session.settleTimer)
+    session.settleTimer = null
+  }
+  session.transcriptParts = []
+  session.busy = false
+  try {
+    abortPiIssueChatTurn(session.piSessionId)
+  } catch {
+    /* ignore */
+  }
+  flushTurnWaiters(session)
+  session.emit({ type: 'status', status: 'listening' })
+}
+
+/** Set the hands-free mode + context so a mic-driven turn knows whether to
+ *  just chat or run a Pi coding task, and against which workspace/model. */
+export function voiceCallSetContext(
+  callId: string,
+  ctx: { coding: boolean; cwd?: string; piModelRef?: string }
+): void {
+  const session = sessions.get(callId)
+  if (!session) {
+    return
+  }
+  session.coding = ctx.coding
+  session.cwd = ctx.cwd?.trim() ?? ''
+  session.piModelRef = ctx.piModelRef?.trim() ?? ''
+}
+
+/** Forward one base64 PCM16 mono 16 kHz mic chunk from the worklet to Gemini. */
+export function voiceCallSendAudioChunk(callId: string, base64: string): void {
+  const session = sessions.get(callId)
+  if (!session || session.closed || session.busy) {
+    return
+  }
+  session.client.sendAudioChunk(base64)
+}
+
+/** End the current utterance; after Gemini's transcription settles, dispatch
+ *  the accumulated words as a turn (chat or coding per the stored context). */
+export function voiceCallSendAudioStreamEnd(callId: string): void {
+  const session = sessions.get(callId)
+  if (!session || session.closed || session.busy) {
+    return
+  }
+  session.client.sendAudioStreamEnd()
+  if (session.settleTimer) {
+    clearTimeout(session.settleTimer)
+  }
+  session.settleTimer = setTimeout(() => {
+    session.settleTimer = null
+    const text = session.transcriptParts.join(' ').replace(/\s+/g, ' ').trim()
+    session.transcriptParts = []
+    if (text.length < 3) {
+      return
     }
-    return
-  }
-
-  // ── coding flow: ack → Pi task → spoken report ────────────────────────────
-  session.emit({ type: 'status', status: 'thinking' })
-  session.client.sendText(ackPrompt(text))
-  await waitForTurn(session)
-
-  session.emit({ type: 'status', status: 'working' })
-  const report = await runPiCodingTask(session, text, args)
-  if (session.closed) {
-    return
-  }
-  session.emit({ type: 'report', text: report })
-
-  session.emit({ type: 'status', status: 'thinking' })
-  session.client.sendText(reportPrompt(text, report))
-  await waitForTurn(session)
+    void runTurn(session, text, {
+      coding: session.coding,
+      cwd: session.cwd,
+      piModelRef: session.piModelRef
+    })
+  }, 900)
 }
 
 async function runPiCodingTask(
   session: VoiceSession,
   task: string,
-  args: VoiceCallSendArgs
+  opts: { cwd?: string; piModelRef?: string }
 ): Promise<string> {
-  const cwd = args.cwd?.trim()
+  const cwd = opts.cwd?.trim()
   if (!cwd) {
     return 'Tidak ada workspace aktif untuk menjalankan coding task.'
   }
@@ -187,7 +301,7 @@ async function runPiCodingTask(
     // A warm Pi session bakes its model at creation, so switching the selected
     // model means tearing down and recreating it; otherwise reuse it so tool /
     // reasoning events keep streaming to this panel across turns.
-    const desiredRef = args.piModelRef?.trim() ?? ''
+    const desiredRef = opts.piModelRef?.trim() ?? ''
     if (getPiIssueChatSession(session.piSessionId) && desiredRef !== session.piModelRefUsed) {
       stopPiIssueChatSession(session.piSessionId)
     }
@@ -220,6 +334,10 @@ export function closeVoiceCall(callId: string): void {
     return
   }
   session.closed = true
+  if (session.settleTimer) {
+    clearTimeout(session.settleTimer)
+    session.settleTimer = null
+  }
   session.client.close()
   flushTurnWaiters(session)
   sessions.delete(callId)

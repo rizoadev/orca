@@ -32,6 +32,14 @@ export type VoiceCallStartArgs = {
   voice?: string
 }
 
+/** Hands-free mode + context the mic path uses to dispatch a transcribed
+ *  utterance as chat or a Pi coding turn. */
+export type VoiceCallContext = {
+  coding: boolean
+  cwd?: string
+  piModelRef?: string
+}
+
 /** A Pi SDK progress event surfaced inside the voice panel while coding. */
 export type VoiceCallEvent =
   | { type: 'status'; status: VoiceCallStatus; error?: string }

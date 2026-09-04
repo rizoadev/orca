@@ -1,141 +1,111 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { useAudioCapture } from './use-audio-capture'
-import { useAppStore } from '../store'
+import micWorkletUrl from '../voice/mic-worklet.mjs?url'
 
 /**
- * Push-to-talk microphone → local STT for the voice-call panel.
+ * Hands-free microphone for the voice-call panel: always-listening capture that
+ * streams 16 kHz PCM chunks straight to Gemini Live and lets the worklet's
+ * energy VAD decide when an utterance ends (silence => auto-send). No local STT
+ * and no push-to-talk — Gemini transcribes the audio and the session dispatches
+ * the finalized utterance as a turn.
  *
- * Why buffered capture: the STT worker takes seconds to spin up, so we record
- * into a local buffer first and flush it once dictation is live — otherwise the
- * first words are dropped. On stop we wait for the final transcript (the worker
- * only emits it after stopDictation flushes) and fall back to the last partial
- * if it never arrives, so a turn is never silently lost.
+ * The worklet is the tuned capture/VAD core ported from the gemini-live harness:
+ * it resamples to 16 kHz, gates on energy, and posts `audio` / `streamEnd`.
  */
-export function useVoiceMic({
-  sessionId,
-  onFinal
-}: {
-  sessionId: string
-  onFinal: (text: string) => void
-}) {
-  const sttModel = useAppStore((s) => s.settings?.voice?.sttModel)
-  const voiceEnabled = useAppStore((s) => s.settings?.voice?.enabled)
-  const { start: startCapture, stop: stopCapture, flushBufferedAudio } = useAudioCapture()
-
+export function useVoiceMic({ callId }: { callId: string | null }) {
   const [listening, setListening] = useState(false)
-  const [partial, setPartial] = useState('')
+  const [level, setLevel] = useState(0)
   const [error, setError] = useState<string | null>(null)
 
+  const ctxRef = useRef<AudioContext | null>(null)
+  const streamRef = useRef<MediaStream | null>(null)
+  const nodeRef = useRef<AudioWorkletNode | null>(null)
   const listeningRef = useRef(false)
-  const lastTextRef = useRef('')
-  const resolveFinalRef = useRef<((text: string) => void) | null>(null)
-  const cleanupsRef = useRef<(() => void)[]>([])
 
-  const teardownListeners = useCallback(() => {
-    for (const off of cleanupsRef.current) {
-      off()
-    }
-    cleanupsRef.current = []
-  }, [])
-
-  const stop = useCallback(async () => {
-    if (!listeningRef.current) {
-      return
-    }
+  const stop = useCallback((): void => {
     listeningRef.current = false
     setListening(false)
-    stopCapture()
-    const finalPromise = new Promise<string>((resolve) => {
-      resolveFinalRef.current = resolve
-    })
-    await window.api.speech.stopDictation(sessionId).catch(() => undefined)
-    // Give the worker a beat to emit the final transcript after the flush.
-    const text = await Promise.race([
-      finalPromise,
-      new Promise<string>((resolve) => setTimeout(() => resolve(''), 1500))
-    ])
-    resolveFinalRef.current = null
-    teardownListeners()
-    const utterance = (text || lastTextRef.current).trim()
-    setPartial('')
-    lastTextRef.current = ''
-    if (utterance) {
-      onFinal(utterance)
-    } else {
-      setError('Tidak ada suara terdeteksi.')
+    setLevel(0)
+    try {
+      nodeRef.current?.port.close()
+    } catch {
+      /* ignore */
     }
-  }, [onFinal, sessionId, stopCapture, teardownListeners])
+    try {
+      nodeRef.current?.disconnect()
+    } catch {
+      /* ignore */
+    }
+    nodeRef.current = null
+    for (const track of streamRef.current?.getTracks() ?? []) {
+      track.stop()
+    }
+    streamRef.current = null
+    void ctxRef.current?.close().catch(() => undefined)
+    ctxRef.current = null
+  }, [])
 
-  const start = useCallback(async () => {
-    if (listeningRef.current) {
-      return
-    }
-    if (!sttModel || !voiceEnabled) {
-      setError('Aktifkan Voice & pilih STT model di Settings > Voice untuk input mic.')
+  const start = useCallback(async (): Promise<void> => {
+    if (listeningRef.current || !callId) {
       return
     }
     setError(null)
-    setPartial('')
-    lastTextRef.current = ''
-    listeningRef.current = true
-    setListening(true)
-
-    cleanupsRef.current.push(
-      window.api.speech.onPartialTranscript((data) => {
-        if (data.sessionId !== sessionId) {
-          return
-        }
-        lastTextRef.current = data.text
-        setPartial(data.text)
-      }),
-      window.api.speech.onFinalTranscript((data) => {
-        if (data.sessionId !== sessionId) {
-          return
-        }
-        lastTextRef.current = data.text
-        resolveFinalRef.current?.(data.text)
-      })
-    )
-
     try {
-      await startCapture({ bufferAudio: true, sessionId })
-      await window.api.speech.startDictation(sttModel, undefined, sessionId)
-      await flushBufferedAudio()
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true }
+      })
+      const Ctor =
+        window.AudioContext ??
+        (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext
+      const ac = new Ctor()
+      await ac.audioWorklet.addModule(micWorkletUrl)
+      const source = ac.createMediaStreamSource(stream)
+      const node = new AudioWorkletNode(ac, 'orca-mic-proc')
+      node.port.onmessage = (event: MessageEvent): void => {
+        const d = (event.data ?? {}) as { kind?: string; level?: number; data?: string }
+        if (d.kind === 'vumeter') {
+          setLevel(Math.min(1, (d.level ?? 0) * 12))
+        } else if (d.kind === 'audio' && d.data) {
+          window.api.voiceCall.sendAudioChunk(callId, d.data)
+        } else if (d.kind === 'streamEnd') {
+          window.api.voiceCall.sendAudioStreamEnd(callId)
+        }
+      }
+      source.connect(node)
+      // An AudioWorkletNode only runs while its output is connected; route it to
+      // a muted gain so the graph stays alive without feeding anything (and
+      // never echoing Gemini's own audio back into the mic).
+      const silent = ac.createGain()
+      silent.gain.value = 0
+      node.connect(silent)
+      silent.connect(ac.destination)
+      ctxRef.current = ac
+      streamRef.current = stream
+      nodeRef.current = node
+      listeningRef.current = true
+      setListening(true)
     } catch {
-      teardownListeners()
-      listeningRef.current = false
-      setListening(false)
-      stopCapture()
-      await window.api.speech.stopDictation(sessionId).catch(() => undefined)
+      stop()
       setError('Mic tidak bisa dibuka (izin / perangkat?).')
     }
-  }, [
-    flushBufferedAudio,
-    sessionId,
-    startCapture,
-    stopCapture,
-    sttModel,
-    teardownListeners,
-    voiceEnabled
-  ])
+  }, [callId, stop])
 
   const toggle = useCallback((): void => {
     if (listeningRef.current) {
-      void stop()
+      stop()
     } else {
       void start()
     }
   }, [start, stop])
 
-  useEffect(() => {
-    return () => {
-      teardownListeners()
-      if (listeningRef.current) {
-        stopCapture()
-        void window.api.speech.stopDictation(sessionId).catch(() => undefined)
-      }
-    }
-  }, [sessionId, stopCapture, teardownListeners])
+  useEffect(() => stop, [stop])
 
-  return { listening, partial, error, start, stop, toggle, clearError: () => setError(null) }
+  return {
+    listening,
+    level,
+    error,
+    start,
+    stop,
+    toggle,
+    clearError: (): void => setError(null)
+  }
 }
