@@ -149,24 +149,51 @@ export async function createPiSession(
   }
 
   const systemPrompt = [
-    'You are a coding agent inside Orca issue chat.',
+    'You are a coding agent inside Orca.',
     'You can chat, call tools, edit files, and run shell commands in the project worktree.',
     `Project root (use absolute paths under this dir): ${args.cwd}`,
     `For bash tool, always start with: cd ${JSON.stringify(args.cwd)} &&`,
-    'Prefer small, reviewable edits. Do not force-push or open PRs unless asked.',
+    '',
+    '## Orca capabilities',
+    "You have Orca skills available (listed in the Skills section below). Read a skill's",
+    'SKILL.md with the read tool before using it. Key ones:',
+    '- computer-use / orca-cli: drive Orca worktrees, terminals, the embedded browser, and',
+    '  desktop computer-use via the `orca` CLI (run it with the bash tool).',
+    '- `gh` CLI: GitHub issues, PRs, and API (already authenticated for this machine).',
+    '- `glab` CLI: GitLab issues, merge requests, and API (already authenticated).',
+    'Prefer a documented skill over ad-hoc commands when one clearly applies.',
+    '',
+    'Prefer small, reviewable edits. Do not force-push or open PRs/MRs unless asked.',
     'Stay scoped to the issue context below.',
     '',
     '--- Issue context ---',
     args.issueContext.trim() || '(no description)'
   ].join('\n')
 
+  // Why: the pi SDK only scans agentDir/skills + cwd/.pi/skills, but pi packages
+  // install the user's skills (computer-use, orca-cli, orchestration, ...) under
+  // ~/.agents/skills. Add it so the agent's prompt lists them and it can act on
+  // them through the bash tool; buildSystemPrompt appends the skills section
+  // whenever the read tool is enabled (it is, below).
+  const userSkillsDir = join(homedir(), '.agents', 'skills')
+  const additionalSkillPaths = existsSync(userSkillsDir) ? [userSkillsDir] : []
+
   const loader = new DefaultResourceLoader({
     cwd: args.cwd,
     agentDir,
+    additionalSkillPaths,
     systemPromptOverride: () => systemPrompt,
     appendSystemPromptOverride: () => []
   })
   await loader.reload()
+  piLog(
+    'skills loaded=%s: %s',
+    loader.getSkills().skills.length,
+    loader
+      .getSkills()
+      .skills.map((s) => s.name)
+      .join(',') || '-'
+  )
 
   // Per-issue persistence: each issue gets its own session dir
   mkdirSync(issueSessionsDir, { recursive: true })
