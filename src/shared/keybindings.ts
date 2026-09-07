@@ -88,6 +88,7 @@ export type KeybindingActionId =
   | 'browser.focusAddressBar'
   | 'browser.grabElement'
   | 'editor.openFile'
+  | 'editor.openOffice'
   | 'editor.find'
   | 'editor.replace'
   | 'editor.save'
@@ -832,6 +833,14 @@ export const KEYBINDING_DEFINITIONS: readonly KeybindingDefinition[] = [
     scope: 'editor',
     searchKeywords: ['shortcut', 'editor', 'file', 'open', 'pick'],
     defaultBindings: platformBindings(['Mod+O'])
+  },
+  {
+    id: 'editor.openOffice',
+    title: 'Open Pi Office',
+    group: 'Editors',
+    scope: 'editor',
+    searchKeywords: ['shortcut', 'office', 'pi', 'hub', 'open'],
+    defaultBindings: platformBindings(['Mod+Shift+U'])
   },
   {
     id: 'editor.find',

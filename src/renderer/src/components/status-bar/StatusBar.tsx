@@ -75,6 +75,7 @@ import { formatRateLimitWindowChipLabel } from '@/lib/window-label-formatter'
 import { useResetCountdownClock } from '@/hooks/useResetCountdownClock'
 import { markLiveCodexSessionsForRestart } from '@/lib/codex-session-restart'
 import { UpdateStatusSegment } from './UpdateStatusSegment'
+import { DevModeStatusSegment } from './DevModeStatusSegment'
 import { RemoteServerUpdateStatusSegment } from './RemoteServerUpdateStatusSegment'
 import { ServiceCooldownButton } from './ServiceCooldownButton'
 import { isStatusBarItemAvailable } from './status-bar-agent-gating'
@@ -2429,6 +2430,7 @@ function StatusBarInner({ floatingTerminalOpen }: StatusBarProps): React.JSX.Ele
             </Tooltip>
           </FloatingTerminalIconContextMenu>
         )}
+        <DevModeStatusSegment iconOnly={iconOnly} />
       </div>
 
       <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen} modal={false}>

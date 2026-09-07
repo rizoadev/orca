@@ -622,6 +622,9 @@ export type UISlice = {
   closeIssuesBoardPage: () => void
   openAgentDashboardPage: () => void
   closeAgentDashboardPage: () => void
+  previousViewBeforeOffice: Exclude<TopLevelView, 'office'>
+  openOfficePage: () => void
+  closeOfficePage: () => void
   openOrchestrationBoardPage: (opts?: { taskId?: string | null }) => void
   closeOrchestrationBoardPage: () => void
   openNotesPage: () => void
@@ -1192,6 +1195,7 @@ export const createUISlice: StateCreator<AppState, [], [], UISlice> = (set, get)
   previousViewBeforeMobile: 'terminal',
   previousViewBeforeIssuesBoard: 'terminal',
   previousViewBeforeAgentDashboard: 'terminal',
+  previousViewBeforeOffice: 'terminal',
   previousViewBeforeOrchestrationBoard: 'terminal',
   previousViewBeforeNotes: 'terminal',
   previousViewBeforeDocker: 'terminal',
@@ -1474,6 +1478,18 @@ export const createUISlice: StateCreator<AppState, [], [], UISlice> = (set, get)
   closeAgentDashboardPage: () =>
     set((state) => ({
       activeView: state.previousViewBeforeAgentDashboard
+    })),
+  openOfficePage: () =>
+    set((state) => ({
+      activeView: 'office',
+      previousViewBeforeOffice:
+        state.activeView === 'office'
+          ? state.previousViewBeforeOffice
+          : (state.activeView as UISlice['previousViewBeforeOffice'])
+    })),
+  closeOfficePage: () =>
+    set((state) => ({
+      activeView: state.previousViewBeforeOffice
     })),
   orchestrationBoardFocusTaskId: null,
   openOrchestrationBoardPage: (opts) =>

@@ -14,6 +14,7 @@ export function resolveZoomTarget(args: {
     | 'mobile'
     | 'issues-board'
     | 'agent-dashboard'
+    | 'office'
     | 'orchestration-board'
     | 'notes'
     | 'paseo'

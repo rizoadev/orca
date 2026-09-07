@@ -320,6 +320,7 @@ const Settings = lazy(() => import('./components/settings/Settings'))
 const SkillsPage = lazy(() => import('./components/skills/SkillsPage'))
 const IssueBoardPage = lazy(() => import('./components/issue-board/IssueBoardPage'))
 const AgentDashboardPage = lazy(() => import('./components/dashboard/AgentDashboardPage'))
+const OfficeWebview = lazy(() => import('./components/office/OfficeWebview'))
 const PaseoPage = lazy(() => import('./components/paseo/PaseoPage'))
 const DeepSeekPage = lazy(() => import('./components/deepseek/DeepSeekPage'))
 const ReasonixPage = lazy(() => import('./components/reasonix/ReasonixPage'))
@@ -723,6 +724,11 @@ function App(): React.JSX.Element {
     // Why: the detour is valid only while Settings is onscreen; clear it during render so onboarding resumes without an extra Effect pass.
     setOnboardingSettingsDetour(false)
   }
+
+  // Pi Office is surfaced on demand via the left-sidebar link (below Issue Board) and the
+  // Open Pi Office shortcut — deliberately NOT auto-opened on launch, because the startup
+  // terminal-reconnect path fires activateTerminalInitiatedWorktree (setActiveView('terminal'))
+  // at unpredictable times (PTY attach), which races any auto-open and causes a view flash.
 
   useEffect(() => {
     if (activeModal === 'add-repo') {
@@ -1791,6 +1797,14 @@ function App(): React.JSX.Element {
         return
       }
 
+      // Cmd/Ctrl+Shift+U — open the local Pi Office hub view in the main area.
+      if (matchShortcut('editor.openOffice')) {
+        input.preventDefault()
+        notifyTerminalCapture('editor.openOffice')
+        useAppStore.getState().openOfficePage()
+        return
+      }
+
       // Cmd/Ctrl+O — open any file into a worktree editor tab. Picker is rooted
       // at the active worktree when known; the picked path is matched to its
       // containing worktree by longest prefix so cross-worktree picks land in
@@ -2335,6 +2349,7 @@ function App(): React.JSX.Element {
                               {activeView === 'mobile' ? <MobilePage /> : null}
                               {activeView === 'issues-board' ? <IssueBoardPage /> : null}
                               {activeView === 'agent-dashboard' ? <AgentDashboardPage /> : null}
+                              {activeView === 'office' ? <OfficeWebview /> : null}
                               {activeView === 'orchestration-board' ? (
                                 <OrchestrationBoardPage />
                               ) : null}

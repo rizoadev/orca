@@ -3260,6 +3260,7 @@ export type TopLevelView =
   | 'mobile'
   | 'issues-board'
   | 'agent-dashboard'
+  | 'office'
   | 'orchestration-board'
   | 'notes'
   | 'paseo'

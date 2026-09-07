@@ -3792,6 +3792,11 @@ export type PreloadApi = {
     sendAudioStreamEnd: (callId: string) => void
     onEvent: (callback: (event: VoiceCallEvent) => void) => () => void
   }
+  office: {
+    getConfig: () => Promise<{ url: string } | null>
+    checkHealth: () => Promise<boolean>
+    openPopout: () => Promise<{ opened: boolean; reason?: 'disabled' | 'unreachable' }>
+  }
   docker: {
     listContainers: (args?: {
       hostIds?: DockerHostId[]

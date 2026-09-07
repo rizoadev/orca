@@ -13,6 +13,7 @@ const TOP_LEVEL_VIEW_LOOKUP: Record<TopLevelView, true> = {
   mobile: true,
   'issues-board': true,
   'agent-dashboard': true,
+  office: true,
   'orchestration-board': true,
   notes: true,
   paseo: true,

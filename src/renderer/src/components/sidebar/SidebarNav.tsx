@@ -18,6 +18,7 @@ import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { SetupGuideSidebarEntry } from './SetupGuideSidebarEntry'
 import { SidebarIssueBoardNavButton } from './SidebarIssueBoardNavButton'
+import { SidebarOfficeNavButton } from './SidebarOfficeNavButton'
 import { SidebarOrchestrationBoardNavButton } from './SidebarOrchestrationBoardNavButton'
 import { SidebarTaskNavButton } from './SidebarTaskNavButton'
 import { SidebarNotesNavButton } from './SidebarNotesNavButton'
@@ -195,6 +196,7 @@ const SidebarNav = React.memo(function SidebarNav() {
       <SidebarTaskNavButton />
       <SidebarOrchestrationBoardNavButton />
       <SidebarIssueBoardNavButton />
+      <SidebarOfficeNavButton />
       <SidebarNotesNavButton />
       <SidebarDockerNavButton />
       <SidebarRemoteNavButton />
