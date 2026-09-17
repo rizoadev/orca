@@ -1,10 +1,13 @@
 import { ipcMain, type WebContents } from 'electron'
 import type {
   VoiceCallEvent,
+  VoiceCallKeyStatus,
   VoiceCallSendArgs,
   VoiceCallStartArgs
 } from '../../shared/voice-call-types'
+import type { VoiceCallContext } from '../../shared/voice-call-types'
 import { clearGeminiApiKey, hasGeminiApiKey, saveGeminiApiKey } from '../voice/gemini-api-key-store'
+import { clearOpenAiApiKey, hasOpenAiApiKey, saveOpenAiApiKey } from '../voice/openai-api-key-store'
 import {
   closeVoiceCall,
   sendVoiceCall,
@@ -14,7 +17,6 @@ import {
   voiceCallSetContext,
   voiceCallStop
 } from '../voice/voice-call-session'
-import type { VoiceCallContext } from '../../shared/voice-call-types'
 
 function emitToSender(sender: WebContents, event: VoiceCallEvent): void {
   if (sender.isDestroyed()) {
@@ -24,18 +26,42 @@ function emitToSender(sender: WebContents, event: VoiceCallEvent): void {
 }
 
 export function registerVoiceCallHandlers(): void {
-  ipcMain.handle('voiceCall:getApiKeyStatus', () => ({ configured: hasGeminiApiKey() }))
+  // ── Gemini key ─────────────────────────────────────────────────────────────
+  ipcMain.handle('voiceCall:getGeminiKeyStatus', () => ({ configured: hasGeminiApiKey() }))
 
-  ipcMain.handle('voiceCall:saveApiKey', (_event, apiKey: string) => {
+  ipcMain.handle('voiceCall:saveGeminiApiKey', (_event, apiKey: string) => {
     saveGeminiApiKey(String(apiKey ?? ''))
     return { configured: true }
   })
 
-  ipcMain.handle('voiceCall:clearApiKey', () => {
+  ipcMain.handle('voiceCall:clearGeminiApiKey', () => {
     clearGeminiApiKey()
     return { configured: false }
   })
 
+  // ── OpenAI key ─────────────────────────────────────────────────────────────
+  ipcMain.handle('voiceCall:getOpenAiKeyStatus', () => ({ configured: hasOpenAiApiKey() }))
+
+  ipcMain.handle('voiceCall:saveOpenAiApiKey', (_event, apiKey: string) => {
+    saveOpenAiApiKey(String(apiKey ?? ''))
+    return { configured: true }
+  })
+
+  ipcMain.handle('voiceCall:clearOpenAiApiKey', () => {
+    clearOpenAiApiKey()
+    return { configured: false }
+  })
+
+  // ── Combined key status ────────────────────────────────────────────────────
+  ipcMain.handle(
+    'voiceCall:getKeyStatus',
+    (): VoiceCallKeyStatus => ({
+      gemini: hasGeminiApiKey(),
+      openai: hasOpenAiApiKey()
+    })
+  )
+
+  // ── Session control ────────────────────────────────────────────────────────
   ipcMain.handle('voiceCall:start', (event, callId: string, args: VoiceCallStartArgs) => {
     if (typeof callId !== 'string' || !callId) {
       return

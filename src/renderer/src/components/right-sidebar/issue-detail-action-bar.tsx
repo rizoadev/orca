@@ -276,10 +276,7 @@ export function IssueDetailActionBar(props: DetailActionBarProps): React.JSX.Ele
         {
           description: result.task.id,
           action: {
-            label: translate(
-              'auto.components.right.sidebar.issuesPanel.openBoard',
-              'Board'
-            ),
+            label: translate('auto.components.right.sidebar.issuesPanel.openBoard', 'Board'),
             onClick: () => openOrchestrationBoardPage()
           }
         }
@@ -400,12 +397,12 @@ export function IssueDetailActionBar(props: DetailActionBarProps): React.JSX.Ele
       <IssueAiWorkBadge
         provider={props.provider}
         repoId={props.repo.id}
-        issueNumber={props.issueNumber}
+        issueRef={{ provider: props.provider, number: props.issueNumber }}
       />
       <IssueAiWorkActions
         provider={props.provider}
         repoId={props.repo.id}
-        issueNumber={props.issueNumber}
+        issueRef={{ provider: props.provider, number: props.issueNumber }}
         showBranchLabel={false}
       />
     </div>

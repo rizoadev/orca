@@ -5,7 +5,8 @@ import { useAppStore } from '@/store'
 import { translate } from '@/i18n/i18n'
 import type { AgentStatusEntry } from '../../../../shared/agent-status-types'
 import { useIssueAiWorkEntry } from './issue-ai-work-registry'
-import { issueAiWorkRegistryKey } from './issues-panel-ai-work'
+import { issueAiWorkRegistryKeyForRef } from './issue-ai-work-prompt'
+import { issueRefLabel, type IssueRef } from './issue-ref'
 import type { RepoIssueProvider } from './repo-issue-provider'
 
 function formatElapsed(startedAt: number): string {
@@ -52,13 +53,13 @@ export function findAgentStatusForTab(
 export function IssueAiWorkBadge({
   provider,
   repoId,
-  issueNumber
+  issueRef
 }: {
   provider: RepoIssueProvider
   repoId: string
-  issueNumber: number
+  issueRef: IssueRef
 }): React.JSX.Element | null {
-  const entry = useIssueAiWorkEntry(issueAiWorkRegistryKey(provider, repoId, issueNumber))
+  const entry = useIssueAiWorkEntry(issueAiWorkRegistryKeyForRef(provider, repoId, issueRef))
   const activateTab = useAppStore((s) => s.activateTab)
   const paneStatus = useAppStore((s) =>
     entry
@@ -123,8 +124,8 @@ export function IssueAiWorkBadge({
       }}
       title={translate(
         'auto.components.right.sidebar.issuesPanel.aiBadge.openTab',
-        'Open the AI worker terminal for #{{value0}}',
-        { value0: issueNumber }
+        'Open the AI worker terminal for {{value0}}',
+        { value0: issueRefLabel(issueRef) }
       )}
       className={cn(
         'inline-flex shrink-0 items-center gap-1 rounded-full border px-1.5 py-0.5 text-[10px] font-medium leading-none transition-colors hover:brightness-110',

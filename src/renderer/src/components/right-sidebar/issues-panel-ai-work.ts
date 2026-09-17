@@ -11,16 +11,21 @@ import { claimOrCoalesceIssueAiWork, resolveIssueAiWorkRegistration } from './is
 import { subscribeCompletionForWorktree } from './issue-ai-work-completion-watcher'
 import { resolveLaunchAgent, buildIssueAgentStartup } from './issue-agent-startup'
 import type { RepoIssueProvider } from './repo-issue-provider'
+import { issueRefLabel } from './issue-ref'
 import {
   ISSUE_WORK_COMPLETION_SENTINEL,
   buildIssueAiWorkPrompt,
-  buildIssueBranchName,
-  issueAiWorkRegistryKey
+  buildIssueRefBranchName,
+  issueAiWorkRegistryKeyForRef
 } from './issue-ai-work-prompt'
 
 export type IssueWorkTarget = {
   provider: RepoIssueProvider
-  number: number
+  number: number | null
+  /** Linear identifier (ENG-123); omit for github/gitlab. */
+  identifier?: string | null
+  /** Linear workspace id, persisted onto the new worktree's link metadata. */
+  workspaceId?: string | null
   title: string
   url: string
   body?: string
@@ -95,11 +100,12 @@ export async function launchIssueAiWorker(args: {
     return { ok: false }
   }
 
-  const branchName = buildIssueBranchName(args.issue.number, args.issue.title)
+  const branchName = buildIssueRefBranchName(args.issue, args.issue.title)
   const baseBranch = await resolveDefaultBaseBranch(args.repo.id)
   const prompt = buildIssueAiWorkPrompt({
     provider: args.issue.provider,
     number: args.issue.number,
+    identifier: args.issue.identifier,
     title: args.issue.title,
     url: args.issue.url,
     body: args.issue.body,
@@ -122,10 +128,10 @@ export async function launchIssueAiWorker(args: {
   }
 
   const mode: IssueAiWorkMode = args.mode ?? 'background'
-  const registryId = issueAiWorkRegistryKey(args.issue.provider, args.repo.id, args.issue.number)
+  const registryId = issueAiWorkRegistryKeyForRef(args.issue.provider, args.repo.id, args.issue)
   const claim = claimOrCoalesceIssueAiWork({
     registryId,
-    issueNumber: args.issue.number,
+    issueLabel: issueRefLabel(args.issue),
     prompt,
     agent,
     mode,
@@ -138,8 +144,8 @@ export async function launchIssueAiWorker(args: {
 
   const displayName = translate(
     'auto.components.right.sidebar.issuesPanel.aiWorkWorkspaceName',
-    'AI · #{{value0}} {{value1}}',
-    { value0: args.issue.number, value1: args.issue.title.slice(0, 40) }
+    'AI · {{value0}} {{value1}}',
+    { value0: issueRefLabel(args.issue), value1: args.issue.title.slice(0, 40) }
   )
 
   try {
@@ -157,16 +163,25 @@ export async function launchIssueAiWorker(args: {
       undefined,
       'sidebar',
       displayName,
-      args.issue.provider === 'github' ? args.issue.number : undefined,
+      args.issue.provider === 'github' ? (args.issue.number ?? undefined) : undefined,
       undefined,
       undefined,
       agent,
-      undefined,
+      args.issue.provider === 'linear' ? (args.issue.identifier ?? undefined) : undefined,
       branchName,
       undefined,
       undefined,
-      args.issue.provider === 'gitlab' ? args.issue.number : undefined,
-      startupLaunch
+      args.issue.provider === 'gitlab' ? (args.issue.number ?? undefined) : undefined,
+      startupLaunch,
+      undefined,
+      undefined,
+      args.issue.provider === 'linear' ? args.issue.workspaceId : undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined
     )
     const created = result.worktree
     const backendSpawned = result.startupTerminal?.spawned === true
@@ -263,17 +278,17 @@ export async function launchIssueAiWorker(args: {
       mode === 'watch'
         ? translate(
             'auto.components.right.sidebar.issuesPanel.aiWorkStartedWatch',
-            'AI is working on #{{value0}} in a new worktree — opened it for you.',
-            { value0: args.issue.number }
+            'AI is working on {{value0}} in a new worktree — opened it for you.',
+            { value0: issueRefLabel(args.issue) }
           )
         : translate(
             'auto.components.right.sidebar.issuesPanel.aiWorkStarted',
-            'AI is working on #{{value0}} in a new worktree (branch {{value1}}). You will get a notification when it finishes.',
-            { value0: args.issue.number, value1: branchName }
+            'AI is working on {{value0}} in a new worktree (branch {{value1}}). You will get a notification when it finishes.',
+            { value0: issueRefLabel(args.issue), value1: branchName }
           )
     )
 
-    subscribeCompletionForWorktree(registryId, created.id, args.issue.number)
+    subscribeCompletionForWorktree(registryId, created.id, issueRefLabel(args.issue))
 
     return {
       ok: true,

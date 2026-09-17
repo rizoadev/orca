@@ -7,7 +7,8 @@ import { cn } from '@/lib/utils'
 import { useAppStore } from '@/store'
 import { translate } from '@/i18n/i18n'
 import { clearIssueAiWork, useIssueAiWorkEntry } from './issue-ai-work-registry'
-import { issueAiWorkRegistryKey } from './issues-panel-ai-work'
+import { issueAiWorkRegistryKeyForRef } from './issue-ai-work-prompt'
+import type { IssueRef } from './issue-ref'
 import type { RepoIssueProvider } from './repo-issue-provider'
 
 // Why: PR-driven flow — merges happen on the provider (GitHub/GitLab) side
@@ -48,15 +49,15 @@ function openSourceControlForWorktree(worktreeId: string): void {
 export function IssueAiWorkBranchLabel({
   provider,
   repoId,
-  issueNumber,
+  issueRef,
   className
 }: {
   provider: RepoIssueProvider
   repoId: string
-  issueNumber: number
+  issueRef: IssueRef
   className?: string
 }): React.JSX.Element | null {
-  const entry = useIssueAiWorkEntry(issueAiWorkRegistryKey(provider, repoId, issueNumber))
+  const entry = useIssueAiWorkEntry(issueAiWorkRegistryKeyForRef(provider, repoId, issueRef))
   if (!entry?.branchName) {
     return null
   }
@@ -79,16 +80,16 @@ export function IssueAiWorkBranchLabel({
 export function IssueAiWorkActions({
   provider,
   repoId,
-  issueNumber,
+  issueRef,
   /** When false, omit the branch chip (e.g. modal header already shows it). */
   showBranchLabel = true
 }: {
   provider: RepoIssueProvider
   repoId: string
-  issueNumber: number
+  issueRef: IssueRef
   showBranchLabel?: boolean
 }): React.JSX.Element | null {
-  const entry = useIssueAiWorkEntry(issueAiWorkRegistryKey(provider, repoId, issueNumber))
+  const entry = useIssueAiWorkEntry(issueAiWorkRegistryKeyForRef(provider, repoId, issueRef))
   const setActiveWorktree = useAppStore((s) => s.setActiveWorktree)
   const confirm = useConfirmationDialog()
   const [pending, setPending] = useState<'discard' | null>(null)
@@ -97,7 +98,7 @@ export function IssueAiWorkActions({
     return null
   }
 
-  const registryId = issueAiWorkRegistryKey(provider, repoId, issueNumber)
+  const registryId = issueAiWorkRegistryKeyForRef(provider, repoId, issueRef)
   const clear = (): void => {
     clearIssueAiWork(registryId)
   }

@@ -70,6 +70,18 @@ export function createRepoUpdateSchema<T extends z.ZodRawShape>(
             remoteHint: z.string().optional()
           })
         ])
+        .optional(),
+      // Why: per-repo Linear binding (workspaceId + projectId); null clears.
+      linear: z
+        .union([
+          z.null(),
+          z.object({
+            workspaceId: z.string().min(1),
+            workspaceName: z.string().optional(),
+            projectId: z.string().min(1),
+            projectName: z.string().optional()
+          })
+        ])
         .optional()
     })
   }) as z.ZodObject<T & { updates: z.ZodObject<z.ZodRawShape> }>

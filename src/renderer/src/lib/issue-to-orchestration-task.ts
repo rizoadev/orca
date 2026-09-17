@@ -9,6 +9,8 @@ const LOCAL_RUNTIME_TARGET = { kind: 'local' as const }
 export type IssueToOrchestrationInput = {
   provider: 'github' | 'gitlab' | string
   issueNumber: number
+  /** Linear identifier (ENG-123); used for display when there is no number. */
+  issueIdentifier?: string | null
   title: string
   url?: string | null
   body?: string | null
@@ -26,9 +28,20 @@ export type IssueToOrchestrationResult = {
   coalesced?: boolean
 }
 
+/** `#12` for github/gitlab; `ENG-123` for Linear (identifier wins). */
+export function issueOrchestrationRefLabel(
+  input: Pick<IssueToOrchestrationInput, 'issueNumber' | 'issueIdentifier'>
+): string {
+  const identifier = input.issueIdentifier?.trim()
+  return identifier || `#${input.issueNumber}`
+}
+
 export function buildIssueOrchestrationSpec(input: IssueToOrchestrationInput): string {
+  const refLabel = issueOrchestrationRefLabel(input)
+  const providerLabel =
+    input.provider === 'github' ? 'GitHub' : input.provider === 'gitlab' ? 'GitLab' : 'Linear'
   const lines = [
-    `Implement Git ${input.provider} issue #${input.issueNumber}: ${input.title.trim()}`,
+    `Implement ${providerLabel} issue ${refLabel}: ${input.title.trim()}`,
     input.url ? `Issue URL: ${input.url}` : null,
     '',
     'Requirements:',
@@ -36,21 +49,19 @@ export function buildIssueOrchestrationSpec(input: IssueToOrchestrationInput): s
     '- Keep the fix scoped to this issue; avoid drive-by refactors.',
     '- Add/adjust tests when behavior changes.',
     '- Summarize what you changed when done.',
-    input.body?.trim()
-      ? ['', 'Issue body:', input.body.trim().slice(0, 4000)].join('\n')
-      : null,
+    input.body?.trim() ? ['', 'Issue body:', input.body.trim().slice(0, 4000)].join('\n') : null,
     input.notes?.trim() ? ['', 'Operator notes:', input.notes.trim()].join('\n') : null
   ]
   return lines.filter((line) => line !== null).join('\n')
 }
 
-export function buildIssueOrchestrationTitle(input: Pick<
-  IssueToOrchestrationInput,
-  'issueNumber' | 'title' | 'provider'
->): string {
+export function buildIssueOrchestrationTitle(
+  input: Pick<IssueToOrchestrationInput, 'issueNumber' | 'issueIdentifier' | 'title' | 'provider'>
+): string {
+  const refLabel = issueOrchestrationRefLabel(input)
   const title = input.title.replace(/\s+/g, ' ').trim()
   const short = title.length > 80 ? `${title.slice(0, 77)}…` : title
-  return `#${input.issueNumber} ${short}`
+  return `${refLabel} ${short}`
 }
 
 /** Stable coalesce key so double-clicks don't spawn sibling tasks. */
@@ -58,8 +69,9 @@ export function buildIssueOrchestrationCoalesceKey(input: {
   provider: string
   repoId: string
   issueNumber: number
+  issueIdentifier?: string | null
 }): string {
-  return `issue:${input.provider}:${input.repoId}:#${input.issueNumber}`
+  return `issue:${input.provider}:${input.repoId}:${issueOrchestrationRefLabel(input)}`
 }
 
 export async function createOrchestrationTaskFromIssue(

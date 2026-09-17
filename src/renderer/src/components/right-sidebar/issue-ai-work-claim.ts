@@ -16,7 +16,8 @@ export type ClaimIssueAiWorkResult =
 /** Claim or coalesce the issue AI-work slot before createWorktree. */
 export function claimOrCoalesceIssueAiWork(args: {
   registryId: string
-  issueNumber: number
+  /** Display label (`#12` or `ENG-123`); number is null for Linear. */
+  issueLabel: string
   prompt: string
   agent: string
   mode: IssueAiWorkMode
@@ -32,8 +33,8 @@ export function claimOrCoalesceIssueAiWork(args: {
     toast.success(
       translate(
         'auto.components.right.sidebar.issuesPanel.aiWorkCoalesced',
-        'Queued follow-up for the existing AI run on #{{value0}}.',
-        { value0: args.issueNumber }
+        'Queued follow-up for the existing AI run on {{value0}}.',
+        { value0: args.issueLabel }
       )
     )
     return { action: 'coalesced' }
@@ -43,8 +44,8 @@ export function claimOrCoalesceIssueAiWork(args: {
     toast.message(
       translate(
         'auto.components.right.sidebar.issuesPanel.aiWorkAlreadyRunning',
-        'AI is already working on #{{value0}}. Open that worktree to send a follow-up.',
-        { value0: args.issueNumber }
+        'AI is already working on {{value0}}. Open that worktree to send a follow-up.',
+        { value0: args.issueLabel }
       )
     )
     return { action: 'already_running' }

@@ -1194,10 +1194,12 @@ export type PreloadApi = {
           | 'projectGroupId'
           | 'projectGroupOrder'
           | 'forkSyncMode'
+          | 'linear'
         >
       > & {
         sourceControlAi?: Repo['sourceControlAi'] | null
         externalWorktreeDiscoverySuppressedAt?: Repo['externalWorktreeDiscoverySuppressedAt'] | null
+        linear?: Repo['linear'] | null
       }
     }) => Promise<Repo>
     pickFolder: () => Promise<string | null>
@@ -3780,9 +3782,13 @@ export type PreloadApi = {
     onError: (callback: (data: SpeechErrorEvent) => void) => () => void
   }
   voiceCall: {
-    getApiKeyStatus: () => Promise<{ configured: boolean }>
-    saveApiKey: (apiKey: string) => Promise<{ configured: boolean }>
-    clearApiKey: () => Promise<{ configured: boolean }>
+    getKeyStatus: () => Promise<{ gemini: boolean; openai: boolean }>
+    getGeminiKeyStatus: () => Promise<{ configured: boolean }>
+    saveGeminiApiKey: (apiKey: string) => Promise<{ configured: boolean }>
+    clearGeminiApiKey: () => Promise<{ configured: boolean }>
+    getOpenAiKeyStatus: () => Promise<{ configured: boolean }>
+    saveOpenAiApiKey: (apiKey: string) => Promise<{ configured: boolean }>
+    clearOpenAiApiKey: () => Promise<{ configured: boolean }>
     start: (callId: string, args: VoiceCallStartArgs) => Promise<void>
     send: (callId: string, args: VoiceCallSendArgs) => Promise<void>
     close: (callId: string) => Promise<void>

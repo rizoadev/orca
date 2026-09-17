@@ -7409,7 +7409,7 @@ export default function GitHubItemDialog({
                 <IssueAiWorkBranchLabel
                   provider="github"
                   repoId={effectiveRepoId}
-                  issueNumber={workItem.number}
+                  issueRef={{ provider: 'github', number: workItem.number }}
                   className="ml-auto"
                 />
               ) : null}

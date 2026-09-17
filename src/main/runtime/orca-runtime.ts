@@ -15681,10 +15681,14 @@ export class OrcaRuntimeService {
         | 'importedExternalWorktreePaths'
         | 'projectGroupId'
         | 'projectGroupOrder'
+        | 'hive'
+        | 'linear'
       >
     > & {
       sourceControlAi?: Repo['sourceControlAi'] | null
       externalWorktreeDiscoverySuppressedAt?: Repo['externalWorktreeDiscoverySuppressedAt'] | null
+      hive?: Repo['hive'] | null
+      linear?: Repo['linear'] | null
     }
   ): Promise<Repo> {
     if (!this.store) {
@@ -15703,6 +15707,11 @@ export class OrcaRuntimeService {
     }
     if ('sourceControlAi' in updates && updates.sourceControlAi === null) {
       sanitizedUpdates.sourceControlAi = null
+    }
+    // Why: Linear uses null as the transport sentinel for "clear binding", so
+    // it must survive omitUndefinedProperties into the persistence layer.
+    if ('linear' in updates && updates.linear === null) {
+      sanitizedUpdates.linear = null
     }
     const updated = this.store.updateRepo(repo.id, sanitizedUpdates)
     if (!updated) {

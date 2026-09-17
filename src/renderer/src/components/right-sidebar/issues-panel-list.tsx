@@ -1,25 +1,18 @@
 import React from 'react'
-import { Bot, CircleDot, ExternalLink, Layers, LoaderCircle, Sparkles, XCircle } from 'lucide-react'
+import { CircleDot, ExternalLink, Layers, LoaderCircle, XCircle } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger
-} from '@/components/ui/dropdown-menu'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { TaskPageGitHubWorkItemStateBadge } from '@/components/task-page-github-work-item-status-badge'
 import { openHttpLink } from '@/lib/http-link-routing'
-import { getAgentCatalog, AgentIcon } from '@/lib/agent-catalog'
 import { translate } from '@/i18n/i18n'
 import { IssueAiWorkActions } from './issue-ai-work-actions'
 import { IssueAiWorkBadge } from './issue-ai-work-badge'
 import { IssuesPanelEmpty } from './issues-panel-empty'
 import { useIssueListAgents } from './use-issue-list-agents'
 import { formatIssueRelativeTime, type IssueRow } from './issues-panel-rows'
+import { issueRefFromRow } from './issue-ref'
+import { IssueRowAiMenus } from './issue-row-ai-menus'
 import type { IssueAiWorkMode } from './issues-panel-ai-work'
 import type { TuiAgent } from '../../../../shared/types'
 import { useAppStore } from '@/store'
@@ -103,6 +96,7 @@ export function IssuesPanelList({
         const working = aiWorkingIssueId === row.id
         const closing = closingIssueId === row.id
         const converting = convertingIssueId === row.id
+        const issueRef = issueRefFromRow(row)
         return (
           <div
             key={row.id}
@@ -120,7 +114,7 @@ export function IssuesPanelList({
             <CircleDot className="mt-0.5 size-3.5 shrink-0 text-emerald-600 dark:text-emerald-400" />
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-2">
-                <span className="font-mono text-[11px] text-muted-foreground">#{row.number}</span>
+                <span className="font-mono text-[11px] text-muted-foreground">{row.label}</span>
                 <IssueStateBadge row={row} />
                 {row.updatedAt ? (
                   <span className="ml-auto shrink-0 text-[10px] text-muted-foreground">
@@ -131,19 +125,11 @@ export function IssuesPanelList({
               <div className="mt-0.5 flex items-center gap-2 truncate text-sm text-foreground">
                 <span className="truncate">{row.title}</span>
                 {repoId ? (
-                  <IssueAiWorkBadge
-                    provider={row.provider}
-                    repoId={repoId}
-                    issueNumber={row.number}
-                  />
+                  <IssueAiWorkBadge provider={row.provider} repoId={repoId} issueRef={issueRef} />
                 ) : null}
               </div>
               {repoId ? (
-                <IssueAiWorkActions
-                  provider={row.provider}
-                  repoId={repoId}
-                  issueNumber={row.number}
-                />
+                <IssueAiWorkActions provider={row.provider} repoId={repoId} issueRef={issueRef} />
               ) : null}
             </div>
             <TooltipProvider delayDuration={300}>
@@ -180,210 +166,16 @@ export function IssuesPanelList({
                     </TooltipContent>
                   </Tooltip>
                 ) : null}
-                {/* Why: stopPropagation on open avoids row click; modal=false so menus work if this ever sits under a dialog. */}
-                <DropdownMenu modal={false}>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <DropdownMenuTrigger asChild>
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="icon-xs"
-                          disabled={planning || working}
-                          onClick={(event) => event.stopPropagation()}
-                          aria-label={translate(
-                            'auto.components.right.sidebar.issuesPanel.askAiPlan',
-                            'Ask AI to plan and comment'
-                          )}
-                        >
-                          {planning ? (
-                            <LoaderCircle className="size-3.5 animate-spin" />
-                          ) : (
-                            <Sparkles className="size-3.5" />
-                          )}
-                        </Button>
-                      </DropdownMenuTrigger>
-                    </TooltipTrigger>
-                    <TooltipContent side="left">
-                      {translate(
-                        'auto.components.right.sidebar.issuesPanel.askAiPlan',
-                        'Ask AI to plan and comment'
-                      )}
-                    </TooltipContent>
-                  </Tooltip>
-                  <DropdownMenuContent
-                    align="end"
-                    side="left"
-                    sideOffset={6}
-                    className="z-[80]"
-                    onClick={(event) => event.stopPropagation()}
-                  >
-                    <DropdownMenuLabel>
-                      {translate(
-                        'auto.components.right.sidebar.issuesPanel.chooseAgent',
-                        'Plan with agent'
-                      )}
-                    </DropdownMenuLabel>
-                    <DropdownMenuSeparator />
-                    {detectingAgents && agents.length === 0 ? (
-                      <DropdownMenuItem disabled>
-                        {translate(
-                          'auto.components.right.sidebar.issuesPanel.detectingAgents',
-                          'Detecting agents…'
-                        )}
-                      </DropdownMenuItem>
-                    ) : agents.length === 0 ? (
-                      <DropdownMenuItem disabled>
-                        {translate(
-                          'auto.components.right.sidebar.issuesPanel.noAgentsDetected',
-                          'No agents detected'
-                        )}
-                      </DropdownMenuItem>
-                    ) : (
-                      agents.map((agent) => {
-                        const entry = getAgentCatalog().find((item) => item.id === agent)
-                        const label = entry?.label ?? agent
-                        const isDefault =
-                          defaultAgent && defaultAgent !== 'blank' && agent === defaultAgent
-                        return (
-                          <DropdownMenuItem
-                            key={agent}
-                            className="gap-2"
-                            onSelect={() => onAskAiPlan(row, agent)}
-                          >
-                            <AgentIcon agent={agent} size={14} />
-                            <span className="flex-1">{label}</span>
-                            {isDefault ? (
-                              <span className="text-[10px] text-muted-foreground">
-                                {translate(
-                                  'auto.components.right.sidebar.issuesPanel.defaultAgent',
-                                  'Default'
-                                )}
-                              </span>
-                            ) : null}
-                          </DropdownMenuItem>
-                        )
-                      })
-                    )}
-                  </DropdownMenuContent>
-                </DropdownMenu>
-                <DropdownMenu modal={false}>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <DropdownMenuTrigger asChild>
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="icon-xs"
-                          disabled={planning || working}
-                          onClick={(event) => event.stopPropagation()}
-                          aria-label={translate(
-                            'auto.components.right.sidebar.issuesPanel.askAiWork',
-                            'Work on this with AI'
-                          )}
-                        >
-                          {working ? (
-                            <LoaderCircle className="size-3.5 animate-spin" />
-                          ) : (
-                            <Bot className="size-3.5" />
-                          )}
-                        </Button>
-                      </DropdownMenuTrigger>
-                    </TooltipTrigger>
-                    <TooltipContent side="left">
-                      {translate(
-                        'auto.components.right.sidebar.issuesPanel.askAiWork',
-                        'Work on this with AI'
-                      )}
-                    </TooltipContent>
-                  </Tooltip>
-                  <DropdownMenuContent
-                    align="end"
-                    side="left"
-                    sideOffset={6}
-                    className="z-[80]"
-                    onClick={(event) => event.stopPropagation()}
-                  >
-                    <DropdownMenuLabel>
-                      {translate(
-                        'auto.components.right.sidebar.issuesPanel.workInBackground',
-                        'Work in background'
-                      )}
-                    </DropdownMenuLabel>
-                    <DropdownMenuSeparator />
-                    {detectingAgents && agents.length === 0 ? (
-                      <DropdownMenuItem disabled>
-                        {translate(
-                          'auto.components.right.sidebar.issuesPanel.detectingAgents',
-                          'Detecting agents…'
-                        )}
-                      </DropdownMenuItem>
-                    ) : agents.length === 0 ? (
-                      <DropdownMenuItem disabled>
-                        {translate(
-                          'auto.components.right.sidebar.issuesPanel.noAgentsDetected',
-                          'No agents detected'
-                        )}
-                      </DropdownMenuItem>
-                    ) : (
-                      agents.map((agent) => {
-                        const entry = getAgentCatalog().find((item) => item.id === agent)
-                        const label = entry?.label ?? agent
-                        const isDefault =
-                          defaultAgent && defaultAgent !== 'blank' && agent === defaultAgent
-                        return (
-                          <DropdownMenuItem
-                            key={`work-bg-${agent}`}
-                            className="gap-2"
-                            onSelect={() => onAskAiWork(row, agent, 'background')}
-                          >
-                            <AgentIcon agent={agent} size={14} />
-                            <span className="flex-1">{label}</span>
-                            {isDefault ? (
-                              <span className="text-[10px] text-muted-foreground">
-                                {translate(
-                                  'auto.components.right.sidebar.issuesPanel.defaultAgent',
-                                  'Default'
-                                )}
-                              </span>
-                            ) : null}
-                          </DropdownMenuItem>
-                        )
-                      })
-                    )}
-                    {agents.length > 0 ? (
-                      <>
-                        <DropdownMenuSeparator />
-                        <DropdownMenuLabel>
-                          {translate(
-                            'auto.components.right.sidebar.issuesPanel.workAndWatch',
-                            'Work & watch (open terminal)'
-                          )}
-                        </DropdownMenuLabel>
-                        {agents.map((agent) => {
-                          const entry = getAgentCatalog().find((item) => item.id === agent)
-                          const label = entry?.label ?? agent
-                          return (
-                            <DropdownMenuItem
-                              key={`work-watch-${agent}`}
-                              className="gap-2"
-                              onSelect={() => onAskAiWork(row, agent, 'watch')}
-                            >
-                              <AgentIcon agent={agent} size={14} />
-                              <span className="flex-1">{label}</span>
-                              <span className="text-[10px] text-muted-foreground">
-                                {translate(
-                                  'auto.components.right.sidebar.issuesPanel.workAndWatchShort',
-                                  'watch'
-                                )}
-                              </span>
-                            </DropdownMenuItem>
-                          )
-                        })}
-                      </>
-                    ) : null}
-                  </DropdownMenuContent>
-                </DropdownMenu>
+                <IssueRowAiMenus
+                  row={row}
+                  planning={planning}
+                  working={working}
+                  agents={agents}
+                  detectingAgents={detectingAgents}
+                  defaultAgent={defaultAgent}
+                  onAskAiPlan={onAskAiPlan}
+                  onAskAiWork={onAskAiWork}
+                />
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <Button

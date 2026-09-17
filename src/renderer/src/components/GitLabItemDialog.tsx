@@ -1553,7 +1553,7 @@ export default function GitLabItemDialog({
                   <IssueAiWorkBranchLabel
                     provider="gitlab"
                     repoId={repoId}
-                    issueNumber={item.number}
+                    issueRef={{ provider: 'gitlab', number: item.number }}
                     className="ml-auto"
                   />
                 ) : null}

@@ -1,16 +1,21 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Mic, MicOff, Phone, Send, Square, KeyRound } from 'lucide-react'
+import { Mic, MicOff, Phone, Send, Square } from 'lucide-react'
 import { Button } from '../ui/button'
 import { Input } from '../ui/input'
 import { Tooltip, TooltipContent, TooltipTrigger } from '../ui/tooltip'
 import { VoiceCallTranscript, type VoiceCallLogEntry } from './voice-call-transcript'
 import { VoiceCallControls } from './voice-call-controls'
+import { VoiceCallApiKeySetup } from './voice-call-api-key-setup'
 import { reducePiEvent } from './pi-chat-reduce'
 import { useAudioPlayback } from '../../hooks/use-audio-playback'
 import { useVoiceMic } from '../../hooks/use-voice-mic'
 import { useAppStore } from '../../store'
 import { splitWorktreeIdForFilesystem } from '../../../../shared/worktree-id'
-import type { VoiceCallEvent, VoiceCallStatus } from '../../../../shared/voice-call-types'
+import type {
+  VoiceCallEvent,
+  VoiceCallProvider,
+  VoiceCallStatus
+} from '../../../../shared/voice-call-types'
 import type { PiModelOption } from '../../../../shared/pi-issue-chat-types'
 import { cn } from '../../lib/utils'
 
@@ -18,10 +23,15 @@ const STATUS_LABEL: Record<VoiceCallStatus, string> = {
   idle: 'Idle',
   connecting: 'Menghubungkan…',
   listening: 'Siap',
-  thinking: 'Gemini berpikir…',
-  speaking: 'Gemini bicara…',
+  thinking: 'Agent berpikir…',
+  speaking: 'Agent bicara…',
   working: 'Pi SDK mengerjakan…',
   error: 'Error'
+}
+
+const PROVIDER_DEFAULT_VOICE: Record<VoiceCallProvider, string> = {
+  gemini: 'Leda',
+  openai: 'alloy'
 }
 
 let entrySeq = 0
@@ -44,31 +54,32 @@ export function VoiceCallPanel(): React.JSX.Element {
   const [input, setInput] = useState('')
   const [codingMode, setCodingMode] = useState(true)
   const [rate, setRate] = useState(1)
-  const [voice, setVoice] = useState('Leda')
+  const [provider, setProvider] = useState<VoiceCallProvider>('gemini')
+  const [voice, setVoice] = useState(PROVIDER_DEFAULT_VOICE.gemini)
   const [piModels, setPiModels] = useState<PiModelOption[]>([])
-  // Why: default the coding model to the same one the issue-chat panel uses so
-  // reasoning streams live out-of-the-box; a non-streaming default (cb/kimi-k3)
-  // would deliver thinking as one block at the end instead of token-by-token.
   const [piModel, setPiModel] = useState(
     () =>
       useAppStore.getState().settings?.agentDefaultEnv?.['strands']?.['ORCA_STRANDS_MODEL'] ?? ''
   )
-  const [keyConfigured, setKeyConfigured] = useState<boolean | null>(null)
+  // Per-provider key status: { gemini: boolean, openai: boolean }
+  const [keyStatus, setKeyStatus] = useState<{ gemini: boolean; openai: boolean } | null>(null)
   const [keyInput, setKeyInput] = useState('')
+  // Which provider the user is currently entering a key for in the setup screen
+  const [keyEntryTarget, setKeyEntryTarget] = useState<VoiceCallProvider>('gemini')
 
   const { enqueue, stop: stopPlayback } = useAudioPlayback(rate)
   const scrollRef = useRef<HTMLDivElement | null>(null)
-  // After Stop, Gemini may still stream tail audio for the cancelled turn; drop
-  // it until the next user utterance begins a fresh turn.
   const droppedRef = useRef(false)
 
   const isBusy = status === 'thinking' || status === 'working' || status === 'speaking'
+
+  const currentKeyOk = keyStatus?.[provider] ?? false
 
   const appendEntry = useCallback((entry: VoiceCallLogEntry) => {
     setLog((prev) => [...prev, entry])
   }, [])
 
-  // ── Gemini Live event stream ──────────────────────────────────────────────
+  // ── Provider event stream ────────────────────────────────────────────────
   useEffect(() => {
     const off = window.api.voiceCall.onEvent((event: VoiceCallEvent) => {
       switch (event.type) {
@@ -86,8 +97,6 @@ export function VoiceCallPanel(): React.JSX.Element {
           break
         case 'userTranscript':
           droppedRef.current = false
-          // Live caption: each event is a new spoken segment, so grow the
-          // trailing user bubble instead of stacking one per segment.
           setLog((prev) => {
             const last = prev.at(-1)
             if (last && last.role === 'user' && last.streaming) {
@@ -100,7 +109,7 @@ export function VoiceCallPanel(): React.JSX.Element {
             return [...prev, { id: nextId(), role: 'user', text: event.text, streaming: true }]
           })
           break
-        case 'geminiTranscript':
+        case 'agentTranscript':
           if (droppedRef.current) {
             break
           }
@@ -124,9 +133,6 @@ export function VoiceCallPanel(): React.JSX.Element {
           setStatus('speaking')
           break
         case 'turnComplete':
-          // Why: turnComplete means Gemini finished *sending*, not that the
-          // playback queue drained. Stopping here cuts off the tail of the
-          // spoken reply, so let the scheduled audio finish on its own.
           break
         case 'piEvent': {
           const ev = event.event
@@ -157,12 +163,12 @@ export function VoiceCallPanel(): React.JSX.Element {
     return off
   }, [appendEntry, enqueue, stopPlayback])
 
-  // ── key gate + connect ────────────────────────────────────────────────────
+  // ── key gate ──────────────────────────────────────────────────────────────
   useEffect(() => {
     let cancelled = false
-    void window.api.voiceCall.getApiKeyStatus().then((s) => {
+    void window.api.voiceCall.getKeyStatus().then((s) => {
       if (!cancelled) {
-        setKeyConfigured(s.configured)
+        setKeyStatus(s)
       }
     })
     return () => {
@@ -170,24 +176,24 @@ export function VoiceCallPanel(): React.JSX.Element {
     }
   }, [])
 
+  // ── connect on provider/voice/key change ──────────────────────────────────
   useEffect(() => {
-    if (!keyConfigured) {
+    if (!currentKeyOk) {
       return
     }
     const id = callIdRef.current
-    void window.api.voiceCall.start(id, { voice })
+    void window.api.voiceCall.start(id, { provider, voice })
     return () => {
       void window.api.voiceCall.close(id)
     }
-    // Voice is baked into the Live setup frame, so changing it reconnects.
+    // provider or voice change triggers reconnect.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [keyConfigured, voice])
+  }, [currentKeyOk, provider, voice])
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' })
   }, [log])
 
-  // Load the Pi SDK model list once so the coding leg's model is selectable.
   useEffect(() => {
     let cancelled = false
     void window.api.piIssueChat.listModels().then((models) => {
@@ -200,10 +206,8 @@ export function VoiceCallPanel(): React.JSX.Element {
     }
   }, [])
 
-  // Keep the hands-free session's mode/context in sync so a mic-driven turn
-  // (finalized on silence) knows chat-vs-coding and which workspace/model.
   useEffect(() => {
-    if (!keyConfigured) {
+    if (!currentKeyOk) {
       return
     }
     void window.api.voiceCall.setContext(callIdRef.current, {
@@ -211,7 +215,7 @@ export function VoiceCallPanel(): React.JSX.Element {
       ...(cwd ? { cwd } : {}),
       ...(piModel ? { piModelRef: piModel } : {})
     })
-  }, [keyConfigured, codingMode, cwd, piModel])
+  }, [currentKeyOk, codingMode, cwd, piModel])
 
   const send = useCallback(
     (text: string) => {
@@ -231,17 +235,14 @@ export function VoiceCallPanel(): React.JSX.Element {
     [activeWorktreeId, codingMode, cwd, piModel]
   )
 
-  // ── hands-free mic → Gemini audio → auto-send on silence ──────────────────
   const mic = useVoiceMic({ callId: callIdRef.current })
   const toggleMic = useCallback(() => {
     if (!mic.listening) {
-      stopPlayback() // don't let Gemini's own audio bleed into the open mic
+      stopPlayback()
     }
     mic.toggle()
   }, [mic, stopPlayback])
 
-  // Force-stop the current/pending turn: abort the Pi coding task, cancel any
-  // queued mic dispatch, and drop Gemini's in-flight audio.
   const stopVoice = useCallback(() => {
     droppedRef.current = true
     stopPlayback()
@@ -253,33 +254,37 @@ export function VoiceCallPanel(): React.JSX.Element {
     if (!trimmed) {
       return
     }
-    void window.api.voiceCall.saveApiKey(trimmed).then(() => {
+    const save =
+      keyEntryTarget === 'openai'
+        ? window.api.voiceCall.saveOpenAiApiKey(trimmed)
+        : window.api.voiceCall.saveGeminiApiKey(trimmed)
+    void save.then(() => {
       setKeyInput('')
-      setKeyConfigured(true)
+      // Refresh key status
+      void window.api.voiceCall.getKeyStatus().then(setKeyStatus)
     })
-  }, [keyInput])
+  }, [keyInput, keyEntryTarget])
 
-  if (keyConfigured === false) {
+  // ── switch provider and reset voice to its default ────────────────────────
+  const handleProviderChange = useCallback((p: VoiceCallProvider) => {
+    setProvider(p)
+    setVoice(PROVIDER_DEFAULT_VOICE[p])
+  }, [])
+
+  // ── setup screen if keys missing ──────────────────────────────────────────
+  if ((keyStatus && !keyStatus.gemini && !keyStatus.openai) || (keyStatus && !currentKeyOk)) {
     return (
-      <div className="flex h-full flex-col items-center justify-center gap-3 p-6 text-center">
-        <KeyRound className="h-6 w-6 text-muted-foreground" />
-        <p className="text-sm text-muted-foreground">
-          Masukkan Gemini API key untuk mengaktifkan Voice Call. Key disimpan terenkripsi di
-          <code className="mx-1 rounded bg-muted px-1">~/.orca</code>.
-        </p>
-        <div className="flex w-full max-w-sm items-center gap-2">
-          <Input
-            type="password"
-            value={keyInput}
-            onChange={(e) => setKeyInput(e.target.value)}
-            placeholder="AIza…"
-            className="h-8 text-xs"
-          />
-          <Button size="sm" onClick={saveKey} disabled={!keyInput.trim()}>
-            Simpan
-          </Button>
-        </div>
-      </div>
+      <VoiceCallApiKeySetup
+        keyStatus={keyStatus}
+        currentKeyOk={currentKeyOk}
+        provider={provider}
+        keyEntryTarget={keyEntryTarget}
+        keyInput={keyInput}
+        onKeyInput={setKeyInput}
+        onKeyEntryTarget={setKeyEntryTarget}
+        onSaveKey={saveKey}
+        onProviderChange={handleProviderChange}
+      />
     )
   }
 
@@ -302,6 +307,8 @@ export function VoiceCallPanel(): React.JSX.Element {
           </span>
         </div>
         <VoiceCallControls
+          provider={provider}
+          onProvider={handleProviderChange}
           voice={voice}
           onVoice={setVoice}
           piModel={piModel}
@@ -367,7 +374,7 @@ export function VoiceCallPanel(): React.JSX.Element {
                   <Square className="h-4 w-4" />
                 </Button>
               </TooltipTrigger>
-              <TooltipContent side="top">Stop — hentikan Pi / Gemini</TooltipContent>
+              <TooltipContent side="top">Stop — hentikan Pi / Agent</TooltipContent>
             </Tooltip>
           ) : null}
           <Input
@@ -379,7 +386,11 @@ export function VoiceCallPanel(): React.JSX.Element {
                 send(input)
               }
             }}
-            placeholder={codingMode ? 'Perintah coding untuk Pi…' : 'Ketik ke Gemini…'}
+            placeholder={
+              codingMode
+                ? 'Perintah coding untuk Pi…'
+                : `Ketik ke ${provider === 'openai' ? 'OpenAI' : 'Gemini'}…`
+            }
             className="h-8 flex-1 text-sm"
           />
           <Button

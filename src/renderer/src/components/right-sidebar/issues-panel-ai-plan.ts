@@ -5,10 +5,13 @@ import { useAppStore } from '@/store'
 import type { Repo, TuiAgent } from '../../../../shared/types'
 import { translate } from '@/i18n/i18n'
 import type { RepoIssueProvider } from './repo-issue-provider'
+import { issueRefLabel } from './issue-ref'
 
 export type IssuePlanCommentTarget = {
   provider: RepoIssueProvider
-  number: number
+  number: number | null
+  /** Linear identifier (ENG-123); omit for github/gitlab. */
+  identifier?: string | null
   title: string
   url: string
   body?: string
@@ -24,19 +27,24 @@ export type IssuePlanCommentTarget = {
 
 export function buildIssueAiPlanPrompt(args: {
   provider: RepoIssueProvider
-  number: number
+  number: number | null
+  identifier?: string | null
   title: string
   url: string
   body?: string
   repoDisplayName?: string
   focusComment?: IssuePlanCommentTarget['focusComment']
 }): string {
-  const providerLabel = args.provider === 'github' ? 'GitHub' : 'GitLab'
+  const providerLabel =
+    args.provider === 'github' ? 'GitHub' : args.provider === 'gitlab' ? 'GitLab' : 'Linear'
+  const refLabel = issueRefLabel({ number: args.number, identifier: args.identifier })
   const body = args.body?.trim()
   const commentCommand =
     args.provider === 'github'
-      ? `gh issue comment ${args.number} --body "...plan..."`
-      : `glab issue note ${args.number} --message "...plan..."`
+      ? `gh issue comment ${refLabel.replace(/^#/, '')} --body "...plan..."`
+      : args.provider === 'gitlab'
+        ? `glab issue note ${refLabel.replace(/^#/, '')} --message "...plan..."`
+        : `orca linear comment add ${refLabel} --body "...plan..."`
   const focus = args.focusComment
   const focusBody = focus?.body?.trim()
   const focusLoc =
@@ -46,8 +54,8 @@ export function buildIssueAiPlanPrompt(args: {
 
   return [
     focus
-      ? `You are planning a reply/solution for a specific discussion thread on ${providerLabel} issue #${args.number}.`
-      : `You are attached as a planning commenter on ${providerLabel} issue #${args.number}.`,
+      ? `You are planning a reply/solution for a specific discussion thread on ${providerLabel} issue ${refLabel}.`
+      : `You are attached as a planning commenter on ${providerLabel} issue ${refLabel}.`,
     args.repoDisplayName ? `Repository: ${args.repoDisplayName}` : null,
     `Issue: ${args.title}`,
     `URL: ${args.url}`,
@@ -126,6 +134,7 @@ export async function launchIssueAiPlanCommenter(args: {
   const prompt = buildIssueAiPlanPrompt({
     provider: args.issue.provider,
     number: args.issue.number,
+    identifier: args.issue.identifier,
     title: args.issue.title,
     url: args.issue.url,
     body: args.issue.body,
@@ -144,8 +153,8 @@ export async function launchIssueAiPlanCommenter(args: {
       launchSource: 'sidebar',
       title: translate(
         'auto.components.right.sidebar.issuesPanel.aiPlanTabTitle',
-        'AI plan · #{{value0}}',
-        { value0: args.issue.number }
+        'AI plan · {{value0}}',
+        { value0: issueRefLabel(args.issue) }
       )
     })
     if (!result) {
@@ -172,8 +181,8 @@ export async function launchIssueAiPlanCommenter(args: {
   toast.success(
     translate(
       'auto.components.right.sidebar.issuesPanel.aiPlanStartedBackground',
-      'AI is drafting a plan comment on #{{value0}} in the background.',
-      { value0: args.issue.number }
+      'AI is drafting a plan comment on {{value0}} in the background.',
+      { value0: issueRefLabel(args.issue) }
     )
   )
   return true

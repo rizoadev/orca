@@ -4370,11 +4370,13 @@ export class Store {
         | 'projectGroupOrder'
         | 'projectHostSetupMethod'
         | 'hive'
+        | 'linear'
       >
     > & {
       sourceControlAi?: Repo['sourceControlAi'] | null
       externalWorktreeDiscoverySuppressedAt?: Repo['externalWorktreeDiscoverySuppressedAt'] | null
       hive?: Repo['hive'] | null
+      linear?: Repo['linear'] | null
     }
   ): Repo | null {
     const repo = this.state.repos.find((r) => r.id === id)
@@ -4437,6 +4439,15 @@ export class Store {
     ) {
       delete repo.hive
       delete sanitizedUpdates.hive
+    }
+    // Why: Linear binding mirrors the Hive pattern — undefined/null clears the
+    // key so a repo that drops its binding does not keep a stale project row.
+    if (
+      'linear' in sanitizedUpdates &&
+      (sanitizedUpdates.linear === undefined || sanitizedUpdates.linear === null)
+    ) {
+      delete repo.linear
+      delete sanitizedUpdates.linear
     }
     if (
       'sourceControlAi' in sanitizedUpdates &&

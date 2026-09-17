@@ -95,7 +95,9 @@ export function IssuesPanelCreateDialog({
   const providerLabel =
     provider === 'github'
       ? translate('auto.i18n.hostedReview.copy.c7d1e5f9a8', 'GitHub')
-      : translate('auto.i18n.hostedReview.copy.91b5c8d7e6', 'GitLab')
+      : provider === 'gitlab'
+        ? translate('auto.i18n.hostedReview.copy.91b5c8d7e6', 'GitLab')
+        : translate('auto.components.right.sidebar.issuesPanel.linearLabel', 'Linear')
 
   const canSubmit = title.trim().length > 0 && !submitting && !generating
   const canGenerate = (title.trim() || body.trim()) && !!repoPath && !generating

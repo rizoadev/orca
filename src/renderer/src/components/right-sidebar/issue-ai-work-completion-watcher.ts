@@ -12,7 +12,7 @@ import { updateIssueAiWorkOutcome } from './issue-ai-work-registry'
 export function subscribeCompletionForWorktree(
   registryId: string,
   worktreeId: string,
-  issueNumber: number
+  issueLabel: string
 ): void {
   let sawWorking = false
   const unsub = useAppStore.subscribe((state) => {
@@ -31,8 +31,8 @@ export function subscribeCompletionForWorktree(
           toast.success(
             translate(
               'auto.components.right.sidebar.issuesPanel.aiWorkCompleted',
-              'AI finished issue #{{value0}}. Review the branch, then create a PR/MR or discard.',
-              { value0: issueNumber }
+              'AI finished issue {{value0}}. Review the branch, then create a PR/MR or discard.',
+              { value0: issueLabel }
             )
           )
           unsub()

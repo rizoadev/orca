@@ -1937,6 +1937,7 @@ export function registerRepoHandlers(
             | 'projectGroupId'
             | 'projectGroupOrder'
             | 'hive'
+            | 'linear'
           >
         > & {
           sourceControlAi?: Repo['sourceControlAi'] | null
@@ -1944,6 +1945,7 @@ export function registerRepoHandlers(
             | Repo['externalWorktreeDiscoverySuppressedAt']
             | null
           hive?: Repo['hive'] | null
+          linear?: Repo['linear'] | null
         }
       }
     ) => {
@@ -2058,6 +2060,21 @@ export function registerRepoHandlers(
           typeof (hive as { projectId?: unknown }).projectId !== 'string'
         ) {
           delete updates.hive
+        }
+      }
+      // Why: null clears the Linear binding; malformed shapes are dropped so the
+      // Issues tab never reads a half-populated project reference.
+      if ('linear' in updates && updates.linear === null) {
+        updates.linear = undefined
+      } else if ('linear' in updates && updates.linear !== undefined && updates.linear !== null) {
+        const linear = updates.linear as unknown
+        if (
+          !linear ||
+          typeof linear !== 'object' ||
+          typeof (linear as { workspaceId?: unknown }).workspaceId !== 'string' ||
+          typeof (linear as { projectId?: unknown }).projectId !== 'string'
+        ) {
+          delete updates.linear
         }
       }
       // Why: null is the transport sentinel for clearing Source Control AI, so flow it through as undefined instead of deleting.

@@ -5076,12 +5076,20 @@ const api = {
   },
 
   voiceCall: {
-    getApiKeyStatus: (): Promise<{ configured: boolean }> =>
-      ipcRenderer.invoke('voiceCall:getApiKeyStatus'),
-    saveApiKey: (apiKey: string): Promise<{ configured: boolean }> =>
-      ipcRenderer.invoke('voiceCall:saveApiKey', apiKey),
-    clearApiKey: (): Promise<{ configured: boolean }> =>
-      ipcRenderer.invoke('voiceCall:clearApiKey'),
+    getKeyStatus: (): Promise<{ gemini: boolean; openai: boolean }> =>
+      ipcRenderer.invoke('voiceCall:getKeyStatus'),
+    getGeminiKeyStatus: (): Promise<{ configured: boolean }> =>
+      ipcRenderer.invoke('voiceCall:getGeminiKeyStatus'),
+    saveGeminiApiKey: (apiKey: string): Promise<{ configured: boolean }> =>
+      ipcRenderer.invoke('voiceCall:saveGeminiApiKey', apiKey),
+    clearGeminiApiKey: (): Promise<{ configured: boolean }> =>
+      ipcRenderer.invoke('voiceCall:clearGeminiApiKey'),
+    getOpenAiKeyStatus: (): Promise<{ configured: boolean }> =>
+      ipcRenderer.invoke('voiceCall:getOpenAiKeyStatus'),
+    saveOpenAiApiKey: (apiKey: string): Promise<{ configured: boolean }> =>
+      ipcRenderer.invoke('voiceCall:saveOpenAiApiKey', apiKey),
+    clearOpenAiApiKey: (): Promise<{ configured: boolean }> =>
+      ipcRenderer.invoke('voiceCall:clearOpenAiApiKey'),
     start: (callId: string, args: VoiceCallStartArgs): Promise<void> =>
       ipcRenderer.invoke('voiceCall:start', callId, args),
     send: (callId: string, args: VoiceCallSendArgs): Promise<void> =>

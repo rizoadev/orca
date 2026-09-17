@@ -8,6 +8,7 @@ import type {
   GitHubWorkItem,
   GitLabProjectRef,
   GitLabWorkItem,
+  LinearIssue,
   Repo
 } from '../../../../shared/types'
 import { translate } from '@/i18n/i18n'
@@ -134,7 +135,10 @@ export function getRepoIssueSourceContext(
 
 export type IssueRow = {
   id: string
-  number: number
+  /** Numeric for github/gitlab; null for Linear (which uses a string identifier). */
+  number: number | null
+  /** Provider-agnostic display key, e.g. `#12` or `ENG-123`. */
+  label: string
   title: string
   stateLabel: string
   stateTone: string
@@ -143,6 +147,7 @@ export type IssueRow = {
   provider: RepoIssueProvider
   githubItem?: GitHubWorkItem
   gitlabItem?: GitLabWorkItem
+  linearItem?: LinearIssue
 }
 
 function gitlabStateTone(state: GitLabWorkItem['state']): string {
@@ -174,6 +179,7 @@ export function toGitHubIssueRows(items: GitHubWorkItem[]): IssueRow[] {
     .map((item) => ({
       id: item.id,
       number: item.number,
+      label: `#${item.number}`,
       title: item.title,
       stateLabel: '',
       stateTone: '',
@@ -188,6 +194,7 @@ export function toGitLabIssueRows(items: GitLabWorkItem[], repoId: string): Issu
   return items.map((item) => ({
     id: item.id,
     number: item.number,
+    label: `#${item.number}`,
     title: item.title,
     stateLabel: gitlabStateLabel(item.state),
     stateTone: gitlabStateTone(item.state),
@@ -195,5 +202,39 @@ export function toGitLabIssueRows(items: GitLabWorkItem[], repoId: string): Issu
     url: item.url,
     provider: 'gitlab' as const,
     gitlabItem: { ...item, repoId }
+  }))
+}
+
+// Why: Linear identifies issues by a team-prefixed key (ENG-123), not a number,
+// so rows carry the identifier as their label and leave `number` null.
+function linearStateTone(state: LinearIssue['state']): string {
+  const type = state?.type ?? ''
+  if (type === 'completed') {
+    return 'border-purple-500/30 bg-purple-500/10 text-purple-700 dark:text-purple-300'
+  }
+  if (type === 'canceled') {
+    return 'border-rose-500/30 bg-rose-500/10 text-rose-600 dark:text-rose-300'
+  }
+  if (type === 'started') {
+    return 'border-amber-500/30 bg-amber-500/10 text-amber-600 dark:text-amber-300'
+  }
+  if (type === 'backlog' || type === 'unstarted') {
+    return 'border-border bg-muted/50 text-muted-foreground'
+  }
+  return 'border-emerald-500/30 bg-emerald-500/10 text-emerald-600 dark:text-emerald-300'
+}
+
+export function toLinearIssueRows(items: LinearIssue[]): IssueRow[] {
+  return items.map((item) => ({
+    id: item.id,
+    number: null,
+    label: item.identifier,
+    title: item.title,
+    stateLabel: item.state?.name ?? '',
+    stateTone: linearStateTone(item.state),
+    updatedAt: item.updatedAt,
+    url: item.url,
+    provider: 'linear' as const,
+    linearItem: item
   }))
 }

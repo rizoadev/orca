@@ -2,9 +2,10 @@ import { TerminalSquare, Volume2 } from 'lucide-react'
 import { Button } from '../ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '../ui/tooltip'
 import type { PiModelOption } from '../../../../shared/pi-issue-chat-types'
+import type { VoiceCallProvider } from '../../../../shared/voice-call-types'
 
-// Gemini Live prebuilt voices; Leda is the house default (matches the harness).
-const VOICE_OPTIONS = [
+// Gemini Live prebuilt voices
+const GEMINI_VOICES = [
   'Leda',
   'Aoede',
   'Puck',
@@ -17,12 +18,31 @@ const VOICE_OPTIONS = [
   'Umbriel'
 ]
 
+// OpenAI Realtime prebuilt voices
+const OPENAI_VOICES = [
+  'alloy',
+  'ash',
+  'ballad',
+  'coral',
+  'echo',
+  'fable',
+  'nova',
+  'onyx',
+  'sage',
+  'shimmer'
+]
+
+function voiceOptions(provider: VoiceCallProvider): string[] {
+  return provider === 'openai' ? OPENAI_VOICES : GEMINI_VOICES
+}
+
 /**
- * Header control cluster for the voice-call panel: Gemini voice, Pi coding
- * model, coding-mode toggle, and playback rate. Extracted so the panel keeps
- * its budget and the controls stay a single cohesive unit.
+ * Header control cluster for the voice-call panel: provider switcher, voice,
+ * Pi coding model, coding-mode toggle, and playback rate.
  */
 export function VoiceCallControls({
+  provider,
+  onProvider,
   voice,
   onVoice,
   piModel,
@@ -33,6 +53,8 @@ export function VoiceCallControls({
   rate,
   onRate
 }: {
+  provider: VoiceCallProvider
+  onProvider: (p: VoiceCallProvider) => void
   voice: string
   onVoice: (value: string) => void
   piModel: string
@@ -45,13 +67,37 @@ export function VoiceCallControls({
 }): React.JSX.Element {
   return (
     <div className="flex items-center gap-1">
+      {/* Provider toggle */}
+      <div className="flex overflow-hidden rounded border border-border">
+        <button
+          className={`px-1.5 py-0.5 text-[10px] transition-colors ${
+            provider === 'gemini'
+              ? 'bg-primary text-primary-foreground'
+              : 'text-muted-foreground hover:bg-accent'
+          }`}
+          onClick={() => onProvider('gemini')}
+        >
+          Gemini
+        </button>
+        <button
+          className={`px-1.5 py-0.5 text-[10px] transition-colors ${
+            provider === 'openai'
+              ? 'bg-primary text-primary-foreground'
+              : 'text-muted-foreground hover:bg-accent'
+          }`}
+          onClick={() => onProvider('openai')}
+        >
+          OpenAI
+        </button>
+      </div>
+      {/* Voice selector */}
       <select
         value={voice}
         onChange={(e) => onVoice(e.target.value)}
-        aria-label="Gemini voice"
+        aria-label={`${provider === 'openai' ? 'OpenAI' : 'Gemini'} voice`}
         className="h-6 rounded border border-border bg-transparent px-1 text-[10px] text-muted-foreground focus:outline-none"
       >
-        {VOICE_OPTIONS.map((v) => (
+        {voiceOptions(provider).map((v) => (
           <option key={v} value={v}>
             {v}
           </option>

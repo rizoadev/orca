@@ -122,6 +122,7 @@ export type RepoUpdate = Partial<
   sourceControlAi?: Repo['sourceControlAi'] | null
   externalWorktreeDiscoverySuppressedAt?: Repo['externalWorktreeDiscoverySuppressedAt'] | null
   hive?: Repo['hive'] | null
+  linear?: Repo['linear'] | null
 }
 
 type ProjectUpdate = ProjectUpdateArgs['updates']
@@ -3009,6 +3010,7 @@ export const createRepoSlice: StateCreator<AppState, [], [], RepoSlice> = (set, 
               sourceControlAi,
               externalWorktreeDiscoverySuppressedAt,
               hive,
+              linear,
               ...updatesWithoutClearSentinels
             } = sanitizedUpdates
             mergedRepo = { ...mergedRepo, ...updatesWithoutClearSentinels }
@@ -3024,6 +3026,12 @@ export const createRepoSlice: StateCreator<AppState, [], [], RepoSlice> = (set, 
               mergedRepo = repoWithoutHive
             } else if (hive !== undefined) {
               mergedRepo = { ...mergedRepo, hive }
+            }
+            if (linear === null) {
+              const { linear: _linear, ...repoWithoutLinear } = mergedRepo
+              mergedRepo = repoWithoutLinear
+            } else if (linear !== undefined) {
+              mergedRepo = { ...mergedRepo, linear }
             }
             if (externalWorktreeDiscoverySuppressedAt === null) {
               const {

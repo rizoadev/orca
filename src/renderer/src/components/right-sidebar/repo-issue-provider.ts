@@ -1,7 +1,7 @@
 import { isGitHubBackedRepo } from '../../../../shared/project-host-setup-projection'
 import type { Repo } from '../../../../shared/types'
 
-export type RepoIssueProvider = 'github' | 'gitlab'
+export type RepoIssueProvider = 'github' | 'gitlab' | 'linear'
 
 // Why: self-hosted GitLab remotes may not be in glab's known-host list yet, but
 // hostname heuristics still let the Issues tab prefer the GitLab list path over

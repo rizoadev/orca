@@ -1,9 +1,10 @@
 /**
- * Voice-call orchestrator for the right-sidebar tab. Owns one Gemini Live
- * connection per call and reproduces the standalone harness flow:
- *   chat:   user text → Gemini audio + transcript
- *   coding: user text → Gemini "ack" audio → Pi SDK task (tool/reasoning loop)
- *           → final report → Gemini spoken summary
+ * Voice-call orchestrator for the right-sidebar tab. Supports both Gemini Live
+ * and OpenAI Realtime as the audio conversation backend. Reproduces the
+ * standalone harness flow:
+ *   chat:   user text → provider audio + transcript
+ *   coding: user text → provider "ack" audio → Pi SDK task (tool/reasoning loop)
+ *           → final report → provider spoken summary
  *
  * The coding leg reuses the in-process Pi issue-chat session machinery
  * (startPiIssueChatSession / sendPiIssueChatMessage) so tool progress and
@@ -12,27 +13,34 @@
 import { randomUUID } from 'node:crypto'
 import type {
   VoiceCallEvent,
+  VoiceCallProvider,
   VoiceCallSendArgs,
   VoiceCallStartArgs
 } from '../../shared/voice-call-types'
-import type { PiIssueChatEvent } from '../../shared/pi-issue-chat-types'
-import { GeminiLiveClient } from './gemini-live-client'
+import { GeminiLiveClient, type GeminiLiveHandlers } from './gemini-live-client'
+import { OpenAiRealtimeClient, type OpenAiRealtimeHandlers } from './openai-realtime-client'
 import { readGeminiApiKey } from './gemini-api-key-store'
+import { readOpenAiApiKey } from './openai-api-key-store'
 import { piLog } from '../pi/pi-session-factory'
-import {
-  abortPiIssueChatTurn,
-  getPiIssueChatSession,
-  sendPiIssueChatMessage,
-  startPiIssueChatSession,
-  stopPiIssueChatSession
-} from '../pi/issue-chat-session'
+import { runPiCodingTask } from './voice-call-pi-task'
+import { abortPiIssueChatTurn } from '../pi/issue-chat-session'
 import { ackPrompt, reportPrompt } from './voice-call-prompts'
 
 type Emit = (event: VoiceCallEvent) => void
 
+/** A voice client interface that both GeminiLiveClient and OpenAiRealtimeClient satisfy. */
+type VoiceClient = {
+  connect(): void
+  sendText(text: string): boolean
+  sendAudioChunk(base64: string): boolean
+  sendAudioStreamEnd(): boolean
+  close(): void
+}
+
 type VoiceSession = {
   callId: string
-  client: GeminiLiveClient
+  provider: VoiceCallProvider
+  client: VoiceClient
   emit: Emit
   turnWaiters: (() => void)[]
   piSessionId: string
@@ -40,14 +48,14 @@ type VoiceSession = {
   closed: boolean
   // Hands-free audio-input state: the panel sets the mode/context; the mic
   // worklet streams PCM chunks and a streamEnd finalizes the utterance into a
-  // turn once Gemini's input transcription settles.
+  // turn once the provider's input transcription settles.
   coding: boolean
   cwd: string
   piModelRef: string
   transcriptParts: string[]
   settleTimer: ReturnType<typeof setTimeout> | null
-  // True while Gemini/Pi is producing a reply. Mic chunks are dropped during a
-  // turn so the always-open mic never re-captures Gemini's own voice and loops.
+  // True while provider/Pi is producing a reply. Mic chunks are dropped during
+  // a turn so the always-open mic never re-captures the agent's own voice.
   busy: boolean
   // Bumped on every new turn and on stop; an in-flight runTurn bails once its
   // captured token no longer matches, so Stop / a newer utterance can cancel it.
@@ -56,7 +64,12 @@ type VoiceSession = {
 
 const sessions = new Map<string, VoiceSession>()
 
-/** Resolve the next Gemini turnComplete (or immediately if already closed). */
+/** Provider display name for error messages. */
+function providerLabel(p: VoiceCallProvider): string {
+  return p === 'openai' ? 'OpenAI Realtime' : 'Gemini Live'
+}
+
+/** Resolve the next provider turnComplete (or immediately if already closed). */
 function waitForTurn(session: VoiceSession): Promise<void> {
   return new Promise((resolve) => session.turnWaiters.push(resolve))
 }
@@ -68,11 +81,42 @@ function flushTurnWaiters(session: VoiceSession): void {
   }
 }
 
+function buildSessionCallbacks(session: VoiceSession): GeminiLiveHandlers & OpenAiRealtimeHandlers {
+  return {
+    onReady: () => session.emit({ type: 'status', status: 'listening' }),
+    onTranscript: (text, final) => {
+      if (text) {
+        session.emit({ type: 'agentTranscript', text, final })
+      }
+    },
+    onAudio: (data, sampleRate) => session.emit({ type: 'audioChunk', data, sampleRate }),
+    onUserTranscript: (text) => {
+      session.transcriptParts.push(text)
+      session.emit({ type: 'userTranscript', text })
+    },
+    onTurnComplete: () => {
+      session.emit({ type: 'turnComplete' })
+      flushTurnWaiters(session)
+      if (!session.closed) {
+        session.emit({ type: 'status', status: 'listening' })
+      }
+    },
+    onError: (error) => {
+      piLog(`voice ${session.provider} error`, error.message)
+      session.busy = false
+      flushTurnWaiters(session)
+      session.emit({ type: 'status', status: 'error', error: error.message })
+    }
+  }
+}
+
 export function startVoiceCall(callId: string, args: VoiceCallStartArgs, emit: Emit): void {
   closeVoiceCall(callId)
+  const provider: VoiceCallProvider = args.provider ?? 'gemini'
+
   let apiKey: string
   try {
-    apiKey = readGeminiApiKey()
+    apiKey = provider === 'openai' ? readOpenAiApiKey() : readGeminiApiKey()
   } catch (error) {
     emit({
       type: 'status',
@@ -84,6 +128,7 @@ export function startVoiceCall(callId: string, args: VoiceCallStartArgs, emit: E
 
   const session: VoiceSession = {
     callId,
+    provider,
     emit,
     turnWaiters: [],
     piSessionId: `voice:${callId}`,
@@ -97,40 +142,16 @@ export function startVoiceCall(callId: string, args: VoiceCallStartArgs, emit: E
     busy: false,
     turnToken: 0,
     // placeholder; replaced below once handlers can reference the session
-    client: null as unknown as GeminiLiveClient
+    client: null as unknown as VoiceClient
   }
 
-  session.client = new GeminiLiveClient(
-    { apiKey, voice: args.voice },
-    {
-      onReady: () => emit({ type: 'status', status: 'listening' }),
-      onTranscript: (text, final) => {
-        if (text) {
-          emit({ type: 'geminiTranscript', text, final })
-        }
-      },
-      onAudio: (data, sampleRate) => emit({ type: 'audioChunk', data, sampleRate }),
-      onUserTranscript: (text) => {
-        // Each input-transcription event is a new spoken segment; accumulate for
-        // dispatch and surface it live as a caption.
-        session.transcriptParts.push(text)
-        emit({ type: 'userTranscript', text })
-      },
-      onTurnComplete: () => {
-        emit({ type: 'turnComplete' })
-        flushTurnWaiters(session)
-        if (!session.closed) {
-          emit({ type: 'status', status: 'listening' })
-        }
-      },
-      onError: (error) => {
-        piLog('voice gemini error', error.message)
-        session.busy = false
-        flushTurnWaiters(session)
-        emit({ type: 'status', status: 'error', error: error.message })
-      }
-    }
-  )
+  const callbacks = buildSessionCallbacks(session)
+
+  session.client =
+    provider === 'openai'
+      ? new OpenAiRealtimeClient({ apiKey, voice: args.voice ?? 'alloy' }, callbacks)
+      : new GeminiLiveClient({ apiKey, voice: args.voice ?? 'Leda' }, callbacks)
+
   sessions.set(callId, session)
   emit({ type: 'status', status: 'connecting' })
   session.client.connect()
@@ -143,12 +164,10 @@ async function runTurn(
   text: string,
   opts: { coding: boolean; cwd?: string; piModelRef?: string }
 ): Promise<void> {
-  // A new turn supersedes any in-flight one; Stop bumps the token too. Each
-  // await below is followed by a staleness check so an aborted turn stops
-  // cleanly instead of marching on to the next stage.
   const myToken = ++session.turnToken
   const stale = (): boolean => session.closed || session.turnToken !== myToken
   session.busy = true
+  const label = providerLabel(session.provider)
 
   if (!opts.coding) {
     session.emit({ type: 'status', status: 'thinking' })
@@ -157,7 +176,7 @@ async function runTurn(
       session.emit({
         type: 'status',
         status: 'error',
-        error: 'Gemini Live not ready. Reopen the tab.'
+        error: `${label} not ready. Reopen the tab.`
       })
       return
     }
@@ -177,7 +196,14 @@ async function runTurn(
   }
 
   session.emit({ type: 'status', status: 'working' })
-  const report = await runPiCodingTask(session, text, opts)
+  const { report, modelRefUsed } = await runPiCodingTask(
+    session.piSessionId,
+    session.piModelRefUsed,
+    text,
+    opts,
+    (event) => session.emit({ type: 'piEvent', event })
+  )
+  session.piModelRefUsed = modelRefUsed
   if (stale()) {
     return
   }
@@ -210,8 +236,8 @@ export async function sendVoiceCall(callId: string, args: VoiceCallSendArgs): Pr
 
 /** Force-stop the current/pending turn: cancel a queued dispatch, abort any
  *  running Pi coding task (the warm session stays alive), release the awaiting
- *  turn, and return to listening. Gemini's in-flight audio is dropped client-
- *  side by the panel. */
+ *  turn, and return to listening. Provider in-flight audio is dropped
+ *  client-side by the panel. */
 export function voiceCallStop(callId: string): void {
   const session = sessions.get(callId)
   if (!session || session.closed) {
@@ -248,7 +274,7 @@ export function voiceCallSetContext(
   session.piModelRef = ctx.piModelRef?.trim() ?? ''
 }
 
-/** Forward one base64 PCM16 mono 16 kHz mic chunk from the worklet to Gemini. */
+/** Forward one base64 PCM16 mono 16 kHz mic chunk from the worklet. */
 export function voiceCallSendAudioChunk(callId: string, base64: string): void {
   const session = sessions.get(callId)
   if (!session || session.closed || session.busy) {
@@ -257,8 +283,8 @@ export function voiceCallSendAudioChunk(callId: string, base64: string): void {
   session.client.sendAudioChunk(base64)
 }
 
-/** End the current utterance; after Gemini's transcription settles, dispatch
- *  the accumulated words as a turn (chat or coding per the stored context). */
+/** End the current utterance; after the provider's transcription settles,
+ *  dispatch the accumulated words as a turn (chat or coding). */
 export function voiceCallSendAudioStreamEnd(callId: string): void {
   const session = sessions.get(callId)
   if (!session || session.closed || session.busy) {
@@ -281,51 +307,6 @@ export function voiceCallSendAudioStreamEnd(callId: string): void {
       piModelRef: session.piModelRef
     })
   }, 900)
-}
-
-async function runPiCodingTask(
-  session: VoiceSession,
-  task: string,
-  opts: { cwd?: string; piModelRef?: string }
-): Promise<string> {
-  const cwd = opts.cwd?.trim()
-  if (!cwd) {
-    return 'Tidak ada workspace aktif untuk menjalankan coding task.'
-  }
-  const piEmit = (event: PiIssueChatEvent): void => {
-    // Forward the raw Pi event stream; the panel reduces it exactly like the
-    // issue-chat panel so reasoning/tools render identically.
-    session.emit({ type: 'piEvent', event })
-  }
-  try {
-    // A warm Pi session bakes its model at creation, so switching the selected
-    // model means tearing down and recreating it; otherwise reuse it so tool /
-    // reasoning events keep streaming to this panel across turns.
-    const desiredRef = opts.piModelRef?.trim() ?? ''
-    if (getPiIssueChatSession(session.piSessionId) && desiredRef !== session.piModelRefUsed) {
-      stopPiIssueChatSession(session.piSessionId)
-    }
-    // startPiIssueChatSession re-attaches the emitter when the session is
-    // already warm, so calling it every turn keeps progress events flowing.
-    await startPiIssueChatSession(
-      {
-        sessionId: session.piSessionId,
-        cwd,
-        issueContext: 'You are the Orca voice-call coding agent. Be concise.',
-        ...(desiredRef ? { modelRef: desiredRef } : {})
-      },
-      piEmit
-    )
-    session.piModelRefUsed = desiredRef
-    await sendPiIssueChatMessage(session.piSessionId, task, piEmit)
-    const snap = getPiIssueChatSession(session.piSessionId)
-    const lastAssistant = (snap?.messages ?? []).toReversed().find((m) => m.role === 'assistant')
-    return lastAssistant?.content?.trim() || 'Task selesai tanpa ringkasan.'
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error)
-    piLog('voice pi error', message)
-    return `Coding task gagal: ${message}`
-  }
 }
 
 export function closeVoiceCall(callId: string): void {

@@ -39,6 +39,7 @@ import type { UiLanguage } from './ui-language'
 import type { ForkSyncMode } from './git-fork-sync'
 import type { GitRemoteIdentity } from './git-remote-identity'
 import type { HiveRepoBinding } from './hive-types'
+import type { LinearRepoBinding } from './linear-repo-binding'
 import type {
   GlobalWindowsRuntimeDefault,
   LocalWindowsRuntimePreference
@@ -294,6 +295,8 @@ export type Repo = {
   projectHostSetupMethod?: RepoProjectHostSetupMethod
   /** Hive deploy binding for this repo (token lives in main-process credential store). */
   hive?: HiveRepoBinding | null
+  /** Linear binding for this repo's Issues tab (workspace + project). */
+  linear?: LinearRepoBinding | null
 }
 
 export type ProjectGroupCreatedFrom = 'manual' | 'folder-scan' | 'migration'

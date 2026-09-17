@@ -1,4 +1,5 @@
 import type { RepoIssueProvider } from './repo-issue-provider'
+import { issueRefLabel, issueRefSlug, type IssueRef } from './issue-ref'
 
 // Why: local shape only — avoid circular import with issues-panel-ai-work.ts.
 type IssueWorkFocusComment = {
@@ -25,9 +26,17 @@ export function buildIssueBranchName(number: number, title: string): string {
   return `fix/issue-${number}-${slugifyBranchLeaf(title)}`
 }
 
+// Why: Linear has no numeric issue number, so its branch leaf is the identifier
+// (eng-123) instead of `issue-<n>`; github/gitlab keep the legacy shape.
+export function buildIssueRefBranchName(ref: IssueRef, title: string): string {
+  return `fix/issue-${issueRefSlug(ref)}-${slugifyBranchLeaf(title)}`
+}
+
 export function buildIssueAiWorkPrompt(args: {
   provider: RepoIssueProvider
-  number: number
+  number: number | null
+  /** Linear identifier (ENG-123); omit for github/gitlab. */
+  identifier?: string | null
   title: string
   url: string
   body?: string
@@ -37,11 +46,15 @@ export function buildIssueAiWorkPrompt(args: {
   baseBranch?: string
   focusComment?: IssueWorkFocusComment
 }): string {
-  const providerLabel = args.provider === 'github' ? 'GitHub' : 'GitLab'
+  const providerLabel =
+    args.provider === 'github' ? 'GitHub' : args.provider === 'gitlab' ? 'GitLab' : 'Linear'
+  const refLabel = issueRefLabel({ number: args.number, identifier: args.identifier })
   const commentCommand =
     args.provider === 'github'
-      ? `gh issue comment ${args.number} --body "..."`
-      : `glab issue note ${args.number} --message "..."`
+      ? `gh issue comment ${refLabel.replace(/^#/, '')} --body "..."`
+      : args.provider === 'gitlab'
+        ? `glab issue note ${refLabel.replace(/^#/, '')} --message "..."`
+        : `orca linear comment add ${refLabel} --body "..."`
   const body = args.body?.trim()
   const focus = args.focusComment
   const focusBody = focus?.body?.trim()
@@ -52,8 +65,8 @@ export function buildIssueAiWorkPrompt(args: {
 
   return [
     focus
-      ? `You are working autonomously on ${providerLabel} issue #${args.number}, prioritizing one discussion thread.`
-      : `You are working autonomously on ${providerLabel} issue #${args.number}.`,
+      ? `You are working autonomously on ${providerLabel} issue ${refLabel}, prioritizing one discussion thread.`
+      : `You are working autonomously on ${providerLabel} issue ${refLabel}.`,
     args.repoDisplayName ? `Repository: ${args.repoDisplayName}` : null,
     `Issue: ${args.title}`,
     `URL: ${args.url}`,
@@ -82,7 +95,7 @@ export function buildIssueAiWorkPrompt(args: {
     '2. Implement the smallest correct fix. Match existing style. Do not refactor unrelated code.',
     '3. Run the fastest relevant tests/lint that already exist in the repo. Skip long suites.',
     '4. Commit your changes locally with a message like:',
-    `   fix(#${args.number}): <short summary>`,
+    `   fix(${refLabel}): <short summary>`,
     '5. Do NOT push the branch. Do NOT open a PR/MR. The human will review and decide (open a PR/MR, or discard).',
     `6. Post ONE final comment on the issue summarizing what you did using: ${commentCommand}`,
     '   The comment must include:',
@@ -91,7 +104,7 @@ export function buildIssueAiWorkPrompt(args: {
     '   - files touched (bullet list)',
     '   - test/lint results (or "not run" with reason)',
     '   - any follow-ups the human should verify',
-    `7. When everything above is finished, print the exact line "${args.completionSentinel} #${args.number}" as the very last line of output, then exit.`,
+    `7. When everything above is finished, print the exact line "${args.completionSentinel} ${refLabel}" as the very last line of output, then exit.`,
     '',
     'Guardrails:',
     '- Never force-push, never delete branches, never rewrite shared history.',
@@ -109,4 +122,12 @@ export function issueAiWorkRegistryKey(
   number: number
 ): string {
   return `${provider}:${repoId}:${number}`
+}
+
+export function issueAiWorkRegistryKeyForRef(
+  provider: RepoIssueProvider,
+  repoId: string,
+  ref: Pick<IssueRef, 'number' | 'identifier'>
+): string {
+  return `${provider}:${repoId}:${issueRefSlug(ref)}`
 }

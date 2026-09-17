@@ -5754,6 +5754,21 @@
           },
           "useFileExplorerKeys": {
             "8adb953095": "Operation failed"
+          },
+          "issuesPanel": {
+            "linearLabel": "Linear",
+            "linearNoTeam": "No Linear team is available in the attached workspace.",
+            "createdLinear": "Created {{value0}}",
+            "linearAttachFirst": "Attach a Linear project before creating issues.",
+            "linearNoCompletedState": "No completed state is available for this Linear team.",
+            "linearNotConnectedTitle": "Connect Linear",
+            "linearNotConnectedBody": "Add a Linear API key to browse and attach projects from this repo.",
+            "linearAttachTitle": "Attach a Linear project",
+            "linearAttachBody": "Pick the workspace and project this repo should track. Its open issues will show here.",
+            "linearWorkspace": "Workspace",
+            "linearSearchProjects": "Search projects…",
+            "linearLoadingProjects": "Loading projects…",
+            "linearNoProjects": "No projects found."
           }
         }
       },
