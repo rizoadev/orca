@@ -3,7 +3,9 @@
 // root + autopilot, so a dedicated agent is dispatched to work it.
 
 export const TASK_ORCHESTRATION_IPC = {
-  spawn: 'task-orchestration:spawn'
+  spawn: 'task-orchestration:spawn',
+  getGatewayStatus: 'task-orchestration:getGatewayStatus',
+  listRecentTasks: 'task-orchestration:listRecentTasks'
 } as const
 
 export type TaskOrchestrationPriority = 'low' | 'medium' | 'high' | 'urgent' | string | null
@@ -46,4 +48,25 @@ export type TaskOrchestrationStatusResult = {
   status: string
   phase: TaskOrchestrationPhase
   subtasks: TaskOrchestrationSubtaskCounts
+}
+
+export type LinearRelayGatewayStatus = {
+  gatewayPort: number
+  gatewayRunning: boolean
+  relayUrl: string
+  relayOnline: boolean
+  tunnelUrl: string
+  tunnelOnline: boolean
+  runnerRunning: boolean
+}
+
+export type LinearRelayRecentTask = {
+  id: string
+  pipelineId: string | null
+  title: string
+  status: string
+  repoId: string | null
+  createdAt: string
+  completedAt: string | null
+  result?: string | null
 }

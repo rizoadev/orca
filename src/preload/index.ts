@@ -45,7 +45,9 @@ import type {
 import { TASK_ORCHESTRATION_IPC } from '../shared/task-orchestration-types'
 import type {
   TaskOrchestrationSpawnRequest,
-  TaskOrchestrationSpawnResult
+  TaskOrchestrationSpawnResult,
+  LinearRelayGatewayStatus,
+  LinearRelayRecentTask
 } from '../shared/task-orchestration-types'
 import type {
   AsanaConnectionStatus,
@@ -5129,7 +5131,11 @@ const api = {
   // pipeline + autopilot so a dedicated agent is dispatched to work it.
   taskOrchestration: {
     spawn: (req: TaskOrchestrationSpawnRequest): Promise<TaskOrchestrationSpawnResult> =>
-      ipcRenderer.invoke(TASK_ORCHESTRATION_IPC.spawn, req)
+      ipcRenderer.invoke(TASK_ORCHESTRATION_IPC.spawn, req),
+    getGatewayStatus: (): Promise<LinearRelayGatewayStatus> =>
+      ipcRenderer.invoke(TASK_ORCHESTRATION_IPC.getGatewayStatus),
+    listRecentTasks: (): Promise<LinearRelayRecentTask[]> =>
+      ipcRenderer.invoke(TASK_ORCHESTRATION_IPC.listRecentTasks)
   }
 }
 

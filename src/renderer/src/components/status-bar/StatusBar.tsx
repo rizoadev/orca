@@ -135,6 +135,11 @@ const CloudflareRelayStatusSegment = lazyWithRetry(() =>
     default: module.CloudflareRelayStatusSegment
   }))
 )
+const LinearGatewayStatusSegment = lazyWithRetry(() =>
+  import('./LinearGatewayStatusSegment').then((module) => ({
+    default: module.LinearGatewayStatusSegment
+  }))
+)
 
 export type CodexStatusRuntimeTarget = {
   runtime: 'host' | 'wsl'
@@ -2377,6 +2382,7 @@ function StatusBarInner({ floatingTerminalOpen }: StatusBarProps): React.JSX.Ele
           ) : null}
           {showPorts ? <PortsStatusSegment compact={compact} iconOnly={iconOnly} /> : null}
           {showSsh ? <SshStatusSegment compact={compact} iconOnly={iconOnly} /> : null}
+          <LinearGatewayStatusSegment compact={compact} iconOnly={iconOnly} />
           <CloudflareRelayStatusSegment compact={compact} iconOnly={iconOnly} />
           <ServiceCooldownButton />
         </React.Suspense>

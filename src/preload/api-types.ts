@@ -588,7 +588,9 @@ import type {
 } from '../shared/strands-issue-chat-types'
 import type {
   TaskOrchestrationSpawnRequest,
-  TaskOrchestrationSpawnResult
+  TaskOrchestrationSpawnResult,
+  LinearRelayGatewayStatus,
+  LinearRelayRecentTask
 } from '../shared/task-orchestration-types'
 import type {
   Note,
@@ -2776,6 +2778,8 @@ export type PreloadApi = {
   }
   taskOrchestration: {
     spawn: (req: TaskOrchestrationSpawnRequest) => Promise<TaskOrchestrationSpawnResult>
+    getGatewayStatus: () => Promise<LinearRelayGatewayStatus>
+    listRecentTasks: () => Promise<LinearRelayRecentTask[]>
   }
   piIssueChat: {
     start: (args: PiIssueChatStartArgs) => Promise<PiIssueChatSessionSnapshot>
