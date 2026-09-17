@@ -204,6 +204,9 @@ import { initializeBrowserSessionsForApp } from './browser/browser-session-start
 import { setUnreadDockBadgeCount } from './dock/unread-badge'
 import { AutomationService } from './automations/service'
 import { TelegramBridgeService } from './telegram-bridge/service'
+import { LinearWebhookService } from './linear-webhook/service'
+import { registerLinearWebhookHandlers } from './ipc/linear-webhook'
+import { setLinearWebhookHandler } from './services/task-orchestration-gateway'
 import { PaseoDaemonManager } from './paseo/daemon-manager'
 import { PaseoAutoAttach } from './paseo/auto-attach'
 import { registerPaseoHandlers } from './ipc/paseo'
@@ -217,6 +220,7 @@ import { ServiceCooldownController } from './services/service-cooldown-controlle
 import { registerServiceCooldownHandlers } from './ipc/service-cooldown'
 import { registerTaskOrchestrationHandlers } from './ipc/task-orchestration'
 import { startTaskOrchestrationGateway } from './services/task-orchestration-gateway'
+import { spawnTaskAgent } from './services/task-orchestration'
 import { resetHarnessRefCountsFor } from './services/harness-lifecycle'
 import { stopAllPortScanners } from './ssh/ssh-port-scanner'
 import { createHeadlessAutomationOutputSnapshotBuffer } from './automations/headless-dispatch'
@@ -317,6 +321,7 @@ let watcherShutdownPromise: Promise<void> | null = null
 let watcherShutdownDone = false
 let automations: AutomationService | null = null
 let telegramBridge: TelegramBridgeService | null = null
+let linearWebhook: LinearWebhookService | null = null
 let keybindings: KeybindingService | null = null
 // Why: Paseo is optional — the daemon only starts when the in-app Paseo view
 // asks for it, so Orca users who never open the view pay no process cost.
@@ -1217,6 +1222,11 @@ function openMainWindow(): BrowserWindow {
   automations.start()
   telegramBridge?.setWebContents(window.webContents)
   void telegramBridge?.start()
+  registerLinearWebhookHandlers(linearWebhook!)
+  linearWebhook?.setWebContents(window.webContents)
+  if (linearWebhook!.getConfig().autoStart) {
+    void linearWebhook!.start()
+  }
 
   // Why: the Paseo daemon is lazy — spawn on first view open via IPC; the
   // handler registrar is registered once here so the renderer can always ask.
@@ -1320,6 +1330,7 @@ function openMainWindow(): BrowserWindow {
     clearExpectedRendererReload(rendererWebContentsId)
     automations?.setWebContents(null)
     telegramBridge?.setWebContents(null)
+    linearWebhook?.setWebContents(null)
     // Why: detach the hook listener on close so the server never fires into destroyed webContents before reopen, and replay runs only on deliberate recreations.
     agentHookServer.setListener(null)
     agentHookServer.setPaneStatusClearListener(null)
@@ -2236,6 +2247,53 @@ app.whenReady().then(async () => {
     },
     getDisabledTuiAgents: () => store?.getSettings().disabledTuiAgents ?? null
   })
+  // Why: native Linear webhook gateway — replaces the Cloudflare Worker business
+  // logic. CF Worker stays as a thin relay; Orca owns parsing, debounce, spawn, reply.
+  linearWebhook = new LinearWebhookService({
+    getRuntime: () => runtime,
+    getAgentStatusSnapshot: () =>
+      agentHookServer
+        .getStatusSnapshot()
+        .filter((entry) => entry.providerSessionOnly !== true)
+        .map((entry) => {
+          const terminalHandle =
+            entry.terminalHandle ?? runtime?.getAgentStatusTerminalHandleForPaneKey(entry.paneKey)
+          return terminalHandle ? { ...entry, terminalHandle } : entry
+        }),
+    getRepos: () => store?.getRepos() ?? [],
+    getDefaultAgent: () => {
+      const agent = store?.getSettings().defaultTuiAgent
+      return typeof agent === 'string' ? agent : null
+    },
+    getDisabledTuiAgents: () => store?.getSettings().disabledTuiAgents ?? null
+  })
+  // Why: spawnTask is set after construction so we can access the orchestration DB.
+  linearWebhook.setSpawnTask(async (req) => {
+    const db = runtime?.getOrchestrationDb()
+    if (!db) {
+      throw new Error('orchestration DB not available')
+    }
+    return spawnTaskAgent(db, req)
+  })
+  // Wire the service into the HTTP gateway so POST /api/webhooks/linear dispatches.
+  setLinearWebhookHandler(async (body) => {
+    try {
+      const result = await linearWebhook!.handleWebhook(body)
+      return {
+        ok: result.ok,
+        status: result.ok ? 200 : 400,
+        body: result.ok
+          ? { ok: true, issueId: result.issueId, repoId: result.repoId }
+          : { error: result.reason }
+      }
+    } catch (err) {
+      return {
+        ok: false,
+        status: 500,
+        body: { error: err instanceof Error ? err.message : String(err) }
+      }
+    }
+  })
   automations = new AutomationService(store, {
     claudeUsage,
     codexUsage,
@@ -2635,6 +2693,9 @@ app.whenReady().then(async () => {
     automations.start()
     // Why: Telegram long-poll is main-process owned and still works headless for remote inject/mirror.
     void telegramBridge?.start()
+    if (linearWebhook!.getConfig().autoStart) {
+      void linearWebhook!.start()
+    }
     await printServeReady(serveOptions)
     return
   }
@@ -2735,6 +2796,7 @@ app.on('will-quit', (e) => {
   starNag?.stop()
   automations?.stop()
   telegramBridge?.stop()
+  linearWebhook?.stop()
   setUnreadDockBadgeCount(0)
   agentHookServer.stop()
   // Why: cancels relay restart/reinstall timers and kills wsl.exe children deterministically, not via stdio-pipe teardown.

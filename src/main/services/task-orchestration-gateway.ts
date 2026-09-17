@@ -111,6 +111,17 @@ function statusResultFor(
   }
 }
 
+/** Set by main/index.ts after LinearWebhookService is constructed. */
+let linearWebhookHandler:
+  | ((body: unknown) => Promise<{ ok: boolean; status: number; body: unknown }>)
+  | null = null
+
+export function setLinearWebhookHandler(
+  h: (body: unknown) => Promise<{ ok: boolean; status: number; body: unknown }>
+): void {
+  linearWebhookHandler = h
+}
+
 export function startTaskOrchestrationGateway(db: OrchestrationDb): () => void {
   const server = createServer(async (req, res) => {
     try {
@@ -161,6 +172,16 @@ export function startTaskOrchestrationGateway(db: OrchestrationDb): () => void {
         return sendJson(res, 200, status)
       }
 
+      // Why: Linear webhook — Cloudflare relay forwards raw payload here.
+      // Business logic lives in LinearWebhookService; this is just the HTTP seam.
+      if (req.method === 'POST' && path === '/api/webhooks/linear') {
+        const body = await readJson(req)
+        if (linearWebhookHandler) {
+          return linearWebhookHandler(body)
+        }
+        return sendJson(res, 503, { error: 'webhook handler not registered' })
+      }
+
       sendJson(res, 404, { error: 'not found' })
     } catch (err) {
       sendJson(res, 500, { error: err instanceof Error ? err.message : String(err) })
@@ -180,4 +201,9 @@ export function startTaskOrchestrationGateway(db: OrchestrationDb): () => void {
   return () => {
     server.close()
   }
+}
+
+// Expose for tests / headless restarts.
+export function getLinearWebhookHandler(): typeof linearWebhookHandler {
+  return linearWebhookHandler
 }

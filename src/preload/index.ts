@@ -318,6 +318,11 @@ import type {
   TelegramRepoTopicMapping
 } from '../shared/telegram-bridge-types'
 import type {
+  LinearWebhookEvent,
+  LinearWebhookSetConfigInput,
+  LinearWebhookStatus
+} from '../shared/linear-webhook-types'
+import type {
   ProjectTodoAddArgs,
   ProjectTodoClearDoneArgs,
   ProjectTodoDeleteArgs,
@@ -4777,6 +4782,30 @@ const api = {
         callback(event)
       ipcRenderer.on('telegramBridge:event', listener)
       return () => ipcRenderer.removeListener('telegramBridge:event', listener)
+    }
+  },
+
+  linearWebhook: {
+    getStatus: (): Promise<LinearWebhookStatus> => ipcRenderer.invoke('linearWebhook:getStatus'),
+    getEvents: (args?: { limit?: number }): Promise<LinearWebhookEvent[]> =>
+      ipcRenderer.invoke('linearWebhook:getEvents', args),
+    setConfig: (input: LinearWebhookSetConfigInput): Promise<LinearWebhookStatus> =>
+      ipcRenderer.invoke('linearWebhook:setConfig', input),
+    start: (): Promise<void> => ipcRenderer.invoke('linearWebhook:start'),
+    stop: (): Promise<void> => ipcRenderer.invoke('linearWebhook:stop'),
+    clearEvents: (): Promise<LinearWebhookStatus> =>
+      ipcRenderer.invoke('linearWebhook:clearEvents'),
+    onStatus: (callback: (status: LinearWebhookStatus) => void): (() => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, status: LinearWebhookStatus) =>
+        callback(status)
+      ipcRenderer.on('linearWebhook:status', listener)
+      return () => ipcRenderer.removeListener('linearWebhook:status', listener)
+    },
+    onEvent: (callback: (event: LinearWebhookEvent) => void): (() => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, event: LinearWebhookEvent) =>
+        callback(event)
+      ipcRenderer.on('linearWebhook:event', listener)
+      return () => ipcRenderer.removeListener('linearWebhook:event', listener)
     }
   },
 

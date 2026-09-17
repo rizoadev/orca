@@ -13,6 +13,7 @@ import type {
   LinearRelayGatewayStatus,
   LinearRelayRecentTask
 } from '../../../../shared/task-orchestration-types'
+import type { LinearWebhookStatus } from '../../../../shared/linear-webhook-types'
 import { cn } from '@/lib/utils'
 
 export function LinearGatewayStatusSegment({
@@ -24,17 +25,20 @@ export function LinearGatewayStatusSegment({
 }): React.JSX.Element {
   const [status, setStatus] = useState<LinearRelayGatewayStatus | null>(null)
   const [tasks, setTasks] = useState<LinearRelayRecentTask[]>([])
+  const [webhookStatus, setWebhookStatus] = useState<LinearWebhookStatus | null>(null)
   const [loading, setLoading] = useState(false)
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   const poll = useCallback(async (): Promise<void> => {
     try {
-      const [s, t] = await Promise.all([
+      const [s, t, w] = await Promise.all([
         window.api.taskOrchestration.getGatewayStatus(),
-        window.api.taskOrchestration.listRecentTasks()
+        window.api.taskOrchestration.listRecentTasks(),
+        window.api.linearWebhook.getStatus()
       ])
       setStatus(s)
       setTasks(t)
+      setWebhookStatus(w)
     } catch {
       // ignore
     }
@@ -60,6 +64,7 @@ export function LinearGatewayStatusSegment({
   }
 
   const isHealthy = status?.gatewayRunning && status?.relayOnline && status?.tunnelOnline
+  const serviceRunning = webhookStatus?.running ?? false
 
   return (
     <DropdownMenu>
@@ -74,12 +79,12 @@ export function LinearGatewayStatusSegment({
               )}
             >
               <span className="relative flex size-2 items-center justify-center">
-                {isHealthy ? (
+                {isHealthy && serviceRunning ? (
                   <>
                     <span className="absolute inline-flex size-full animate-ping rounded-full bg-emerald-400 opacity-75" />
                     <span className="relative inline-flex size-1.5 rounded-full bg-emerald-500" />
                   </>
-                ) : status?.gatewayRunning ? (
+                ) : status?.gatewayRunning && serviceRunning ? (
                   <span className="inline-flex size-1.5 rounded-full bg-amber-500" />
                 ) : (
                   <span className="inline-flex size-1.5 rounded-full bg-rose-500" />
@@ -118,6 +123,14 @@ export function LinearGatewayStatusSegment({
         </div>
 
         <div className="grid grid-cols-3 gap-1.5 py-1 text-center">
+          <div className="rounded border border-border/60 bg-muted/40 p-1.5">
+            <div className="text-[10px] text-muted-foreground">Service</div>
+            <div
+              className={cn('font-medium', serviceRunning ? 'text-emerald-500' : 'text-rose-500')}
+            >
+              {serviceRunning ? 'Native' : 'Stopped'}
+            </div>
+          </div>
           <div className="rounded border border-border/60 bg-muted/40 p-1.5">
             <div className="text-[10px] text-muted-foreground">Local Gateway</div>
             <div

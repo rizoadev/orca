@@ -10,6 +10,7 @@ import { JiraIntegrationCard, LinearIntegrationCard } from './task-tracker-integ
 import { AsanaIntegrationCard } from './asana-integration-card'
 import { useIntegrationProviderStatusRefresh } from './use-integration-provider-status-refresh'
 import { TelegramBridgeSettingsCard } from './TelegramBridgeSettingsCard'
+import { LinearWebhookSettingsCard } from './LinearWebhookSettingsCard'
 import { TursoIntegrationCard } from './TursoIntegrationCard'
 import { S3IntegrationCard } from './S3IntegrationCard'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
@@ -78,6 +79,7 @@ export function IntegrationsPane(): React.JSX.Element {
         </p>
         <div className="space-y-3">
           <LinearIntegrationCard />
+          <LinearWebhookSettingsCard />
           <JiraIntegrationCard />
           <AsanaIntegrationCard />
         </div>

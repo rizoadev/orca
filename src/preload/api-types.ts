@@ -514,6 +514,11 @@ import type {
   TelegramRepoTopicMapping
 } from '../shared/telegram-bridge-types'
 import type {
+  LinearWebhookEvent,
+  LinearWebhookSetConfigInput,
+  LinearWebhookStatus
+} from '../shared/linear-webhook-types'
+import type {
   ProjectTodoAddArgs,
   ProjectTodoClearDoneArgs,
   ProjectTodoDeleteArgs,
@@ -3608,6 +3613,16 @@ export type PreloadApi = {
     stop: () => Promise<void>
     onStatus: (callback: (status: TelegramBridgeStatus) => void) => () => void
     onEvent: (callback: (event: TelegramBridgeEvent) => void) => () => void
+  }
+  linearWebhook: {
+    getStatus: () => Promise<LinearWebhookStatus>
+    getEvents: (args?: { limit?: number }) => Promise<LinearWebhookEvent[]>
+    setConfig: (input: LinearWebhookSetConfigInput) => Promise<LinearWebhookStatus>
+    start: () => Promise<void>
+    stop: () => Promise<void>
+    clearEvents: () => Promise<LinearWebhookStatus>
+    onStatus: (callback: (status: LinearWebhookStatus) => void) => () => void
+    onEvent: (callback: (event: LinearWebhookEvent) => void) => () => void
   }
   projectTodo: {
     list: (args: ProjectTodoListArgs) => Promise<ProjectTodoList>
