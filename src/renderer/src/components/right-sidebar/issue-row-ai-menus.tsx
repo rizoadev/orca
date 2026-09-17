@@ -31,7 +31,7 @@ export function IssueRowAiMenus({
   working: boolean
   agents: TuiAgent[]
   detectingAgents: boolean
-  defaultAgent: TuiAgent | null
+  defaultAgent: TuiAgent | 'blank' | null
   onAskAiPlan: (row: IssueRow, agent: TuiAgent) => void
   onAskAiWork: (row: IssueRow, agent: TuiAgent, mode: IssueAiWorkMode) => void
 }): React.JSX.Element {
