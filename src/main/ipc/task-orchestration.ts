@@ -90,8 +90,22 @@ export function registerTaskOrchestrationHandlers(db: OrchestrationDb): void {
     TASK_ORCHESTRATION_IPC.stopTask,
     (_event, args: { taskId: string; reason?: string }) => {
       try {
-        const stopped = db.stopTask(args.taskId, args.reason ?? 'Stopped by operator from footer')
-        return { ok: Boolean(stopped) }
+        const reason = args.reason ?? 'Stopped by operator from footer'
+        // First try stopping directly by taskId
+        let stopped = db.stopTask(args.taskId, reason)
+        // If not found or not stopped, check if this task belongs to a pipeline or has children/parents
+        if (!stopped) {
+          const task = db.getTask(args.taskId)
+          if (task?.pipeline_id) {
+            stopped = db.stopTask(task.pipeline_id, reason)
+          }
+        }
+        // Force mark the target task itself as failed if it's still active
+        const current = db.getTask(args.taskId)
+        if (current && (current.status === 'dispatched' || current.status === 'ready')) {
+          db.updateTaskStatus(args.taskId, 'failed', JSON.stringify({ kind: 'stopped', reason }))
+        }
+        return { ok: true }
       } catch (err) {
         console.warn('[task-orchestration] stopTask error:', err)
         return { ok: false, error: err instanceof Error ? err.message : String(err) }

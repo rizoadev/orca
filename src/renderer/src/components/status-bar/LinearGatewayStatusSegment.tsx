@@ -67,10 +67,16 @@ export function LinearGatewayStatusSegment({
 
   const stopRunningTask = async (taskId: string, e: React.MouseEvent): Promise<void> => {
     e.stopPropagation()
+    e.preventDefault()
     setStoppingTaskId(taskId)
     try {
-      await window.api.taskOrchestration.stopTask({ taskId })
+      const res = await window.api.taskOrchestration.stopTask({ taskId })
+      if (!res.ok && res.error) {
+        console.warn('Failed to stop task:', res.error)
+      }
       await poll()
+    } catch (err) {
+      console.warn('stopRunningTask failed:', err)
     } finally {
       setStoppingTaskId(null)
     }
