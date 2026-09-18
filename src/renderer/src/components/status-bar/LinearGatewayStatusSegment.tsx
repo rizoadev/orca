@@ -30,6 +30,7 @@ export function LinearGatewayStatusSegment({
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   const [stoppingTaskId, setStoppingTaskId] = useState<string | null>(null)
+  const [activeTab, setActiveTab] = useState<'running' | 'recent'>('running')
 
   const poll = useCallback(async (): Promise<void> => {
     try {
@@ -200,23 +201,62 @@ export function LinearGatewayStatusSegment({
 
         <DropdownMenuSeparator className="my-1.5" />
 
-        <div className="flex items-center justify-between px-1 py-0.5 text-[11px] font-semibold text-muted-foreground">
-          <span>Recent Tasks from Linear</span>
-          <span className="text-[10px] font-normal">
-            {activeTaskCount > 0 && (
-              <span className="mr-1.5 font-medium text-amber-500">{activeTaskCount} active</span>
-            )}
-            {tasks.length} total
+        <div className="flex items-center justify-between px-1 py-0.5">
+          <div className="flex items-center gap-1 rounded bg-muted/60 p-0.5 text-[10px]">
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation()
+                setActiveTab('running')
+              }}
+              className={cn(
+                'rounded px-2 py-0.5 font-medium transition-colors',
+                activeTab === 'running'
+                  ? 'bg-background text-foreground shadow-xs'
+                  : 'text-muted-foreground hover:text-foreground'
+              )}
+            >
+              Running {activeTaskCount > 0 && `(${activeTaskCount})`}
+            </button>
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation()
+                setActiveTab('recent')
+              }}
+              className={cn(
+                'rounded px-2 py-0.5 font-medium transition-colors',
+                activeTab === 'recent'
+                  ? 'bg-background text-foreground shadow-xs'
+                  : 'text-muted-foreground hover:text-foreground'
+              )}
+            >
+              Recent ({tasks.length})
+            </button>
+          </div>
+          <span className="text-[10px] text-muted-foreground">
+            {activeTab === 'running' ? `${activeTaskCount} active` : `${tasks.length} total`}
           </span>
         </div>
 
         <div className="max-h-56 space-y-1 overflow-y-auto pt-1">
-          {tasks.length === 0 ? (
-            <div className="py-4 text-center text-[11px] text-muted-foreground">
-              Belum ada task dari Linear
-            </div>
-          ) : (
-            tasks.map((task) => (
+          {(() => {
+            const displayedTasks =
+              activeTab === 'running'
+                ? tasks.filter((t) => t.status === 'dispatched' || t.status === 'ready')
+                : tasks
+
+            if (displayedTasks.length === 0) {
+              return (
+                <div className="py-4 text-center text-[11px] text-muted-foreground">
+                  {activeTab === 'running'
+                    ? 'Tidak ada task yang sedang running'
+                    : 'Belum ada task dari Linear'}
+                </div>
+              )
+            }
+
+            return displayedTasks.map((task) => (
               <DropdownMenuItem
                 key={task.id}
                 className="flex cursor-default flex-col items-start gap-1 rounded p-1.5 text-xs hover:bg-accent/60"
@@ -269,7 +309,7 @@ export function LinearGatewayStatusSegment({
                 </div>
               </DropdownMenuItem>
             ))
-          )}
+          })()}
         </div>
       </DropdownMenuContent>
     </DropdownMenu>
