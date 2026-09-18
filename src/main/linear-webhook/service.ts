@@ -13,6 +13,9 @@ import type {
 } from '../../shared/linear-webhook-types'
 import { postLinearComment } from './api'
 import { resolveRepoIdFromIssue } from './mapping-store'
+import { readTelegramBotToken } from '../telegram-bridge/bot-token-store'
+import { TelegramBridgeMappingStore } from '../telegram-bridge/mapping-store'
+import { sendTelegramMessage } from '../telegram-bridge/telegram-api'
 
 const DEFAULT_CONFIG: LinearWebhookConfig = {
   enabled: false,
@@ -229,6 +232,43 @@ export class LinearWebhookService {
       // Comment back on Linear
       const welcomeMsg = `✅ Orca menerima task ini.\n🔗 Task ID: ${result.taskId}\n📁 Repo: ${repoId}`
       void postLinearComment({ issueId, body: welcomeMsg }).catch(() => {})
+
+      // Send to Telegram using sidebar Telegram Bridge bot
+      void (async () => {
+        try {
+          const token = readTelegramBotToken()
+          if (!token) {
+            return
+          }
+          const store = new TelegramBridgeMappingStore()
+          const groupId = store.getTelegramGroupId()
+          const allowedUsers = store.getAllowedTelegramUserIds()
+          const mapping = repoId ? store.findByRepoId(repoId) : null
+          const targetChatId = groupId ?? allowedUsers[0]
+          if (!targetChatId) {
+            return
+          }
+          const msg = [
+            `📥 <b>Task Linear Masuk ke Orca!</b>`,
+            ``,
+            `📌 <b>${title}</b>`,
+            repoId ? `📁 <b>Target Repo:</b> <code>${repoId}</code>` : '',
+            `🆔 <b>Task ID:</b> <code>${result.taskId}</code>`,
+            description ? `\n<blockquote>${description.slice(0, 200)}</blockquote>` : ''
+          ]
+            .filter(Boolean)
+            .join('\n')
+
+          await sendTelegramMessage({
+            token,
+            chatId: targetChatId,
+            text: msg,
+            messageThreadId: mapping?.messageThreadId
+          })
+        } catch (err) {
+          console.warn('[linear-webhook] telegram alert failed:', err)
+        }
+      })()
 
       this.pushEvent({
         type: parsed.comment ? 'comment.created' : 'issue.mention',

@@ -7,6 +7,9 @@ import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { OrchestrationDb } from '../runtime/orchestration/db'
 import { spawnTaskAgent } from './task-orchestration'
 import { handlePmRestRequest } from './pm-rest-service'
+import { readTelegramBotToken } from '../telegram-bridge/bot-token-store'
+import { TelegramBridgeMappingStore } from '../telegram-bridge/mapping-store'
+import { sendTelegramMessage } from '../telegram-bridge/telegram-api'
 import type {
   TaskOrchestrationPhase,
   TaskOrchestrationSpawnRequest,
@@ -157,6 +160,45 @@ export function startTaskOrchestrationGateway(db: OrchestrationDb): () => void {
           db,
           body as TaskOrchestrationSpawnRequest
         )
+
+        // Notify Telegram via native Telegram Bridge credentials (sidebar bot)
+        void (async () => {
+          try {
+            const token = readTelegramBotToken()
+            if (!token) {
+              return
+            }
+            const store = new TelegramBridgeMappingStore()
+            const groupId = store.getTelegramGroupId()
+            const allowedUsers = store.getAllowedTelegramUserIds()
+            const repoId = body.repoId ?? ''
+            const mapping = repoId ? store.findByRepoId(repoId) : null
+            const targetChatId = groupId ?? allowedUsers[0]
+            if (!targetChatId) {
+              return
+            }
+            const msg = [
+              `🚀 <b>Orca Agent Dispatched!</b>`,
+              ``,
+              `📌 <b>${body.title}</b>`,
+              repoId ? `📁 <b>Repo ID:</b> <code>${repoId}</code>` : '',
+              `🆔 <b>Task ID:</b> <code>${result.taskId}</code>`,
+              `⚡ <b>Pipeline ID:</b> <code>${result.pipelineId}</code>`
+            ]
+              .filter(Boolean)
+              .join('\n')
+
+            await sendTelegramMessage({
+              token,
+              chatId: targetChatId,
+              text: msg,
+              messageThreadId: mapping?.messageThreadId
+            })
+          } catch (err) {
+            console.warn('[gateway] telegram dispatch alert failed:', err)
+          }
+        })()
+
         return sendJson(res, 200, result)
       }
 
