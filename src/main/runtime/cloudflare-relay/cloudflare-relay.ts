@@ -65,9 +65,7 @@ export class CloudflareRelayService {
     }
     this.stop()
     await this.start(port)
-    return this.status.state === 'error'
-      ? { ok: false, error: this.status.message }
-      : { ok: true }
+    return this.status.state === 'error' ? { ok: false, error: this.status.message } : { ok: true }
   }
 
   // Why: runtime toggle — persists the setting, then starts/stops the tunnel
@@ -84,9 +82,7 @@ export class CloudflareRelayService {
     }
     await this.start(port)
     const status = this.status
-    return status.state === 'error'
-      ? { ok: false, error: status.message }
-      : { ok: true }
+    return status.state === 'error' ? { ok: false, error: status.message } : { ok: true }
   }
 
   // Why: called once the WS transport binds; the ingress must point at the
@@ -237,6 +233,9 @@ export class CloudflareRelayService {
         'region: us',
         '',
         'ingress:',
+        `  - hostname: ${hostname}`,
+        '    path: (health|task-orchestration|api/webhooks)',
+        '    service: http://127.0.0.1:18789',
         `  - hostname: ${hostname}`,
         `    service: http://localhost:${this.wsPort ?? 6768}`,
         '  - service: http_status:404',
