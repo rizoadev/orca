@@ -2785,6 +2785,10 @@ export type PreloadApi = {
     spawn: (req: TaskOrchestrationSpawnRequest) => Promise<TaskOrchestrationSpawnResult>
     getGatewayStatus: () => Promise<LinearRelayGatewayStatus>
     listRecentTasks: () => Promise<LinearRelayRecentTask[]>
+    stopTask: (args: {
+      taskId: string
+      reason?: string
+    }) => Promise<{ ok: boolean; error?: string }>
   }
   piIssueChat: {
     start: (args: PiIssueChatStartArgs) => Promise<PiIssueChatSessionSnapshot>

@@ -5164,7 +5164,12 @@ const api = {
     getGatewayStatus: (): Promise<LinearRelayGatewayStatus> =>
       ipcRenderer.invoke(TASK_ORCHESTRATION_IPC.getGatewayStatus),
     listRecentTasks: (): Promise<LinearRelayRecentTask[]> =>
-      ipcRenderer.invoke(TASK_ORCHESTRATION_IPC.listRecentTasks)
+      ipcRenderer.invoke(TASK_ORCHESTRATION_IPC.listRecentTasks),
+    stopTask: (args: {
+      taskId: string
+      reason?: string
+    }): Promise<{ ok: boolean; error?: string }> =>
+      ipcRenderer.invoke(TASK_ORCHESTRATION_IPC.stopTask, args)
   }
 }
 

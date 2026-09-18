@@ -85,4 +85,17 @@ export function registerTaskOrchestrationHandlers(db: OrchestrationDb): void {
       return []
     }
   })
+
+  ipcMain.handle(
+    TASK_ORCHESTRATION_IPC.stopTask,
+    (_event, args: { taskId: string; reason?: string }) => {
+      try {
+        const stopped = db.stopTask(args.taskId, args.reason ?? 'Stopped by operator from footer')
+        return { ok: Boolean(stopped) }
+      } catch (err) {
+        console.warn('[task-orchestration] stopTask error:', err)
+        return { ok: false, error: err instanceof Error ? err.message : String(err) }
+      }
+    }
+  )
 }

@@ -5,7 +5,8 @@
 export const TASK_ORCHESTRATION_IPC = {
   spawn: 'task-orchestration:spawn',
   getGatewayStatus: 'task-orchestration:getGatewayStatus',
-  listRecentTasks: 'task-orchestration:listRecentTasks'
+  listRecentTasks: 'task-orchestration:listRecentTasks',
+  stopTask: 'task-orchestration:stopTask'
 } as const
 
 export type TaskOrchestrationPriority = 'low' | 'medium' | 'high' | 'urgent' | string | null

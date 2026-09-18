@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react'
-import { Radio, RefreshCw } from 'lucide-react'
+import { Radio, RefreshCw, Square } from 'lucide-react'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -28,6 +28,8 @@ export function LinearGatewayStatusSegment({
   const [webhookStatus, setWebhookStatus] = useState<LinearWebhookStatus | null>(null)
   const [loading, setLoading] = useState(false)
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
+
+  const [stoppingTaskId, setStoppingTaskId] = useState<string | null>(null)
 
   const poll = useCallback(async (): Promise<void> => {
     try {
@@ -63,8 +65,22 @@ export function LinearGatewayStatusSegment({
     }
   }
 
+  const stopRunningTask = async (taskId: string, e: React.MouseEvent): Promise<void> => {
+    e.stopPropagation()
+    setStoppingTaskId(taskId)
+    try {
+      await window.api.taskOrchestration.stopTask({ taskId })
+      await poll()
+    } finally {
+      setStoppingTaskId(null)
+    }
+  }
+
   const isHealthy = status?.gatewayRunning && status?.relayOnline && status?.tunnelOnline
   const serviceRunning = webhookStatus?.running ?? false
+  const activeTaskCount = tasks.filter(
+    (t) => t.status === 'dispatched' || t.status === 'ready'
+  ).length
 
   return (
     <DropdownMenu>
@@ -79,7 +95,12 @@ export function LinearGatewayStatusSegment({
               )}
             >
               <span className="relative flex size-2 items-center justify-center">
-                {isHealthy && serviceRunning ? (
+                {activeTaskCount > 0 ? (
+                  <>
+                    <span className="absolute inline-flex size-full animate-ping rounded-full bg-amber-400 opacity-75" />
+                    <span className="relative inline-flex size-1.5 rounded-full bg-amber-500" />
+                  </>
+                ) : isHealthy && serviceRunning ? (
                   <>
                     <span className="absolute inline-flex size-full animate-ping rounded-full bg-emerald-400 opacity-75" />
                     <span className="relative inline-flex size-1.5 rounded-full bg-emerald-500" />
@@ -90,10 +111,15 @@ export function LinearGatewayStatusSegment({
                   <span className="inline-flex size-1.5 rounded-full bg-rose-500" />
                 )}
               </span>
-              <Radio className="size-3 text-muted-foreground" />
+              <Radio
+                className={cn(
+                  'size-3 text-muted-foreground',
+                  activeTaskCount > 0 && 'animate-pulse text-amber-500'
+                )}
+              />
               {!iconOnly && (
                 <span className={cn('truncate', compact ? 'hidden md:inline' : '')}>
-                  Linear Relay
+                  {activeTaskCount > 0 ? `Linear (${activeTaskCount} running)` : 'Linear Relay'}
                 </span>
               )}
             </button>
@@ -170,7 +196,12 @@ export function LinearGatewayStatusSegment({
 
         <div className="flex items-center justify-between px-1 py-0.5 text-[11px] font-semibold text-muted-foreground">
           <span>Recent Tasks from Linear</span>
-          <span className="text-[10px] font-normal">{tasks.length} total</span>
+          <span className="text-[10px] font-normal">
+            {activeTaskCount > 0 && (
+              <span className="mr-1.5 font-medium text-amber-500">{activeTaskCount} active</span>
+            )}
+            {tasks.length} total
+          </span>
         </div>
 
         <div className="max-h-56 space-y-1 overflow-y-auto pt-1">
@@ -189,19 +220,38 @@ export function LinearGatewayStatusSegment({
                   <span className="truncate font-medium text-foreground">{task.title}</span>
                   <span
                     className={cn(
-                      'shrink-0 rounded px-1.5 py-0.2 text-[9px] font-semibold capitalize',
+                      'inline-flex items-center gap-1 shrink-0 rounded px-1.5 py-0.5 text-[9px] font-semibold capitalize',
                       task.status === 'completed'
                         ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400'
                         : task.status === 'dispatched' || task.status === 'ready'
-                          ? 'bg-amber-500/15 text-amber-600 dark:text-amber-400'
-                          : 'bg-muted text-muted-foreground'
+                          ? 'bg-amber-500/15 text-amber-600 dark:text-amber-400 animate-pulse'
+                          : task.status === 'failed'
+                            ? 'bg-rose-500/15 text-rose-600 dark:text-rose-400'
+                            : 'bg-muted text-muted-foreground'
                     )}
                   >
-                    {task.status}
+                    {(task.status === 'dispatched' || task.status === 'ready') && (
+                      <span className="size-1.5 rounded-full bg-amber-500 animate-ping" />
+                    )}
+                    {task.status === 'dispatched' ? 'running' : task.status}
                   </span>
                 </div>
                 <div className="flex w-full items-center justify-between text-[10px] text-muted-foreground">
-                  <span className="font-mono">{task.id}</span>
+                  <div className="flex items-center gap-1.5">
+                    <span className="font-mono">{task.id}</span>
+                    {(task.status === 'dispatched' || task.status === 'ready') && (
+                      <button
+                        type="button"
+                        onClick={(e) => void stopRunningTask(task.id, e)}
+                        disabled={stoppingTaskId === task.id}
+                        className="inline-flex items-center gap-0.5 rounded px-1.5 py-0.5 font-medium text-rose-500 bg-rose-500/10 hover:bg-rose-500/20 disabled:opacity-50 transition-colors"
+                        title="Stop task execution"
+                      >
+                        <Square className="size-2 fill-current" />
+                        <span>{stoppingTaskId === task.id ? 'Stopping...' : 'Stop'}</span>
+                      </button>
+                    )}
+                  </div>
                   <span>
                     {task.createdAt
                       ? new Date(task.createdAt).toLocaleTimeString([], {
