@@ -9,14 +9,12 @@ import { useVoiceMic } from '../../hooks/use-voice-mic'
 import { usePiTerminalWatcher } from '../../hooks/use-pi-terminal-watcher'
 import { VoiceCallBubble, type TranscriptEntry } from './voice-call-bubble'
 import { VoiceCallControls } from './voice-call-controls'
-import type {
-  VoiceCallEvent,
-  VoiceCallStatus
-} from '../../../../../../shared/voice-call-types'
+import type { VoiceCallEvent, VoiceCallStatus } from '../../../../../../shared/voice-call-types'
 
 export function VoiceCallPanel(): React.JSX.Element {
   const [callId, setCallId] = useState<string | null>(null)
   const [status, setStatus] = useState<VoiceCallStatus>('idle')
+  const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const [apiKeyConfigured, setApiKeyConfigured] = useState<boolean | null>(null)
   const [maskedKey, setMaskedKey] = useState<string>('')
   const [apiKeyInput, setApiKeyInput] = useState('')
@@ -139,11 +137,13 @@ export function VoiceCallPanel(): React.JSX.Element {
         case 'status':
           setStatus(event.status)
           if (event.status === 'listening') {
+            setErrorMessage(null)
             void startMic()
           } else if (event.status === 'error' || event.status === 'idle') {
             stopMic()
             if (event.error) {
-              toast.error(event.error)
+              setErrorMessage(event.error)
+              toast.error(event.error, { duration: 6000 })
             }
           }
           break
@@ -213,6 +213,7 @@ export function VoiceCallPanel(): React.JSX.Element {
     const newId = `voice-${Math.random().toString(36).slice(2, 9)}`
     setCallId(newId)
     setStatus('connecting')
+    setErrorMessage(null)
     try {
       await window.api?.voiceCall?.start(newId)
     } catch (err) {
@@ -285,6 +286,7 @@ export function VoiceCallPanel(): React.JSX.Element {
         autoSpeakPiResponse={autoSpeakPiResponse}
         activePtyId={activePtyId}
         hasTranscript={transcript.length > 0}
+        errorMessage={errorMessage}
         onToggleKeySetup={() => setShowKeySetup((v) => !v)}
         onApiKeyInputChange={setApiKeyInput}
         onSaveKey={() => void saveKey()}

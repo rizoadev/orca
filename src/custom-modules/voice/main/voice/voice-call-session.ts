@@ -53,17 +53,27 @@ function buildSessionCallbacks(session: VoiceSession): GeminiLiveHandlers {
     onError: (error) => {
       console.error('[voice-call] Gemini error:', error.message)
       session.busy = false
-      session.lastError = error.message
-      session.emit({ type: 'status', status: 'error', error: error.message })
+      let msg = error.message
+      if (msg.includes('403') || msg.includes('leaked') || msg.includes('PERMISSION_DENIED')) {
+        msg =
+          'API key terdeteksi bocor/leaked dan diblokir oleh Google. Harap generate key baru di Google AI Studio (aistudio.google.com).'
+      }
+      session.lastError = msg
+      session.emit({ type: 'status', status: 'error', error: msg })
     },
     onClose: (code, reason) => {
       if (session.closed) {
         return
       }
-      if (code !== 1000 && code !== 1005 && !session.lastError) {
-        const msg = reason
-          ? `Koneksi Gemini ditutup (${code}): ${reason}`
-          : `Koneksi Gemini terputus (kode ${code}). Periksa API Key atau kuota.`
+      if (code !== 1000 && code !== 1005) {
+        let msg = reason || `Koneksi Google Gemini ditutup (kode ${code}).`
+        if (code === 1008) {
+          msg = `Google menolak koneksi (kode 1008): ${
+            reason ||
+            'Kemungkinan API key tidak valid, kuota habis, atau key diblokir karena terdeteksi bocor di chat/publik.'
+          }`
+        }
+        session.lastError = msg
         session.emit({ type: 'status', status: 'error', error: msg })
         return
       }

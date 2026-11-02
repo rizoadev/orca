@@ -27,6 +27,7 @@ type ControlsProps = {
   autoSpeakPiResponse: boolean
   activePtyId?: string
   hasTranscript: boolean
+  errorMessage?: string | null
   onToggleKeySetup: () => void
   onApiKeyInputChange: (val: string) => void
   onSaveKey: () => void
@@ -49,6 +50,7 @@ export function VoiceCallControls({
   autoSpeakPiResponse,
   activePtyId,
   hasTranscript,
+  errorMessage,
   onToggleKeySetup,
   onApiKeyInputChange,
   onSaveKey,
@@ -88,6 +90,14 @@ export function VoiceCallControls({
           )}
         </div>
       </div>
+
+      {/* Error Alert Banner */}
+      {errorMessage && (
+        <div className="border-b border-destructive/20 bg-destructive/10 p-2.5 text-xs text-destructive space-y-1">
+          <p className="font-semibold text-destructive">Koneksi Gagal</p>
+          <p className="text-[11px] leading-relaxed opacity-90">{errorMessage}</p>
+        </div>
+      )}
 
       {/* API Key Form */}
       {(showKeySetup || apiKeyConfigured === false) && (
