@@ -1,14 +1,155 @@
-// Stub — create/close actions (linear mutations not available yet)
-import type { Repo } from '../../../../../../shared/repo-types'
-import type { IssueRow } from './issues-panel-rows'
+// GitHub/GitLab create+close work via existing preload IPC.
+// Linear mutations are stubbed: runtime-linear-client is missing those exports in orca-clean.
+import { toast } from 'sonner'
+import { translate } from '@/i18n/i18n'
+import type { GitHubWorkItem, GitLabWorkItem, Repo } from '../../../../../../shared/types'
+import type { CreateIssueSubmitInput } from './issues-panel-create-dialog'
+import { getRepoIssueSourceContext, type IssueRow } from './issues-panel-rows'
+import type { RepoIssueProvider } from './repo-issue-provider'
 
-export async function closeRepoIssue(_args: {
+export type CreatedIssueResult =
+  | { provider: 'github'; item: GitHubWorkItem }
+  | { provider: 'gitlab'; item: GitLabWorkItem }
+
+export async function createRepoIssue(args: {
+  provider: RepoIssueProvider
   repo: Repo
-  row: IssueRow
-}): Promise<boolean> {
-  return false
+  input: CreateIssueSubmitInput
+  linearBinding?: { workspaceId: string; projectId: string; projectName?: string } | null
+}): Promise<CreatedIssueResult | null> {
+  if (args.provider === 'linear') {
+    toast.error(
+      translate(
+        'auto.components.right.sidebar.issuesPanel.linearNotWired',
+        'Creating Linear issues is not available in this build yet.'
+      )
+    )
+    return null
+  }
+
+  if (args.provider === 'github') {
+    const result = await window.api.gh.createIssue({
+      repoPath: args.repo.path,
+      repoId: args.repo.id,
+      sourceContext: getRepoIssueSourceContext(args.repo, 'github'),
+      title: args.input.title,
+      body: args.input.body
+    })
+    if (!result.ok) {
+      toast.error(
+        result.error ||
+          translate(
+            'auto.components.right.sidebar.issuesPanel.createFailed',
+            'Failed to create issue.'
+          )
+      )
+      return null
+    }
+    toast.success(
+      translate('auto.components.right.sidebar.issuesPanel.created', 'Opened issue #{{value0}}', {
+        value0: result.number
+      })
+    )
+    return {
+      provider: 'github',
+      item: {
+        id: `issue:${String(result.number)}`,
+        repoId: args.repo.id,
+        type: 'issue',
+        number: result.number,
+        title: args.input.title,
+        state: 'open',
+        url: result.url,
+        labels: [],
+        updatedAt: new Date().toISOString(),
+        author: null
+      } as GitHubWorkItem
+    }
+  }
+
+  const result = await window.api.gl.createIssue({
+    repoPath: args.repo.path,
+    repoId: args.repo.id,
+    sourceContext: getRepoIssueSourceContext(args.repo, 'gitlab'),
+    title: args.input.title,
+    body: args.input.body
+  })
+  if (!result.ok) {
+    toast.error(
+      result.error ||
+        translate('auto.components.right.sidebar.issuesPanel.createFailed', 'Failed to create issue.')
+    )
+    return null
+  }
+  toast.success(
+    translate('auto.components.right.sidebar.issuesPanel.created', 'Opened issue #{{value0}}', {
+      value0: result.number
+    })
+  )
+  return {
+    provider: 'gitlab',
+    item: {
+      id: `gitlab-issue-${args.repo.id}-${result.number}`,
+      type: 'issue',
+      number: result.number,
+      title: args.input.title,
+      state: 'opened',
+      url: result.url,
+      labels: [],
+      updatedAt: new Date().toISOString(),
+      author: null,
+      repoId: args.repo.id
+    } as GitLabWorkItem
+  }
 }
 
-export async function createRepoIssue(_args: unknown): Promise<null> {
-  return null
+export async function closeRepoIssue(args: { repo: Repo; row: IssueRow }): Promise<boolean> {
+  if (args.row.provider === 'linear') {
+    toast.error(
+      translate(
+        'auto.components.right.sidebar.issuesPanel.linearNotWired',
+        'Closing Linear issues is not available in this build yet.'
+      )
+    )
+    return false
+  }
+
+  if (args.row.provider === 'github') {
+    const result = await window.api.gh.updateIssue({
+      repoPath: args.repo.path,
+      repoId: args.repo.id,
+      sourceContext: getRepoIssueSourceContext(args.repo, 'github'),
+      number: args.row.number ?? 0,
+      updates: { state: 'closed' }
+    })
+    if (!result.ok) {
+      toast.error(
+        result.error ||
+          translate('auto.components.right.sidebar.issuesPanel.closeFailed', 'Failed to close issue.')
+      )
+      return false
+    }
+  } else {
+    const result = await window.api.gl.updateIssue({
+      repoPath: args.repo.path,
+      repoId: args.repo.id,
+      sourceContext: getRepoIssueSourceContext(args.repo, 'gitlab'),
+      number: args.row.number ?? 0,
+      updates: { state: 'closed' }
+    })
+    if (!result.ok) {
+      toast.error(
+        result.error ||
+          translate('auto.components.right.sidebar.issuesPanel.closeFailed', 'Failed to close issue.')
+      )
+      return false
+    }
+  }
+
+  toast.success(
+    translate('auto.components.right.sidebar.issuesPanel.closed', 'Closed issue {{value0}}', {
+      value0: args.row.label
+    })
+  )
+  return true
 }
