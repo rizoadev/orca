@@ -290,6 +290,11 @@
   opacity: 0.8;
 }
 
+.pet-hero-git-uncommitted {
+  color: var(--annotation-highlight);
+  font-weight: 600;
+}
+
 .pet-hero-pomodoro {
   right: 18px;
   bottom: 17px;

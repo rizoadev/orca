@@ -306,7 +306,9 @@ export function PetHeroBanner({ worktreeId }: { worktreeId: string }): React.JSX
               </span>
             )}
             {gitDiffStats.uncommitted > 0 && (
-              <span className="pet-hero-git-meta">{gitDiffStats.uncommitted} uncommitted</span>
+              <span className="pet-hero-git-uncommitted">
+                {gitDiffStats.uncommitted} uncommitted
+              </span>
             )}
           </span>
         )}
