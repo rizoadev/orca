@@ -175,6 +175,8 @@ export type PreloadApi = {
   mobile: MobileApi
   speech: SpeechApi
   voiceCall?: VoiceCallApi
+  /** GoT planner IPC; absent in builds without the planner — callers must guard. */
+  got?: { generatePlan: (args: { repoPath: string; taskDescription: string }) => Promise<{ ok: true; plan: string } | { ok: false; error: string }> }
 }
 
 export type {

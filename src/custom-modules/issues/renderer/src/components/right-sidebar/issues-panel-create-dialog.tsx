@@ -55,9 +55,16 @@ export function IssuesPanelCreateDialog({
     bodyAtGenerationStart.current = null
   }, [open])
 
+  // GoT planner IPC (window.api.got) is absent in this build; keep the button hidden rather than crash.
+  const canUseGot = typeof window.api?.got?.generatePlan === 'function'
+
   const handleGenerate = useCallback(async () => {
     const task = title.trim() || body.trim()
     if (!task || !repoPath) {
+      return
+    }
+    if (!window.api?.got?.generatePlan) {
+      toast.error('GoT plan generation is not available in this build.')
       return
     }
 
@@ -100,7 +107,7 @@ export function IssuesPanelCreateDialog({
         : translate('auto.components.right.sidebar.issuesPanel.linearLabel', 'Linear')
 
   const canSubmit = title.trim().length > 0 && !submitting && !generating
-  const canGenerate = (title.trim() || body.trim()) && !!repoPath && !generating
+  const canGenerate = canUseGot && (title.trim() || body.trim()) && !!repoPath && !generating
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -157,6 +164,7 @@ export function IssuesPanelCreateDialog({
           </div>
 
           <div className="flex items-center gap-2">
+            {canUseGot ? (
             <Button
               type="button"
               variant="outline"
@@ -176,6 +184,7 @@ export function IssuesPanelCreateDialog({
                     'Generate GoT plan'
                   )}
             </Button>
+            ) : null}
             {generating && !bodyAtGenerationStart.current ? (
               <span className="text-xs text-muted-foreground">
                 {translate(
