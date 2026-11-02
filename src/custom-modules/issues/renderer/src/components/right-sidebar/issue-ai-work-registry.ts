@@ -1,5 +1,11 @@
-// Stub — AI work registry not available yet
-export type IssueAiWorkRegistryEntry = { status: 'idle' | 'working' | 'done' | 'failed' }
+// Stub — AI work registry not wired in orca-clean.
+// Entries are intentionally absent so no "AI booting" badge renders.
+export type IssueAiWorkRegistryEntry = {
+  tabId: string
+  paneKey?: string
+  startedAt: number
+  outcome?: 'succeeded' | 'failed'
+}
 
 export function registerIssueAiWork(_args: unknown): string {
   return ''
@@ -7,10 +13,11 @@ export function registerIssueAiWork(_args: unknown): string {
 
 export function updateIssueAiWorkOutcome(_id: string, _outcome: string): void {}
 
-export function useIssueAiWorkEntry(_registryId: string): IssueAiWorkRegistryEntry {
-  return { status: 'idle' }
+/** No tracked runs → badge stays hidden. */
+export function useIssueAiWorkEntry(_registryId: string): IssueAiWorkRegistryEntry | null {
+  return null
 }
 
-export function useIssueAiWorkRegistry(_issueId: string): IssueAiWorkRegistryEntry {
-  return { status: 'idle' }
+export function useIssueAiWorkRegistry(_issueId: string): IssueAiWorkRegistryEntry | null {
+  return null
 }
