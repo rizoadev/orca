@@ -304,6 +304,19 @@
   border-radius: var(--radius-sm);
   background: color-mix(in srgb, var(--card) 82%, transparent);
   backdrop-filter: blur(6px);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  user-select: none;
+}
+
+.pet-hero-pomodoro:hover {
+  background: color-mix(in srgb, var(--card) 90%, transparent);
+  border-color: color-mix(in srgb, var(--foreground) 20%, var(--border));
+}
+
+.pet-hero-pomodoro:active {
+  transform: scale(0.95);
+  opacity: 0.9;
 }
 
 .pet-hero-pomodoro-label,

@@ -9,19 +9,20 @@ Last updated: setelah hero + cloudflare module.
 
 ## Ringkasan
 
-| #   | File Upstream                                                   | Modul      | Yang Di-inject                            |
-| --- | --------------------------------------------------------------- | ---------- | ----------------------------------------- |
-| 1   | `src/renderer/src/components/tab-group/TabGroupSplitLayout.tsx` | hero       | import + `<MainWindowHero>`               |
-| 2   | `src/renderer/src/assets/main.css`                              | hero       | `@import` CSS                             |
-| 3   | `src/shared/global-settings-types.ts`                           | cloudflare | 3 optional fields                         |
-| 4   | `src/shared/cloudflare-relay-status.ts`                         | cloudflare | file baru (kita buat)                     |
-| 5   | `src/preload/api/mobile-api.ts`                                 | cloudflare | import type + 3 method types              |
-| 6   | `src/preload/api/mobile-bridge.ts`                              | cloudflare | 3 `ipcRenderer.invoke` calls              |
-| 7   | `src/main/ipc/mobile.ts`                                        | cloudflare | import + 1 function call                  |
-| 8   | `src/renderer/src/components/settings/MobilePane.tsx`           | cloudflare | import + `<CloudflareRelaySection />`     |
-| 9   | `src/renderer/src/components/status-bar/StatusBarSurface.tsx`   | cloudflare | import + `<CloudflareRelayStatusSegment>` |
+| #   | File Upstream                                                         | Modul      | Yang Di-inject                            |
+| --- | --------------------------------------------------------------------- | ---------- | ----------------------------------------- |
+| 1   | `src/renderer/src/components/tab-group/TabGroupSplitLayout.tsx`       | hero       | import + `<MainWindowHero>`               |
+| 2   | `src/renderer/src/assets/main.css`                                    | hero       | `@import` CSS                             |
+| 3   | `src/shared/global-settings-types.ts`                                 | cloudflare | 3 optional fields                         |
+| 4   | `src/shared/cloudflare-relay-status.ts`                               | cloudflare | file baru (kita buat)                     |
+| 5   | `src/preload/api/mobile-api.ts`                                       | cloudflare | import type + 3 method types              |
+| 6   | `src/preload/api/mobile-bridge.ts`                                    | cloudflare | 3 `ipcRenderer.invoke` calls              |
+| 7   | `src/main/ipc/mobile.ts`                                              | cloudflare | import + 1 function call                  |
+| 8   | `src/renderer/src/components/settings/MobilePane.tsx`                 | cloudflare | import + `<CloudflareRelaySection />`     |
+| 9   | `src/renderer/src/components/status-bar/StatusBarSurface.tsx`         | cloudflare | import + `<CloudflareRelayStatusSegment>` |
+| 10  | `src/renderer/src/components/settings/RuntimePairingUrlGenerator.tsx` | cloudflare | import + `<CloudflareRuntimeHint>`        |
 
-**Total: 9 touch points, semua additive (tidak ada edit ke logika upstream).**
+**Total: 10 touch points, semua additive (tidak ada edit ke logika upstream).**
 
 ---
 
@@ -249,3 +250,32 @@ resources/
 
 src/shared/cloudflare-relay-status.ts           ← Shared type (kita buat, bukan upstream)
 ```
+
+---
+
+### 10. `src/renderer/src/components/settings/RuntimePairingUrlGenerator.tsx`
+
+**Modul**: `custom-modules/cloudflare`
+**Mengapa file ini**: Dialog "Share this computer" (Remote Orca Servers) — tempat user
+generate pairing URL untuk connect dari Orca lain. Cloudflare tunnel adalah opsi
+address yang ideal untuk koneksi dari mana saja.
+
+```tsx
+// Tambah import:
+import { CloudflareRuntimeHint } from '../../../../custom-modules/cloudflare/CloudflareRuntimeHint'
+
+// Tambah setelah blok showGeneratorForm (sebelum RuntimeAccessGrantList):
+;<CloudflareRuntimeHint
+  onUse={(address) => {
+    updateIntent('custom')
+    updateSelectedAddress(address)
+  }}
+/>
+```
+
+**Cara kerja**: `CloudflareRuntimeHint` baca `settings.cloudflareRelayHostname` dari
+Zustand store. Jika tunnel aktif (hostname tidak kosong), tampilkan banner kecil dengan
+tombol "Pakai" — klik → auto-set intent ke `'custom'` dan address ke `wss://<hostname>`.
+User tinggal klik "Create link".
+
+**Marker untuk re-inject**: cari `RuntimeAccessGrantList` di file ini.

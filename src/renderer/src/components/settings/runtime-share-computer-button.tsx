@@ -15,6 +15,7 @@ import {
 import { MachineNameField } from './MachineNameField'
 import { RuntimePairingUrlGenerator } from './RuntimePairingUrlGenerator'
 import { usePublishedMachineName } from './use-published-machine-name'
+import { CloudflareRuntimeHint } from '../../../../custom-modules/cloudflare/CloudflareRuntimeHint'
 
 /** Desktop only: lets other devices pair with this computer. */
 export function RuntimeShareComputerButton(): React.JSX.Element {
@@ -78,6 +79,7 @@ export function RuntimeShareComputerButton(): React.JSX.Element {
             </p>
           ) : null}
           <RuntimePairingUrlGenerator framed={false} showHeader={false} />
+          <CloudflareRuntimeHint onUse={() => null} />
           {editingName ? (
             <MachineNameField id="runtime-share-machine-name" />
           ) : (
