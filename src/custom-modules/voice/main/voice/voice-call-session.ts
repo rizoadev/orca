@@ -1,7 +1,4 @@
-import type {
-  VoiceCallEvent,
-  VoiceCallStartArgs
-} from '../../../../shared/voice-call-types'
+import type { VoiceCallEvent, VoiceCallStartArgs } from '../../../../shared/voice-call-types'
 import { GeminiLiveClient, type GeminiLiveHandlers } from './gemini-live-client'
 import { readGeminiApiKey } from './gemini-api-key-store'
 
@@ -15,6 +12,7 @@ type VoiceSession = {
   transcriptParts: string[]
   settleTimer: NodeJS.Timeout | null
   busy: boolean
+  lastError: string | null
 }
 
 const sessions = new Map<string, VoiceSession>()
@@ -55,10 +53,21 @@ function buildSessionCallbacks(session: VoiceSession): GeminiLiveHandlers {
     onError: (error) => {
       console.error('[voice-call] Gemini error:', error.message)
       session.busy = false
+      session.lastError = error.message
       session.emit({ type: 'status', status: 'error', error: error.message })
     },
-    onClose: () => {
-      if (!session.closed) {
+    onClose: (code, reason) => {
+      if (session.closed) {
+        return
+      }
+      if (code !== 1000 && code !== 1005 && !session.lastError) {
+        const msg = reason
+          ? `Koneksi Gemini ditutup (${code}): ${reason}`
+          : `Koneksi Gemini terputus (kode ${code}). Periksa API Key atau kuota.`
+        session.emit({ type: 'status', status: 'error', error: msg })
+        return
+      }
+      if (!session.lastError) {
         session.emit({ type: 'status', status: 'idle' })
       }
     }
@@ -97,6 +106,7 @@ export function startVoiceCall(callId: string, args: VoiceCallStartArgs, emit: E
     transcriptParts: [],
     settleTimer: null,
     busy: false,
+    lastError: null,
     client: null as unknown as GeminiLiveClient
   }
 

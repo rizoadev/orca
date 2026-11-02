@@ -11,7 +11,7 @@ export type GeminiLiveHandlers = {
   onAudio?: (dataBase64: string, sampleRate: number) => void
   onTurnComplete?: () => void
   onError?: (error: Error) => void
-  onClose?: () => void
+  onClose?: (code: number, reason: string) => void
 }
 
 export type GeminiLiveOptions = {
@@ -108,9 +108,10 @@ export class GeminiLiveClient {
     })
 
     socket.on('error', (err: Error) => this.handlers.onError?.(err))
-    socket.on('close', () => {
+    socket.on('close', (code: number, reason: Buffer) => {
       this.ready = false
-      this.handlers.onClose?.()
+      const reasonText = reason ? reason.toString('utf8') : ''
+      this.handlers.onClose?.(code, reasonText)
     })
   }
 
