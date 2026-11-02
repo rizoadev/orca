@@ -12,7 +12,7 @@ Target: `/home/rizoa/PROJECTS_IKAMAI/orca-clean/src/custom-modules/`
 | `issues`     | High       | No        | ⏳ Pending | `openOrchestrationBoardPage` tidak ada di orca-clean |
 | `snippets`   | Medium     | Yes       | ⏳ Pending | Dependency upstream OK                               |
 | `s3`         | Medium     | Yes       | ⏳ Pending | Dependency upstream OK                               |
-| `voice`      | High       | Yes       | ⏳ Pending | `window.api.piIssueChat` & `voiceCall` belum ada     |
+| `voice`      | High       | Yes       | ✅ Done    | Google Gemini Live standby → Auto-send ke Pi CLI terminal |
 
 ---
 

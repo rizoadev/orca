@@ -184,6 +184,74 @@ else
 fi
 
 # ─────────────────────────────────────────────────────────────
+# ── 8. right sidebar — custom activity items
+# ─────────────────────────────────────────────────────────────
+ACT_ITEMS="$ROOT/src/renderer/src/components/right-sidebar/use-right-sidebar-activity-items.ts"
+if [ ! -f "$ACT_ITEMS" ]; then
+  echo "✗ use-right-sidebar-activity-items.ts not found"
+  FAIL=1
+else
+  if grep -qF 'getCustomActivityItems' "$ACT_ITEMS"; then
+    echo "✓ use-right-sidebar-activity-items.ts — already injected"
+  else
+    inject_import "$ACT_ITEMS" "import { getCustomActivityItems } from '../../../../custom-modules/custom-activity-items'"
+    sed -i '/const activityItems = useMemo/,/]/ { /]/i\      ...getCustomActivityItems(),\n }' "$ACT_ITEMS"
+    echo "✓ use-right-sidebar-activity-items.ts — injected"
+  fi
+fi
+
+# ─────────────────────────────────────────────────────────────
+# ── 9. right sidebar — custom panel content
+# ─────────────────────────────────────────────────────────────
+PANEL_CONTENT="$ROOT/src/renderer/src/components/right-sidebar/right-sidebar-panel-content.tsx"
+if [ ! -f "$PANEL_CONTENT" ]; then
+  echo "✗ right-sidebar-panel-content.tsx not found"
+  FAIL=1
+else
+  if grep -qF 'CustomPanelContent' "$PANEL_CONTENT"; then
+    echo "✓ right-sidebar-panel-content.tsx — already injected"
+  else
+    inject_import "$PANEL_CONTENT" "import { CustomPanelContent } from '../../../../custom-modules/custom-panel-content'"
+    sed -i 's|<Suspense fallback={null}>|<Suspense fallback={null}>\n          <CustomPanelContent tab={effectiveTab} rightSidebarOpen={rightSidebarOpen} />|' "$PANEL_CONTENT"
+    echo "✓ right-sidebar-panel-content.tsx — injected"
+  fi
+fi
+
+# ─────────────────────────────────────────────────────────────
+# ── 10. voice — preload/api-types.ts & preload/index.ts
+# ─────────────────────────────────────────────────────────────
+PRELOAD_INDEX="$ROOT/src/preload/index.ts"
+if [ ! -f "$PRELOAD_INDEX" ]; then
+  echo "✗ preload/index.ts not found"
+  FAIL=1
+else
+  if grep -qF 'voiceCallBridge' "$PRELOAD_INDEX"; then
+    echo "✓ preload/index.ts — already injected"
+  else
+    inject_import "$PRELOAD_INDEX" "import { voiceCallBridge } from './api/voice-call-bridge'"
+    sed -i '/speech: speechApi/a\  voiceCall: voiceCallBridge,' "$PRELOAD_INDEX"
+    echo "✓ preload/index.ts — injected"
+  fi
+fi
+
+# ─────────────────────────────────────────────────────────────
+# ── 11. voice — main/ipc/speech.ts
+# ─────────────────────────────────────────────────────────────
+SPEECH_IPC="$ROOT/src/main/ipc/speech.ts"
+if [ ! -f "$SPEECH_IPC" ]; then
+  echo "✗ main/ipc/speech.ts not found"
+  FAIL=1
+else
+  if grep -qF 'registerVoiceCallHandlers' "$SPEECH_IPC"; then
+    echo "✓ main/ipc/speech.ts — already injected"
+  else
+    inject_import "$SPEECH_IPC" "import { registerVoiceCallHandlers } from '../../custom-modules/voice/main/ipc/voice-call'"
+    sed -i '/export function registerSpeechHandlers/a\  registerVoiceCallHandlers() // custom-modules/voice' "$SPEECH_IPC"
+    echo "✓ main/ipc/speech.ts — injected"
+  fi
+fi
+
+# ─────────────────────────────────────────────────────────────
 # ── Summary
 # ─────────────────────────────────────────────────────────────
 echo ""
@@ -198,8 +266,12 @@ if [ $FAIL -eq 0 ]; then
   echo "  5. src/preload/api/mobile-api.ts                                  — cloudflare methods"
   echo "  6. src/main/ipc/mobile.ts                                         — cloudflare handlers"
   echo "  7. src/renderer/src/components/settings/MobilePane.tsx            — cloudflare UI"
+  echo "  8. src/renderer/src/components/right-sidebar/use-right-sidebar-activity-items.ts — sidebar tab buttons"
+  echo "  9. src/renderer/src/components/right-sidebar/right-sidebar-panel-content.tsx    — sidebar panel router"
+  echo " 10. src/preload/index.ts                                           — voice preload bridge"
+  echo " 11. src/main/ipc/speech.ts                                         — voice IPC handlers"
 else
   echo "⚠️  Some injections failed — check messages above and apply manually."
-  echo "     See src/custom-modules/docs/CLOUDFLARE-TUNNEL-PLAN.md for exact lines."
+  echo "     See src/custom-modules/docs/ for exact lines."
   exit 1
 fi

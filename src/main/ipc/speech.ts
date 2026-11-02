@@ -13,8 +13,10 @@ import {
   saveOpenAiSpeechApiKey
 } from '../speech/openai-api-key-store'
 import type { Store } from '../persistence/loading-store/store'
+import { registerVoiceCallHandlers } from '../../custom-modules/voice/main/ipc/voice-call'
 
 export function registerSpeechHandlers(store: Store): void {
+  registerVoiceCallHandlers() // custom-modules/voice
   ipcMain.handle('speech:getCatalog', () => {
     return SPEECH_MODEL_CATALOG
   })

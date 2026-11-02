@@ -10,6 +10,7 @@ import type {
 import type { HooksApi } from './api/agent-hook-api'
 import type { SkillsApi } from './api/agent-skill-api'
 import type { AgentAwakeApi, AgentStatusApi } from './api/agent-status-api'
+import type { VoiceCallApi } from '../shared/voice-call-types'
 import type {
   ClaudeUsageApi,
   CodexUsageApi,
@@ -173,6 +174,7 @@ export type PreloadApi = {
   agentStatus: AgentStatusApi
   mobile: MobileApi
   speech: SpeechApi
+  voiceCall?: VoiceCallApi
 }
 
 export type {
