@@ -1,3 +1,4 @@
+// oxlint-disable max-lines -- custom cloudflare relay settings extend this shared type file
 import type { AgentLaunchChoices } from './agent-launch-choices'
 import type { TelemetrySettings } from './telemetry-settings-types'
 import type { BrowserProfileScope } from './browser-profile-scope'
@@ -438,6 +439,7 @@ export type GlobalSettings = GlobalSettingsBase & {
   mobilePairingCustomAddresses?: string[]
   cloudflareRelayToken?: string
   cloudflareRelayDomain?: string
+  cloudflareRelayEnabled?: boolean
   cloudflareRelayHostname?: string
   /** Name this runtime reports to paired clients; empty uses the host's detected name. */
   machineName: string

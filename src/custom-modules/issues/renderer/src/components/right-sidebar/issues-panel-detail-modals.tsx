@@ -3,7 +3,7 @@ import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/compone
 import GitHubItemDialog from '@/components/GitHubItemDialog'
 import GitLabItemDialog from '@/components/GitLabItemDialog'
 import { useAppStore } from '@/store'
-import type { GitHubWorkItem, GitLabWorkItem, Repo } from '../../../../shared/types'
+import type { GitHubWorkItem, GitLabWorkItem, Repo } from '../../../../../../shared/types'
 import { translate } from '@/i18n/i18n'
 import { IssueDetailActionBar } from './issue-detail-action-bar'
 import { getRepoIssueSourceContext } from './issues-panel-rows'

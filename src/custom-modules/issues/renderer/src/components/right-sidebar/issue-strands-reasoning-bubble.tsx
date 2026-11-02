@@ -7,7 +7,7 @@ import { useEffect, useState } from 'react'
 import { Brain, ChevronDown } from 'lucide-react'
 import CommentMarkdown from '@/components/sidebar/CommentMarkdown'
 import { cn } from '@/lib/utils'
-import type { PiIssueChatMessage } from '../../../../shared/pi-issue-chat-types'
+import type { PiIssueChatMessage } from '../../../../../../shared/pi-issue-chat-types'
 
 export function ReasoningBubble({
   message,

@@ -31,7 +31,12 @@ export function CloudflareRelaySection(): React.JSX.Element {
     try {
       // Why: the main process provisions (create tunnel + DNS) and hands the
       // tunnel to systemd; the endpoint is auto-advertised as the pairing address.
-      const result = await window.api.mobile.setCloudflareRelay(true)
+      const setRelay = window.api?.mobile?.setCloudflareRelay
+      if (!setRelay) {
+        toast.error('Cloudflare relay API is not available')
+        return
+      }
+      const result = await setRelay(true)
       if (!result.ok) {
         toast.error(result.error ?? 'Failed to connect Cloudflare relay')
       }

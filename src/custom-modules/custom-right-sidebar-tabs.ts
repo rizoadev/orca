@@ -4,7 +4,7 @@
  */
 import type { ActiveRightSidebarTab } from '@/store/slices/editor'
 
-export const CUSTOM_SIDEBAR_TAB_IDS = ['issues'] as const
+export const CUSTOM_SIDEBAR_TAB_IDS = ['issues', 'voice'] as const
 
 export type CustomSidebarTabId = (typeof CUSTOM_SIDEBAR_TAB_IDS)[number]
 

@@ -9,7 +9,7 @@ import type {
   PiIssueChatStatus,
   PiModelOption,
   PiSessionInfo
-} from '../../../../shared/pi-issue-chat-types'
+} from '../../../../../../shared/pi-issue-chat-types'
 
 function formatRelativeTime(epochMs: number): string {
   const diff = Date.now() - epochMs

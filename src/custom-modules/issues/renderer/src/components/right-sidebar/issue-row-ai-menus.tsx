@@ -14,7 +14,7 @@ import { getAgentCatalog, AgentIcon } from '@/lib/agent-catalog'
 import { translate } from '@/i18n/i18n'
 import type { IssueRow } from './issues-panel-rows'
 import type { IssueAiWorkMode } from './issues-panel-ai-work'
-import type { TuiAgent } from '../../../../shared/types'
+import type { TuiAgent } from '../../../../../../shared/types'
 
 export function IssueRowAiMenus({
   row,

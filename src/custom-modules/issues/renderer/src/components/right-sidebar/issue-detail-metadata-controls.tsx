@@ -12,7 +12,7 @@ import type {
   GitLabAssignableUser,
   GitLabWorkItem,
   Repo
-} from '../../../../shared/types'
+} from '../../../../../../shared/types'
 import { MultiSelectMenu, StatusMenu, type IssueStateValue } from './issue-detail-metadata-menus'
 import { getRepoIssueSourceContext } from './issues-panel-rows'
 import type { RepoIssueProvider } from './repo-issue-provider'

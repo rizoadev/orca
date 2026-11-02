@@ -279,3 +279,21 @@ tombol "Pakai" — klik → auto-set intent ke `'custom'` dan address ke `wss://
 User tinggal klik "Create link".
 
 **Marker untuk re-inject**: cari `RuntimeAccessGrantList` di file ini.
+
+---
+
+### ⚠️ PENTING: right-sidebar-route.ts — wajib untuk setiap custom sidebar tab
+
+**File**: `src/renderer/src/store/right-sidebar-route.ts`
+
+File ini punya **hardcoded whitelist** tab ID yang valid. Setiap custom tab baru
+HARUS ditambahkan di sini, atau klik tab akan silent redirect ke Explorer.
+
+```typescript
+// Tambah di dalam kondisi if yang ada:
+tab === 'ports' || tab === 'issues' // custom-modules/issues
+// tambah tab baru di sini
+```
+
+**Ini bukan upstream touch point yang ter-inject via script** — ini adalah
+"hidden requirement" yang hanya diketahui saat tab diklik dan tidak mau buka.

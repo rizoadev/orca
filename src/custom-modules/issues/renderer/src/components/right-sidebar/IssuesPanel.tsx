@@ -9,14 +9,14 @@ import { useActiveWorktree, useRepoById } from '@/store/selectors'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
-import { useConfirmationDialog } from '@/components/confirmation-dialog'
+import { useConfirmationDialog } from '@/components/confirmation-dialog-context'
 import type {
   GitHubWorkItem,
   GitLabWorkItem,
   LinearIssue,
   TuiAgent
-} from '../../../../shared/types'
-import { normalizeTaskSourceContext } from '../../../../shared/task-source-context'
+} from '../../../../../../shared/types'
+import { normalizeTaskSourceContext } from '../../../../../../shared/task-source-context'
 import { translate } from '@/i18n/i18n'
 import { launchIssueAiPlanCommenter } from './issues-panel-ai-plan'
 import { launchIssueAiWorker, type IssueAiWorkMode } from './issues-panel-ai-work'
@@ -33,7 +33,7 @@ import {
   startLinearIssueFromPanel
 } from './issues-panel-workspace-actions'
 import { detectRepoIssueProvider } from './repo-issue-provider'
-import { createOrchestrationTaskFromIssue } from '@/lib/issue-to-orchestration-task'
+// import { createOrchestrationTaskFromIssue } from '@/lib/issue-to-orchestration-task_DISABLED' // not available
 import {
   getRepoIssueSourceContext,
   GITHUB_OPEN_ISSUES_QUERY,
@@ -85,9 +85,9 @@ export default function IssuesPanel({ isVisible }: { isVisible: boolean }): Reac
   const [aiPlanningIssueId, setAiPlanningIssueId] = useState<string | null>(null)
   const [aiWorkingIssueId, setAiWorkingIssueId] = useState<string | null>(null)
   const [closingIssueId, setClosingIssueId] = useState<string | null>(null)
-  const [convertingIssueId, setConvertingIssueId] = useState<string | null>(null)
-  const openOrchestrationBoardPage = useAppStore((s) => s.openOrchestrationBoardPage)
-  const setRightSidebarTab = useAppStore((s) => s.setRightSidebarTab)
+  // const [convertingIssueId, setConvertingIssueId] = useState<string | null>(null)
+  // // const openOrchestrationBoardPage = useAppStore((s) => s.openOrchestrationBoardPage) // not available
+  // // const setRightSidebarTab = useAppStore((s) => s.setRightSidebarTab) // unused
   const listLinearProjectIssues = useAppStore((s) => s.listLinearProjectIssues)
   const linearSourceContext = useMemo(() => {
     const base = getRepoIssueSourceContext(activeRepo, 'linear')
@@ -323,63 +323,7 @@ export default function IssuesPanel({ isVisible }: { isVisible: boolean }): Reac
     [activeRepo, activeWorktree]
   )
 
-  const handleConvertToOrchestration = useCallback(
-    async (row: IssueRow) => {
-      if (!activeRepo) {
-        return
-      }
-      setConvertingIssueId(row.id)
-      try {
-        const body =
-          row.githubItem && 'body' in row.githubItem
-            ? String((row.githubItem as { body?: string | null }).body ?? '')
-            : row.gitlabItem && 'description' in row.gitlabItem
-              ? String((row.gitlabItem as { description?: string | null }).description ?? '')
-              : row.linearItem?.description
-                ? String(row.linearItem.description)
-                : ''
-        const result = await createOrchestrationTaskFromIssue({
-          provider: row.provider,
-          issueNumber: row.number ?? 0,
-          issueIdentifier: row.linearItem?.identifier ?? null,
-          title: row.title,
-          url: row.url,
-          body,
-          repoId: activeRepo.id,
-          worktreeId: activeWorktree?.id ?? null,
-          hostId: activeRepo.connectionId ? `ssh:${activeRepo.connectionId}` : 'local'
-        })
-        // Why: stay on workspace chrome and open the companion sidebar tab only.
-        // Auto-jumping to the full board made the right-bar tab feel "broken".
-        setRightSidebarTab('orchestration')
-        toast.success(
-          result.coalesced
-            ? translate(
-                'auto.components.right.sidebar.issuesPanel.orchestrationExists',
-                'Orchestration task already exists for {{ref}}',
-                { ref: row.label }
-              )
-            : translate(
-                'auto.components.right.sidebar.issuesPanel.orchestrationCreated',
-                'Created orchestration task for {{ref}}',
-                { ref: row.label }
-              ),
-          {
-            description: result.task.id,
-            action: {
-              label: translate('auto.components.right.sidebar.issuesPanel.openBoard', 'Board'),
-              onClick: () => openOrchestrationBoardPage()
-            }
-          }
-        )
-      } catch (err) {
-        toast.error(err instanceof Error ? err.message : String(err))
-      } finally {
-        setConvertingIssueId((current) => (current === row.id ? null : current))
-      }
-    },
-    [activeRepo, activeWorktree?.id, openOrchestrationBoardPage, setRightSidebarTab]
-  )
+  // handleConvertToOrchestration removed
 
   const handleCloseIssue = useCallback(
     async (row: IssueRow) => {
@@ -599,7 +543,7 @@ export default function IssuesPanel({ isVisible }: { isVisible: boolean }): Reac
             aiPlanningIssueId={aiPlanningIssueId}
             aiWorkingIssueId={aiWorkingIssueId}
             closingIssueId={closingIssueId}
-            convertingIssueId={convertingIssueId}
+            convertingIssueId={null}
             onOpenIssue={openIssue}
             onAskAiPlan={(row, agent) => {
               void handleAskAiPlan(row, agent)
@@ -607,9 +551,7 @@ export default function IssuesPanel({ isVisible }: { isVisible: boolean }): Reac
             onAskAiWork={(row, agent, mode) => {
               void handleAskAiWork(row, agent, mode)
             }}
-            onConvertToOrchestration={(row) => {
-              void handleConvertToOrchestration(row)
-            }}
+            onConvertToOrchestration={() => undefined}
             repoId={activeRepo?.id ?? null}
             onCloseIssue={(row) => {
               void handleCloseIssue(row)

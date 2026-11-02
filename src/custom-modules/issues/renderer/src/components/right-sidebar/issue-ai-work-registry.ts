@@ -9,11 +9,11 @@ import {
   formatCoalescedPrompt,
   tryCoalesceFollowUp,
   type CoalesceFollowUpResult
-} from '../../../../shared/agent-followup-coalesce'
+} from '../../../../../../shared/agent-followup-coalesce'
 import {
   classifyDirectHuman,
   type AgentRunAttribution
-} from '../../../../shared/agent-run-attribution'
+} from '../../../../../../shared/agent-run-attribution'
 
 export type IssueAiWorkEntry = {
   worktreeId: string

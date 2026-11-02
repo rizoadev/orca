@@ -45,7 +45,9 @@ export function RightSidebarPanelContent({
           />
         )}
         {/* Remount on plugin changes so an old iframe cannot post through the next plugin's rebound bridge. */}
-        {isCustomSidebarTab(effectiveTab) && <CustomPanelContent tab={effectiveTab} />}
+        {isCustomSidebarTab(effectiveTab) && (
+          <CustomPanelContent tab={effectiveTab} rightSidebarOpen={rightSidebarOpen} />
+        )}
         {isPluginPanelTabKey(effectiveTab) && (
           <PluginPanel key={effectiveTab} tabKey={effectiveTab} />
         )}

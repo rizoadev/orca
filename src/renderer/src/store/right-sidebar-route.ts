@@ -42,7 +42,8 @@ export function normalizeRightSidebarRoute(
     tab === 'source-control' ||
     tab === 'checks' ||
     tab === 'ports' ||
-    tab === 'issues' // custom-modules/issues
+    tab === 'issues' || // custom-modules/issues
+    tab === 'voice' // custom-modules/voice
   ) {
     return {
       rightSidebarTab: tab,

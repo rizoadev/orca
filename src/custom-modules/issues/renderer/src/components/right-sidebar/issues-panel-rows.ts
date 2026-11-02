@@ -1,16 +1,16 @@
-import { projectHostSetupProjectionFromRepos } from '../../../../shared/project-host-setup-projection'
-import { getRepoExecutionHostId } from '../../../../shared/execution-host'
+import { projectHostSetupProjectionFromRepos } from '../../../../../../shared/project-host-setup-projection'
+import { getRepoExecutionHostId } from '../../../../../../shared/execution-host'
 import {
   normalizeTaskSourceContext,
   type TaskSourceContext
-} from '../../../../shared/task-source-context'
+} from '../../../../../../shared/task-source-context'
 import type {
   GitHubWorkItem,
   GitLabProjectRef,
   GitLabWorkItem,
   LinearIssue,
   Repo
-} from '../../../../shared/types'
+} from '../../../../../../shared/types'
 import { translate } from '@/i18n/i18n'
 import type { RepoIssueProvider } from './repo-issue-provider'
 

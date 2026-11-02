@@ -18,7 +18,7 @@ import type {
   PiIssueChatStatus,
   PiModelOption,
   PiSessionInfo
-} from '../../../../shared/pi-issue-chat-types'
+} from '../../../../../../shared/pi-issue-chat-types'
 
 export type IssueStrandsChatPanelProps = {
   sessionId: string

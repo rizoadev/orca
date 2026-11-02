@@ -3,7 +3,7 @@ import { CircleDot, ExternalLink, Layers, LoaderCircle, XCircle } from 'lucide-r
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
-import { TaskPageGitHubWorkItemStateBadge } from '@/components/task-page-github-work-item-status-badge'
+import { TaskPageGitHubWorkItemStateBadge } from '@/components/task-page/github/task-page-github-work-item-status-badge'
 import { openHttpLink } from '@/lib/http-link-routing'
 import { translate } from '@/i18n/i18n'
 import { IssueAiWorkActions } from './issue-ai-work-actions'
@@ -14,7 +14,7 @@ import { formatIssueRelativeTime, type IssueRow } from './issues-panel-rows'
 import { issueRefFromRow } from './issue-ref'
 import { IssueRowAiMenus } from './issue-row-ai-menus'
 import type { IssueAiWorkMode } from './issues-panel-ai-work'
-import type { TuiAgent } from '../../../../shared/types'
+import type { TuiAgent } from '../../../../../../shared/types'
 import { useAppStore } from '@/store'
 
 function IssueStateBadge({ row }: { row: IssueRow }): React.JSX.Element {

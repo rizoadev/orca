@@ -6,7 +6,10 @@
  */
 import CommentMarkdown from '@/components/sidebar/CommentMarkdown'
 import { LoaderCircle, Terminal, Wrench } from 'lucide-react'
-import type { PiIssueChatMessage, PiIssueChatStatus } from '../../../../shared/pi-issue-chat-types'
+import type {
+  PiIssueChatMessage,
+  PiIssueChatStatus
+} from '../../../../../../shared/pi-issue-chat-types'
 import { ReasoningBubble } from './issue-strands-reasoning-bubble'
 
 export type ChatRenderItem =

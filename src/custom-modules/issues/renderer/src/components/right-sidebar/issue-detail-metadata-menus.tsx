@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { cn } from '@/lib/utils'
 import { translate } from '@/i18n/i18n'
-import type { GitHubIssueCloseReason } from '../../../../shared/types'
+import type { GitHubIssueCloseReason } from '../../../../../../shared/types'
 import type { RepoIssueProvider } from './repo-issue-provider'
 
 export type IssueStateValue = 'open' | 'closed' | 'opened'

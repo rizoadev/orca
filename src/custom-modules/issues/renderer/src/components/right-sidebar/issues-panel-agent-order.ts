@@ -1,5 +1,5 @@
 import { getAgentCatalog } from '@/lib/agent-catalog'
-import type { TuiAgent } from '../../../../shared/types'
+import type { TuiAgent } from '../../../../../../shared/types'
 
 export function orderAgents(
   defaultAgent: TuiAgent | 'blank' | null | undefined,

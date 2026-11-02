@@ -1,6 +1,6 @@
 import { toast } from 'sonner'
 import { translate } from '@/i18n/i18n'
-import { classifyDirectHuman } from '../../../../shared/agent-run-attribution'
+import { classifyDirectHuman } from '../../../../../../shared/agent-run-attribution'
 import type { IssueAiWorkMode } from './issues-panel-ai-work'
 import {
   clearIssueAiWork,

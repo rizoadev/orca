@@ -1,5 +1,10 @@
 import { toast } from 'sonner'
-import type { GitHubWorkItem, GitLabWorkItem, LinearIssue, Repo } from '../../../../shared/types'
+import type {
+  GitHubWorkItem,
+  GitLabWorkItem,
+  LinearIssue,
+  Repo
+} from '../../../../../../shared/types'
 import { translate } from '@/i18n/i18n'
 import {
   linearCreateIssue,

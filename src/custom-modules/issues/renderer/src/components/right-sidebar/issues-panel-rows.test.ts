@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import type { GitHubWorkItem, GitLabWorkItem } from '../../../../shared/types'
+import type { GitHubWorkItem, GitLabWorkItem } from '../../../../../../shared/types'
 import { toGitHubIssueRows, toGitLabIssueRows } from './issues-panel-rows'
 
 describe('issues-panel-rows', () => {

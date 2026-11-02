@@ -2,8 +2,13 @@ import { createGitHubWorkItemWorkspaceInBackground } from '@/lib/github-work-ite
 import { buildLinearIssueLinkedWorkItem } from '@/lib/linear-linked-work-item'
 import type { LinkedWorkItemSummary } from '@/lib/new-workspace'
 import { useAppStore } from '@/store'
-import type { GitHubWorkItem, GitLabWorkItem, LinearIssue, Repo } from '../../../../shared/types'
-import { getLinearIssueWorkspaceName } from '../../../../shared/workspace-name'
+import type {
+  GitHubWorkItem,
+  GitLabWorkItem,
+  LinearIssue,
+  Repo
+} from '../../../../../../shared/types'
+import { getLinearIssueWorkspaceName } from '../../../../../../shared/workspace-name'
 import { getRepoIssueSourceContext } from './issues-panel-rows'
 
 export function openGitHubIssueWorkspaceComposer(
