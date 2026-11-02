@@ -85,5 +85,11 @@ export const mobileApi = {
     const listener = () => callback()
     ipcRenderer.on('mobile:unpairedDeviceAuthFailure', listener)
     return () => ipcRenderer.removeListener('mobile:unpairedDeviceAuthFailure', listener)
-  }
+  },
+
+  // ── Cloudflare Tunnel (custom-modules/cloudflare) ──────────────────
+  getCloudflareRelayStatus: () => ipcRenderer.invoke('mobile:getCloudflareRelayStatus'),
+  restartCloudflareRelay: () => ipcRenderer.invoke('mobile:restartCloudflareRelay'),
+  setCloudflareRelay: (enabled: boolean) => ipcRenderer.invoke('mobile:setCloudflareRelay', enabled)
+  // ──────────────────────────────────────────────────────────────────
 } satisfies PreloadApi['mobile']

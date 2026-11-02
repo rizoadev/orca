@@ -5,6 +5,7 @@ import { classifyRemotePairingHostname } from '../../shared/remote-pairing-addre
 import type { RuntimePairingReach } from '../../shared/runtime-pairing-reach'
 import type { DeviceEntry } from '../runtime/device-registry'
 import { NETWORK_EXPOSURE_FAILED_GUIDANCE } from '../runtime/network-exposure-guidance'
+import { registerCloudflareRelayHandlers } from '../../custom-modules/cloudflare/main/cloudflare-relay-ipc'
 import {
   getDefaultPairingAddress,
   getPairingNetworkInterfaces,
@@ -54,6 +55,7 @@ export function registerMobileHandlers(
   rpcServer: OrcaRuntimeRpcServer,
   dependencies: MobileHandlerDependencies = {}
 ): void {
+  registerCloudflareRelayHandlers() // custom-modules/cloudflare
   const firewallEnvironment = dependencies.firewallEnvironment ?? {
     platform: process.platform,
     isPackaged: app.isPackaged,

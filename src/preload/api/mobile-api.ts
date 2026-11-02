@@ -3,6 +3,7 @@ import type { MobilePairingConnectionMode } from '../../shared/mobile-pairing-co
 import type { RuntimePairingReach } from '../../shared/runtime-pairing-reach'
 import type { MobileRelayMintFailure } from '../../shared/mobile-relay-mint-failure'
 import type { RuntimeAccessGrant } from '../../shared/runtime-access-grants'
+import type { CloudflareRelayStatusPayload } from '../../shared/cloudflare-relay-status'
 
 export type MobileApi = {
   listNetworkInterfaces: () => Promise<{
@@ -82,4 +83,9 @@ export type MobileApi = {
   consumePendingUnpairedDeviceAuthFailure?: () => Promise<boolean>
   /** Fires (throttled, once per session) when an unpaired phone repeatedly fails direct-transport auth. */
   onUnpairedDeviceAuthFailure?: (callback: () => void) => () => void
+  // ── Cloudflare Tunnel (custom-modules/cloudflare) ──────────────────────────
+  getCloudflareRelayStatus?: () => Promise<CloudflareRelayStatusPayload>
+  restartCloudflareRelay?: () => Promise<{ ok: boolean; error?: string }>
+  setCloudflareRelay?: (enabled: boolean) => Promise<{ ok: boolean; error?: string }>
+  // ──────────────────────────────────────────────────────────────────────────
 }
