@@ -183,6 +183,8 @@ export function PetHeroBanner({ worktreeId }: { worktreeId: string }): React.JSX
   const gitDiffStats = useMemo(() => {
     let added = 0
     let removed = 0
+    const filesWithDiff = new Set<string>()
+    let uncommitted = 0
     for (const entry of gitEntries) {
       if (entry.added != null) {
         added += entry.added
@@ -190,8 +192,14 @@ export function PetHeroBanner({ worktreeId }: { worktreeId: string }): React.JSX
       if (entry.removed != null) {
         removed += entry.removed
       }
+      if ((entry.added ?? 0) > 0 || (entry.removed ?? 0) > 0) {
+        filesWithDiff.add(entry.path)
+      }
+      if (entry.area !== 'staged') {
+        uncommitted++
+      }
     }
-    return { added, removed }
+    return { added, removed, files: filesWithDiff.size, uncommitted }
   }, [gitEntries])
 
   const [currentTime, setCurrentTime] = useState(() => formatLiveTime())
@@ -291,6 +299,14 @@ export function PetHeroBanner({ worktreeId }: { worktreeId: string }): React.JSX
             )}
             {gitDiffStats.removed > 0 && (
               <span className="pet-hero-git-removed">-{gitDiffStats.removed}</span>
+            )}
+            {gitDiffStats.files > 0 && (
+              <span className="pet-hero-git-meta">
+                in {gitDiffStats.files} file{gitDiffStats.files !== 1 ? 's' : ''}
+              </span>
+            )}
+            {gitDiffStats.uncommitted > 0 && (
+              <span className="pet-hero-git-meta">{gitDiffStats.uncommitted} uncommitted</span>
             )}
           </span>
         )}

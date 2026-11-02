@@ -285,6 +285,11 @@
   font-weight: 600;
 }
 
+.pet-hero-git-meta {
+  color: var(--muted-foreground);
+  opacity: 0.8;
+}
+
 .pet-hero-pomodoro {
   right: 18px;
   bottom: 17px;
