@@ -238,3 +238,16 @@ export function toLinearIssueRows(items: LinearIssue[]): IssueRow[] {
     linearItem: item
   }))
 }
+
+/** Provider-agnostic issue body for AI prompts; missing on list payloads, present on detail. */
+export function issueRowBody(row: IssueRow): string | undefined {
+  if (row.provider === 'linear') {
+    return row.linearItem?.description ?? undefined
+  }
+  if (row.provider === 'github') {
+    const body = (row.githubItem as { body?: string | null } | undefined)?.body
+    return body ?? undefined
+  }
+  const description = (row.gitlabItem as { description?: string | null } | undefined)?.description
+  return description ?? undefined
+}

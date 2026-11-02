@@ -38,6 +38,7 @@ import {
   getRepoIssueSourceContext,
   GITHUB_OPEN_ISSUES_QUERY,
   ISSUE_LIST_LIMIT,
+  issueRowBody,
   toGitHubIssueRows,
   toGitLabIssueRows,
   toLinearIssueRows,
@@ -284,7 +285,7 @@ export default function IssuesPanel({ isVisible }: { isVisible: boolean }): Reac
             identifier: row.linearItem?.identifier ?? null,
             title: row.title,
             url: row.url,
-            body: row.linearItem?.description
+            body: issueRowBody(row)
           }
         })
       } finally {
@@ -313,7 +314,7 @@ export default function IssuesPanel({ isVisible }: { isVisible: boolean }): Reac
             workspaceId: row.linearItem?.workspaceId ?? null,
             title: row.title,
             url: row.url,
-            body: row.linearItem?.description
+            body: issueRowBody(row)
           }
         })
       } finally {
