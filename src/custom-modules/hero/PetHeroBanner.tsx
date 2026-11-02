@@ -176,6 +176,11 @@ export function PetHeroBanner({ worktreeId }: { worktreeId: string }): React.JSX
   const pomodoroPhase = usePomodoroStore((s) => s.phase)
   const pomodoroSecondsLeft = usePomodoroStore((s) => s.secondsLeft)
   const pomodoroRunning = usePomodoroStore((s) => s.running)
+  const pomodoroStart = usePomodoroStore((s) => s.start)
+  const pomodoroPause = usePomodoroStore((s) => s.pause)
+  const pomodoroReset = usePomodoroStore((s) => s.reset)
+  const clickTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const clickCountRef = useRef(0)
   const gitEntries = useAppStore(
     (state) => state.gitStatusByWorktree[worktreeId] ?? EMPTY_GIT_ENTRIES
   )
@@ -205,6 +210,31 @@ export function PetHeroBanner({ worktreeId }: { worktreeId: string }): React.JSX
   const [currentTime, setCurrentTime] = useState(() => formatLiveTime())
   const [hour, setHour] = useState(() => new Date().getHours())
 
+  const handlePomodoroClick = useCallback(() => {
+    clickCountRef.current += 1
+    if (clickCountRef.current === 1) {
+      clickTimeoutRef.current = setTimeout(() => {
+        // Single click after timeout — toggle start/pause
+        if (clickCountRef.current === 1) {
+          if (pomodoroRunning) {
+            pomodoroPause()
+          } else {
+            pomodoroStart()
+          }
+        }
+        clickCountRef.current = 0
+      }, 300)
+    } else if (clickCountRef.current === 2) {
+      // Double click — reset
+      if (clickTimeoutRef.current) {
+        clearTimeout(clickTimeoutRef.current)
+        clickTimeoutRef.current = null
+      }
+      pomodoroReset()
+      clickCountRef.current = 0
+    }
+  }, [pomodoroRunning, pomodoroStart, pomodoroPause, pomodoroReset])
+
   useEffect(() => {
     const timer = window.setInterval(() => {
       setCurrentTime(formatLiveTime())
@@ -212,6 +242,14 @@ export function PetHeroBanner({ worktreeId }: { worktreeId: string }): React.JSX
     }, 1000)
     return () => {
       window.clearInterval(timer)
+    }
+  }, [])
+
+  useEffect(() => {
+    return () => {
+      if (clickTimeoutRef.current) {
+        clearTimeout(clickTimeoutRef.current)
+      }
     }
   }, [])
 
@@ -316,6 +354,14 @@ export function PetHeroBanner({ worktreeId }: { worktreeId: string }): React.JSX
       <div
         className="pet-hero-pomodoro"
         aria-label={`Pomodoro ${pomodoroPhaseLabel(pomodoroPhase)}`}
+        onClick={handlePomodoroClick}
+        role="button"
+        tabIndex={0}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            handlePomodoroClick()
+          }
+        }}
       >
         <span className="pet-hero-pomodoro-label">{pomodoroPhaseLabel(pomodoroPhase)}</span>
         <strong>{formatCountdown(pomodoroSecondsLeft)}</strong>

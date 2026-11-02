@@ -65,12 +65,14 @@ export function CloudflareRelayStatusSegment(props: {
   }
 
   const copyHostname = (): void => {
-    if (status?.hostname) {
-      navigator.clipboard.writeText(`wss://${status.hostname}`).then(
-        () => toast.success('Tunnel URL copied'),
-        () => toast.error('Failed to copy')
-      )
+    if (!status?.hostname) {
+      return
     }
+    const url = status.hostname.startsWith('wss://') ? status.hostname : `wss://${status.hostname}`
+    void window.api.ui.writeClipboardText(url).then(
+      () => toast.success('Tunnel URL copied'),
+      () => toast.error('Failed to copy')
+    )
   }
 
   // Hide entirely when not configured — no noise for users who don't use mobile relay.
