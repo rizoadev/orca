@@ -87,5 +87,25 @@ Semua touch points dijaga agar minimal dan otomatis diinjeksi via `./src/custom-
 4. Pastikan opsi **"Auto-send ke Pi CLI di Main Window"** tercentang (default ON).
 5. Buka tab terminal di main window tempat Anda menjalankan sesi `pi`.
 6. Klik tombol **"Mulai Standby Voice"**.
-7. Bicaralah seperti biasa (misal: *"tolong jelaskan arsitektur project ini"*).
+7. Bicaralah seperti biasa (misal: _"tolong jelaskan arsitektur project ini"_).
 8. Gemini mentranskrip ucapan Anda dan langsung mengetikkannya ke terminal aktif dengan tombol Enter (`\r`). Sesi Pi CLI Anda langsung memproses instruksi tersebut!
+
+---
+
+## Konfigurasi Model Live
+
+Default model Live API: `gemini-3.8-live` (lihat `DEFAULT_MODEL` di `gemini-live-client.ts`). Model ini **voice agent**: Gemini membalas dengan audio singkat sesuai `systemInstruction`, sekaligus mengirim transkrip input untuk dikirim ke terminal.
+
+Override tanpa ubah kode:
+
+```bash
+GEMINI_LIVE_MODEL=gemini-3.8-live              # voice agent: balas audio + system instruction
+GEMINI_LIVE_MODEL=gemini-3.8-live-extended-thinking
+GEMINI_LIVE_MODEL=gemini-3.5-transcribe-live   # khusus transkripsi, tanpa balasan audio
+```
+
+Model Live lain: `ai.google.dev/gemini-api/docs/models`. `gemini-live-client.ts` memilih bentuk `setup` otomatis berdasarkan nama model (transcribe vs conversational), jadi perbedaan `responseModalities`, `speechConfig`, dan `outputAudioTranscription` sudah ditangani.
+
+Catatan untuk `gemini-3.8-live`: `thinkingLevel` tidak didukung — jangan ditambahkan ke setup. Model transcribe-only punya batas sesi 10 menit, model conversational tidak.
+
+Jika Google menolak koneksi dengan kode `1008` dan menyebut model tidak ditemukan, model default sudah tidak aktif lagi — ganti lewat `GEMINI_LIVE_MODEL`.

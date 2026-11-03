@@ -4,6 +4,10 @@ import { readGeminiApiKey } from './gemini-api-key-store'
 
 type Emit = (event: VoiceCallEvent) => void
 
+function isModelRejection(reason: string): boolean {
+  return /bidiGenerateContent|not found|not supported|does not exist/i.test(reason)
+}
+
 type VoiceSession = {
   callId: string
   client: GeminiLiveClient
@@ -68,10 +72,12 @@ function buildSessionCallbacks(session: VoiceSession): GeminiLiveHandlers {
       if (code !== 1000 && code !== 1005) {
         let msg = reason || `Koneksi Google Gemini ditutup (kode ${code}).`
         if (code === 1008) {
-          msg = `Google menolak koneksi (kode 1008): ${
-            reason ||
-            'Kemungkinan API key tidak valid, kuota habis, atau key diblokir karena terdeteksi bocor di chat/publik.'
-          }`
+          msg = isModelRejection(reason)
+            ? `Model "${session.client.modelName}" tidak tersedia untuk Live API. Set GEMINI_LIVE_MODEL ke model Live yang aktif (lihat ai.google.dev/gemini-api/docs/models).`
+            : `Google menolak koneksi (kode 1008): ${
+                reason ||
+                'Kemungkinan API key tidak valid, kuota habis, atau key diblokir karena terdeteksi bocor di chat/publik.'
+              }`
         }
         session.lastError = msg
         session.emit({ type: 'status', status: 'error', error: msg })

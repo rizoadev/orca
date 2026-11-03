@@ -21,11 +21,46 @@ export type GeminiLiveOptions = {
   systemInstruction?: string
 }
 
-const DEFAULT_MODEL = process.env.GEMINI_LIVE_MODEL || 'gemini-2.0-flash-exp'
+const DEFAULT_MODEL = process.env.GEMINI_LIVE_MODEL || 'gemini-3.8-live'
 const DEFAULT_SYSTEM_INSTRUCTION =
   'Kamu adalah asisten suara Google Gemini Live yang standby mendampingi software developer. ' +
   'Tugas utamamu adalah mendengarkan prompt pengguna yang nantinya otomatis dikirim ke terminal Pi CLI. ' +
   'Jawab dengan sangat singkat dan natural dalam Bahasa Indonesia (maksimal 1 kalimat).'
+
+// Live API has two flavors: conversational agents (AUDIO out) and pure transcription (TEXT out).
+function isTranscribeLiveModel(model: string): boolean {
+  return model.includes('transcribe-live')
+}
+
+function buildSetupMessage(
+  model: string,
+  voice: string,
+  systemInstruction: string
+): Record<string, unknown> {
+  if (isTranscribeLiveModel(model)) {
+    return {
+      model: `models/${model}`,
+      generationConfig: { responseModalities: ['TEXT'] },
+      inputAudioTranscription: { languageCodes: [] }
+    }
+  }
+  return {
+    model: `models/${model}`,
+    generationConfig: {
+      responseModalities: ['AUDIO'],
+      speechConfig: {
+        voiceConfig: {
+          prebuiltVoiceConfig: { voiceName: voice }
+        }
+      }
+    },
+    inputAudioTranscription: {},
+    outputAudioTranscription: {},
+    systemInstruction: {
+      parts: [{ text: systemInstruction }]
+    }
+  }
+}
 
 export class GeminiLiveClient {
   private socket: WebSocket | null = null
@@ -36,6 +71,10 @@ export class GeminiLiveClient {
     private readonly handlers: GeminiLiveHandlers
   ) {}
 
+  get modelName(): string {
+    return this.opts.model ?? DEFAULT_MODEL
+  }
+
   connect(): void {
     const url = `${WS_URL}?key=${encodeURIComponent(this.opts.apiKey)}`
     const socket = new WebSocket(url, { maxPayload: 20 * 1024 * 1024 })
@@ -44,22 +83,11 @@ export class GeminiLiveClient {
     socket.on('open', () => {
       socket.send(
         JSON.stringify({
-          setup: {
-            model: `models/${this.opts.model ?? DEFAULT_MODEL}`,
-            generationConfig: {
-              responseModalities: ['AUDIO'],
-              speechConfig: {
-                voiceConfig: {
-                  prebuiltVoiceConfig: { voiceName: this.opts.voice ?? 'Leda' }
-                }
-              }
-            },
-            inputAudioTranscription: {},
-            outputAudioTranscription: {},
-            systemInstruction: {
-              parts: [{ text: this.opts.systemInstruction ?? DEFAULT_SYSTEM_INSTRUCTION }]
-            }
-          }
+          setup: buildSetupMessage(
+            this.modelName,
+            this.opts.voice ?? 'Leda',
+            this.opts.systemInstruction ?? DEFAULT_SYSTEM_INSTRUCTION
+          )
         })
       )
     })
@@ -119,6 +147,10 @@ export class GeminiLiveClient {
     if (!this.socket || this.socket.readyState !== WebSocket.OPEN || !this.ready) {
       return false
     }
+    // Transcription-only Live models accept audio input only.
+    if (isTranscribeLiveModel(this.modelName)) {
+      return false
+    }
     this.socket.send(
       JSON.stringify({
         clientContent: {
@@ -137,7 +169,7 @@ export class GeminiLiveClient {
     this.socket.send(
       JSON.stringify({
         realtimeInput: {
-          mediaChunks: [{ data: base64Pcm16k, mimeType: 'audio/pcm;rate=16000' }]
+          audio: { data: base64Pcm16k, mimeType: 'audio/pcm;rate=16000' }
         }
       })
     )
@@ -148,6 +180,7 @@ export class GeminiLiveClient {
     if (!this.socket || this.socket.readyState !== WebSocket.OPEN || !this.ready) {
       return false
     }
+    this.socket.send(JSON.stringify({ realtimeInput: { audioStreamEnd: true } }))
     return true
   }
 
