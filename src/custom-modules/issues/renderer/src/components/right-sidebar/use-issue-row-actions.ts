@@ -135,6 +135,35 @@ export function useIssueRowActions(args: Args) {
     [worktreeId, repo, args]
   )
 
+  const markIssueDone = useCallback(
+    async (row: IssueRow) => {
+      if (!repo) {
+        return
+      }
+      args.setClosingId(row.id)
+      try {
+        if (!(await closeRepoIssue({ repo, row, doneOnly: true }))) {
+          return
+        }
+        setRows((current) => current.filter((item) => item.id !== row.id))
+        if (selected.githubId === row.id) {
+          args.setSelectedGitHub(null)
+        }
+        if (selected.gitlabId === row.id) {
+          args.setSelectedGitLab(null)
+        }
+        if (selected.linearId === row.id) {
+          args.setSelectedLinear(null)
+        }
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : String(err))
+      } finally {
+        args.setClosingId((current) => (current === row.id ? null : current))
+      }
+    },
+    [repo, args, selected, setRows]
+  )
+
   const closeIssue = useCallback(
     async (row: IssueRow) => {
       if (!repo || !(await confirmCloseIssue(args.confirm, row))) {
@@ -240,6 +269,7 @@ export function useIssueRowActions(args: Args) {
     askAiPlan,
     askAiWork,
     closeIssue,
+    markIssueDone,
     createWorktree,
     useGitHubItem,
     useGitLabItem,

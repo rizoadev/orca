@@ -1,5 +1,13 @@
 import React from 'react'
-import { CircleDot, ExternalLink, FolderGit2, Layers, LoaderCircle, XCircle } from 'lucide-react'
+import {
+  CheckCircle2,
+  CircleDot,
+  ExternalLink,
+  FolderGit2,
+  Layers,
+  LoaderCircle,
+  XCircle
+} from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
@@ -48,6 +56,7 @@ export function IssuesPanelList({
   onAskAiWork,
   onConvertToOrchestration,
   onCreateWorktree,
+  onMarkDone,
   onCloseIssue,
   repoId
 }: {
@@ -64,6 +73,7 @@ export function IssuesPanelList({
   onAskAiWork: (row: IssueRow, agent: TuiAgent, mode: IssueAiWorkMode) => void
   onConvertToOrchestration?: (row: IssueRow) => void
   onCreateWorktree: (row: IssueRow) => void
+  onMarkDone: (row: IssueRow) => void
   onCloseIssue: (row: IssueRow) => void
   repoId: string | null
 }): React.JSX.Element {
@@ -205,6 +215,29 @@ export function IssuesPanelList({
                         'auto.components.right.sidebar.issuesPanel.newWorktree',
                         'New worktree for this issue'
                       )}
+                    </TooltipContent>
+                  </Tooltip>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon-xs"
+                        disabled={closing || planning || working}
+                        onClick={(event) => {
+                          event.stopPropagation()
+                          onMarkDone(row)
+                        }}
+                        aria-label={translate(
+                          'auto.components.right.sidebar.issuesPanel.markDone',
+                          'Mark done'
+                        )}
+                      >
+                        <CheckCircle2 className="size-3.5" />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent side="left">
+                      {translate('auto.components.right.sidebar.issuesPanel.markDone', 'Mark done')}
                     </TooltipContent>
                   </Tooltip>
                   <Tooltip>

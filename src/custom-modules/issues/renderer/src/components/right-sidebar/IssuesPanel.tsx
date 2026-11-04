@@ -122,6 +122,7 @@ export default function IssuesPanel({ isVisible }: { isVisible: boolean }): Reac
     askAiPlan,
     askAiWork,
     closeIssue,
+    markIssueDone,
     createWorktree,
     useGitHubItem,
     useGitLabItem,
@@ -273,6 +274,9 @@ export default function IssuesPanel({ isVisible }: { isVisible: boolean }): Reac
           onCreateWorktree={createWorktree}
           onConvertToOrchestration={() => undefined}
           repoId={activeRepo?.id ?? null}
+          onMarkDone={(row) => {
+            void markIssueDone(row)
+          }}
           onCloseIssue={(row) => {
             void closeIssue(row)
           }}

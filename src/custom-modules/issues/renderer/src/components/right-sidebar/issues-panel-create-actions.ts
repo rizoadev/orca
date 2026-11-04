@@ -183,7 +183,12 @@ export async function createRepoIssue(args: {
   }
 }
 
-async function closeLinearIssue(args: { repo: Repo; issue: LinearIssue }): Promise<boolean> {
+async function closeLinearIssue(args: {
+  repo: Repo
+  issue: LinearIssue
+  /** Why: 'Done' must not fall back to a cancel state; only close accepts one. */
+  doneOnly?: boolean
+}): Promise<boolean> {
   // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: getRepoIssueSourceContext only returns null for a null repo, and the caller already unwrapped one.
   const settings = getRepoIssueSourceContext(args.repo, 'linear') as TaskSourceContext
   const teamId = args.issue.team?.id
@@ -194,9 +199,10 @@ async function closeLinearIssue(args: { repo: Repo; issue: LinearIssue }): Promi
     return false
   }
   const states = await linearTeamStates(settings, teamId, args.issue.workspaceId).catch(() => [])
-  const completed =
-    states.find((state) => state.type === 'completed') ??
-    states.find((state) => state.type === 'canceled')
+  const completed = args.doneOnly
+    ? states.find((state) => state.type === 'completed')
+    : (states.find((state) => state.type === 'completed') ??
+      states.find((state) => state.type === 'canceled'))
   if (!completed) {
     toast.error(
       translate(
@@ -222,12 +228,20 @@ async function closeLinearIssue(args: { repo: Repo; issue: LinearIssue }): Promi
   return true
 }
 
-export async function closeRepoIssue(args: { repo: Repo; row: IssueRow }): Promise<boolean> {
+export async function closeRepoIssue(args: {
+  repo: Repo
+  row: IssueRow
+  doneOnly?: boolean
+}): Promise<boolean> {
   if (args.row.provider === 'linear') {
     if (!args.row.linearItem) {
       return false
     }
-    const ok = await closeLinearIssue({ repo: args.repo, issue: args.row.linearItem })
+    const ok = await closeLinearIssue({
+      repo: args.repo,
+      issue: args.row.linearItem,
+      doneOnly: args.doneOnly
+    })
     if (!ok) {
       return false
     }
@@ -270,9 +284,15 @@ export async function closeRepoIssue(args: { repo: Repo; row: IssueRow }): Promi
   }
 
   toast.success(
-    translate('auto.components.right.sidebar.issuesPanel.closed', 'Closed issue {{value0}}', {
-      value0: args.row.label
-    })
+    args.doneOnly
+      ? translate(
+          'auto.components.right.sidebar.issuesPanel.markedDone',
+          'Marked done: {{value0}}',
+          { value0: args.row.label }
+        )
+      : translate('auto.components.right.sidebar.issuesPanel.closed', 'Closed issue {{value0}}', {
+          value0: args.row.label
+        })
   )
   return true
 }
