@@ -14,7 +14,8 @@ import {
   Pencil,
   Search,
   SquareTerminal,
-  Trash2
+  Trash2,
+  Upload
 } from 'lucide-react'
 import { toast } from 'sonner'
 import {
@@ -48,6 +49,13 @@ import {
 } from './file-explorer-row-action-visibility'
 import { copyFileToOsClipboard, downloadRemoteFile } from './file-explorer-row-file-transfer'
 import { fileExplorerNodeTabRelativePath } from './file-explorer-directory-listing'
+import { useActiveWorktree, useRepoById } from '@/store/selectors'
+import { branchName } from '@/lib/git-utils'
+import { openHttpLink } from '@/lib/http-link-routing'
+import {
+  snippetTitle,
+  encodeSnippetFileName
+} from '../../../../custom-modules/snippets/renderer/components/snippet-encoding'
 
 const isMac = navigator.userAgent.includes('Mac')
 
@@ -141,6 +149,62 @@ export function FileExplorerRowContextMenu({
   const handleCopyFile = useCallback(() => {
     void copyFileToOsClipboard(node, connectionId)
   }, [connectionId, node])
+
+  const activeWorktree = useActiveWorktree()
+  const activeRepo = useRepoById(activeWorktree?.repoId ?? null)
+  const handleSyncToSnippet = useCallback(async () => {
+    if (!activeWorktree || !activeRepo) {
+      return
+    }
+    const branch = branchName(activeWorktree.branch ?? '')
+    const relativePath = node.relativePath || node.name
+    const title = snippetTitle(branch, relativePath)
+    const fileName = encodeSnippetFileName(relativePath)
+    const toastId = toast.loading('Syncing to GitLab Snippet…', {
+      description: relativePath
+    })
+    try {
+      const fileResult = await window.api.fs.readFile({
+        filePath: node.path,
+        connectionId: activeRepo.connectionId ?? undefined
+      })
+      if (fileResult.isBinary) {
+        toast.error('Cannot sync binary file to snippet', {
+          id: toastId,
+          description: relativePath
+        })
+        return
+      }
+      const snippetResult = await window.api.gl.createProjectSnippet({
+        repoPath: activeWorktree.path,
+        repoId: activeRepo.id,
+        title,
+        fileName,
+        content: fileResult.content,
+        visibility: 'private'
+      })
+      if (snippetResult.ok) {
+        toast.success('Synced to GitLab Snippet', {
+          id: toastId,
+          description: `${relativePath} · ${snippetResult.snippet.visibility}`,
+          action: snippetResult.snippet.webUrl
+            ? {
+                label: 'Open',
+                onClick: () => void openHttpLink(snippetResult.snippet.webUrl)
+              }
+            : undefined
+        })
+      } else {
+        toast.error('Failed to sync snippet', {
+          id: toastId,
+          description: snippetResult.error
+        })
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      toast.error('Failed to sync snippet', { id: toastId, description: msg })
+    }
+  }, [activeWorktree, activeRepo, node.path, node.relativePath, node.name])
 
   return (
     <ContextMenuContent
@@ -259,6 +323,13 @@ export function FileExplorerRowContextMenu({
                 'Download Folder'
               )
             : translate('auto.components.right.sidebar.FileExplorerRow.c2112579f6', 'Download')}
+        </ContextMenuItem>
+      )}
+      {/* Sync file to GitLab Snippet — only for files, not directories */}
+      {!node.isDirectory && activeWorktree && activeRepo?.gitRemoteIdentity && (
+        <ContextMenuItem onSelect={() => void handleSyncToSnippet()}>
+          <Upload />
+          {translate('custom.syncToSnippet', 'Sync to GitLab Snippet')}
         </ContextMenuItem>
       )}
       {canCollapseFolderSubtree && shouldShowCollapseFolderAction(node, isExpanded) && (

@@ -363,16 +363,15 @@ function FileExplorerFiles(): React.JSX.Element {
         displayDepth={displayDepth}
         onStartNew={inlineInputState.startNew}
       />
-      {/* GitLab Snippets Block - only visible for GitLab repos */}
-      {activeRepo?.gitRemoteIdentity?.remoteUrl?.toLowerCase().includes('gitlab') &&
-        isFilesViewActive && (
-          <SnippetBlock
-            worktreePath={worktreePath}
-            branch={branchName(activeWorktree?.branch ?? '')}
-            repoId={activeRepo.id}
-            connectionId={activeRepo.connectionId ?? null}
-          />
-        )}
+      {/* GitLab Snippets Block - shown for all repos with a Git remote identity */}
+      {activeRepo?.gitRemoteIdentity && isFilesViewActive && (
+        <SnippetBlock
+          worktreePath={worktreePath}
+          branch={branchName(activeWorktree?.branch ?? '')}
+          repoId={activeRepo.id}
+          connectionId={activeRepo.connectionId ?? null}
+        />
+      )}
     </>
   )
 }
