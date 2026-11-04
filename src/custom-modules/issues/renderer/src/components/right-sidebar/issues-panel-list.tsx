@@ -111,7 +111,7 @@ export function IssuesPanelList({
                 onOpenIssue(row)
               }
             }}
-            className="flex w-full cursor-pointer items-start gap-2 px-3 py-2 text-left hover:bg-accent"
+            className="flex w-full cursor-pointer items-start gap-2 px-3 py-2.5 text-left hover:bg-accent"
           >
             <CircleDot className="mt-0.5 size-3.5 shrink-0 text-emerald-600 dark:text-emerald-400" />
             <div className="min-w-0 flex-1">
@@ -124,7 +124,7 @@ export function IssuesPanelList({
                   </span>
                 ) : null}
               </div>
-              <div className="mt-0.5 flex items-center gap-2 truncate text-sm text-foreground">
+              <div className="mt-1 flex items-center gap-2 truncate text-[13px] leading-5 text-foreground">
                 <span className="truncate">{row.title}</span>
                 {repoId ? (
                   <IssueAiWorkBadge provider={row.provider} repoId={repoId} issueRef={issueRef} />
