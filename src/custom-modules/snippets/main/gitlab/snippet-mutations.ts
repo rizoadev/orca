@@ -1,3 +1,4 @@
+import type { IssueSourcePreference } from '../../../../shared/repo-types'
 import type { GitLabSnippetCreateInput, GitLabSnippetUpdateInput } from '../../shared/types'
 import {
   acquire,
@@ -26,7 +27,7 @@ export type ProjectSnippetDeleteResult = { ok: true } | { ok: false; error: stri
 export async function getProjectSnippet(
   repoPath: string,
   snippetId: number,
-  preference?: unknown,
+  preference?: IssueSourcePreference,
   connectionId?: string | null,
   localGitOptions: LocalGitExecOptions = {}
 ): Promise<ProjectSnippetMutationResult> {
@@ -79,7 +80,7 @@ export async function getProjectSnippet(
 export async function createProjectSnippet(
   repoPath: string,
   input: GitLabSnippetCreateInput,
-  preference?: unknown,
+  preference?: IssueSourcePreference,
   connectionId?: string | null,
   localGitOptions: LocalGitExecOptions = {}
 ): Promise<ProjectSnippetMutationResult> {
@@ -137,7 +138,7 @@ export async function updateProjectSnippet(
   repoPath: string,
   snippetId: number,
   input: GitLabSnippetUpdateInput,
-  preference?: unknown,
+  preference?: IssueSourcePreference,
   connectionId?: string | null,
   localGitOptions: LocalGitExecOptions = {}
 ): Promise<ProjectSnippetMutationResult> {
@@ -207,7 +208,7 @@ export async function updateProjectSnippet(
 export async function deleteProjectSnippet(
   repoPath: string,
   snippetId: number,
-  preference?: unknown,
+  preference?: IssueSourcePreference,
   connectionId?: string | null,
   localGitOptions: LocalGitExecOptions = {}
 ): Promise<ProjectSnippetDeleteResult> {

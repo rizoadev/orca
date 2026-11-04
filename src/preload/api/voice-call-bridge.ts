@@ -17,8 +17,7 @@ export const voiceCallBridge: VoiceCallApi = {
     ipcRenderer.invoke('voiceCall:sendText', callId, text),
   sendAudioChunk: (callId: string, base64: string) =>
     ipcRenderer.send('voiceCall:audioChunk', callId, base64),
-  sendAudioStreamEnd: (callId: string) =>
-    ipcRenderer.send('voiceCall:audioStreamEnd', callId),
+  sendAudioStreamEnd: (callId: string) => ipcRenderer.send('voiceCall:audioStreamEnd', callId),
   onEvent: (handler: (event: VoiceCallEvent) => void) => {
     const listener = (_event: unknown, data: VoiceCallEvent) => handler(data)
     ipcRenderer.on('voiceCall:event', listener)

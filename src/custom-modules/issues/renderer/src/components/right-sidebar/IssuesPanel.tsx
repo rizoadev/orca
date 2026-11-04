@@ -62,9 +62,13 @@ export default function IssuesPanel({ isVisible }: { isVisible: boolean }): Reac
     if (!linearBinding) {
       return null
     }
-    const cached = getCachedLinearProjects(undefined, undefined, linearBinding.workspaceId)
-    const project = cached?.items?.find((p) => p.id === linearBinding.projectId)
-    return project?.url ?? null
+    try {
+      const cached = getCachedLinearProjects(undefined, undefined, linearBinding.workspaceId)
+      const project = cached?.items?.find((p) => p.id === linearBinding.projectId)
+      return project?.url ?? null
+    } catch {
+      return null
+    }
   }, [linearBinding, getCachedLinearProjects])
   // Why: the header is a provider switch. Default to the merged view so every
   // source is visible; single-provider tabs stay one click away.

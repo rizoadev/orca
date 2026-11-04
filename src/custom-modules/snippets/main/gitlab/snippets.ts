@@ -1,4 +1,6 @@
-import type { ClassifiedError, GitLabSnippet } from '../../shared/types'
+import type { GitLabSnippet } from '../../shared/types'
+import type { ClassifiedError } from '../../../../shared/classified-error'
+import type { IssueSourcePreference } from '../../../../shared/repo-types'
 import {
   acquire,
   classifyListIssuesError,
@@ -70,7 +72,7 @@ function mapSnippet(row: RESTSnippet): GitLabSnippet {
 export async function listProjectSnippets(
   repoPath: string,
   limit = 50,
-  preference?: unknown,
+  preference?: IssueSourcePreference,
   connectionId?: string | null,
   localGitOptions: LocalGitExecOptions = {}
 ): Promise<ProjectSnippetListResult> {

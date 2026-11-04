@@ -6,7 +6,8 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useShallow } from 'zustand/react/shallow'
-import { Github, Gitlab, Pencil, Check } from 'lucide-react'
+import { Github, Gitlab, Pencil, Check, Moon, Sun } from 'lucide-react'
+import { applyDocumentTheme } from '@/lib/document-theme'
 import mountainLandscapeUrl from '../../../resources/mountain-landscape-transparent.svg?url'
 import catPlayingUrl from '../../../resources/cat-playing.svg?url'
 import catWatermelonUrl from '../../../resources/cat-watermelon.svg?url'
@@ -20,6 +21,7 @@ import { branchName } from '@/lib/git-utils'
 import { useAppStore } from '@/store'
 import { useMottoStore } from './motto-store'
 import type { GitStatusEntry } from '../../shared/git-status-types'
+import type { DocumentThemePreference } from '@/lib/document-theme'
 
 const HERO_PETS = [
   { url: catPlayingUrl, className: 'pet-hero-roam-left' },
@@ -179,6 +181,18 @@ export function PetHeroBanner({ worktreeId }: { worktreeId: string }): React.JSX
   const pomodoroStart = usePomodoroStore((s) => s.start)
   const pomodoroPause = usePomodoroStore((s) => s.pause)
   const pomodoroReset = usePomodoroStore((s) => s.reset)
+  const updateSettings = useAppStore((s) => s.updateSettings)
+
+  // Theme toggle state
+  const [isDark, setIsDark] = useState(() => document.documentElement.classList.contains('dark'))
+
+  const toggleTheme = useCallback(async () => {
+    const newTheme: DocumentThemePreference = isDark ? 'light' : 'dark'
+    setIsDark(!isDark)
+    applyDocumentTheme(newTheme)
+    await updateSettings({ theme: newTheme })
+  }, [isDark, updateSettings])
+
   const clickTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const clickCountRef = useRef(0)
   const gitEntries = useAppStore(
@@ -326,6 +340,13 @@ export function PetHeroBanner({ worktreeId }: { worktreeId: string }): React.JSX
         ))}
       </div>
       <div className="pet-hero-status" aria-label={`Pets are ${modeLabel}`}>
+        <button
+          className="pet-hero-theme-toggle"
+          onClick={toggleTheme}
+          aria-label={isDark ? 'Switch to light mode' : 'Switch to dark mode'}
+        >
+          {isDark ? <Sun size={10} /> : <Moon size={10} />}
+        </button>
         <span className="pet-hero-status-dot" />
         <span>
           {currentTime} · {modeLabel}

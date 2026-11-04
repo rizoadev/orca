@@ -354,13 +354,54 @@
   box-shadow: none;
 }
 
+.pet-hero[data-right-sidebar-open='false'] .pet-hero-theme-toggle {
+  margin-right: 0;
+}
+
 .pet-hero[data-right-sidebar-open='false'] .pet-hero-status {
-  right: 218px;
+  right: 18px;
   top: 9px;
 }
 
 .pet-hero[data-right-sidebar-open='false'] .pet-hero-pomodoro {
   right: 25px;
+}
+
+/* Light mode sky background — vibrant nature blue */
+:root:not(.dark) .pet-hero {
+  background: linear-gradient(
+    to bottom,
+    color-mix(in srgb, oklch(85% 25% 220) 45%, var(--card) 65%, var(--background)),
+    color-mix(in srgb, var(--card) 62%, var(--background))
+  );
+}
+
+:root:not(.dark) .pet-hero::before {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  content: '';
+  background:
+    radial-gradient(
+      circle at 72% 22%,
+      color-mix(in srgb, var(--foreground) 11%, transparent) 0 1px,
+      transparent 1.5px
+    ),
+    radial-gradient(
+      circle at 18% 38%,
+      color-mix(in srgb, var(--foreground) 8%, transparent) 0 1px,
+      transparent 1.5px
+    ),
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--foreground) 4%, var(--card)),
+      color-mix(in srgb, oklch(80% 20% 220) 50%, var(--card)) 40%,
+      color-mix(in srgb, var(--card) 62%, var(--background))
+    );
+  background-size:
+    94px 58px,
+    131px 73px,
+    auto;
 }
 
 @keyframes pet-hero-wander {
@@ -479,4 +520,33 @@
 .pet-hero-motto-input:focus {
   border-color: var(--ring);
   box-shadow: 0 0 0 2px color-mix(in srgb, var(--ring) 20%, transparent);
+}
+
+/* Theme toggle button in footer left */
+.pet-hero-theme-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  margin-right: 6px;
+  border: none;
+  background: transparent;
+  color: var(--muted-foreground);
+  cursor: pointer;
+  border-radius: 2px;
+  transition:
+    color 0.15s ease,
+    background 0.15s ease;
+}
+
+.pet-hero-theme-toggle:hover {
+  color: var(--foreground);
+  background: color-mix(in srgb, var(--foreground) 8%, transparent);
+}
+
+.pet-hero-theme-toggle:focus {
+  outline: none;
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--ring) 30%, transparent);
 }

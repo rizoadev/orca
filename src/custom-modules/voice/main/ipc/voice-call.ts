@@ -4,7 +4,12 @@ import type {
   VoiceCallKeyStatus,
   VoiceCallStartArgs
 } from '../../../../shared/voice-call-types'
-import { clearGeminiApiKey, hasGeminiApiKey, readGeminiApiKey, saveGeminiApiKey } from '../voice/gemini-api-key-store'
+import {
+  clearGeminiApiKey,
+  hasGeminiApiKey,
+  readGeminiApiKey,
+  saveGeminiApiKey
+} from '../voice/gemini-api-key-store'
 import {
   closeVoiceCall,
   startVoiceCall,

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Copy, Loader2, RefreshCw, Wifi, WifiOff } from 'lucide-react'
 import { toast } from 'sonner'
+import { Badge } from '@/components/ui/badge'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -92,11 +93,23 @@ export function CloudflareRelayStatusSegment(props: {
       ? 'Provisioning tunnel…'
       : 'Tunnel down — click to reconnect'
 
+  const isDev = import.meta.env.DEV
+
   const tunnelDisplay =
     status.hostname && !iconOnly ? (
-      <span className="max-w-[180px] truncate font-mono text-[11px] text-emerald-600 dark:text-emerald-400">
-        {status.hostname}
-      </span>
+      <div className="flex items-center gap-1.5 min-w-0">
+        <span className="max-w-[180px] truncate font-mono text-[11px] text-emerald-600 dark:text-emerald-400">
+          {status.hostname}
+        </span>
+        {isDev && (
+          <Badge
+            variant="outline"
+            className="h-3.5 px-1 text-[9px] font-bold uppercase tracking-wider text-amber-600 border-amber-500/20 bg-amber-500/5 dark:text-amber-400 dark:border-amber-500/30"
+          >
+            dev
+          </Badge>
+        )}
+      </div>
     ) : null
 
   return (

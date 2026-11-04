@@ -23,6 +23,7 @@ import { CaffeinateStatusSegment } from './CaffeinateStatusSegment'
 import { PluginsStatusSegment } from './PluginsStatusSegment'
 import { PluginStatusBarItems } from './PluginStatusBarItems'
 import { RemoteServerUpdateStatusSegment } from './RemoteServerUpdateStatusSegment'
+import { PiTokenUsageStatusSegment } from './PiTokenUsageStatusSegment'
 import { CloudflareRelayStatusSegment } from '../../../../custom-modules/cloudflare/CloudflareRelayStatusSegment'
 import { TOGGLE_FLOATING_TERMINAL_EVENT } from '@/lib/floating-terminal'
 import { FloatingTerminalIconContextMenu } from '@/components/floating-terminal/FloatingTerminalIconContextMenu'
@@ -285,6 +286,8 @@ export function StatusBarSurface({
               </TooltipContent>
             </Tooltip>
           )}
+          {/* Why: Pi meters tokens rather than a quota window, so it trails the rate-limit chips. */}
+          <PiTokenUsageStatusSegment />
         </div>
       </div>
 

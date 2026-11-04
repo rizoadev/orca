@@ -29,6 +29,7 @@ const {
       codexUsage: {},
       openCodeUsage: {},
       museUsage: {},
+      piUsage: {},
       codexAccounts: {},
       claudeAccounts: {},
       rateLimits: { attach: vi.fn(), start: vi.fn() },

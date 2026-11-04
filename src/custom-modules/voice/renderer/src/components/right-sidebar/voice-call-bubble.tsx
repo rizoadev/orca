@@ -16,11 +16,7 @@ type Props = {
   onSpeakText?: (text: string) => void
 }
 
-export function VoiceCallBubble({
-  item,
-  onResendToPty,
-  onSpeakText
-}: Props): React.JSX.Element {
+export function VoiceCallBubble({ item, onResendToPty, onSpeakText }: Props): React.JSX.Element {
   if (item.role === 'user') {
     return (
       <div className="ml-4 rounded-xl bg-primary/15 p-2.5 text-foreground space-y-1">

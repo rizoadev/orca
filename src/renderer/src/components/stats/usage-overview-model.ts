@@ -8,7 +8,8 @@ import {
   createClaudeProvider,
   createCodexProvider,
   createMuseProvider,
-  createOpenCodeProvider
+  createOpenCodeProvider,
+  createPiProvider
 } from './usage-provider-normalization'
 import { getIntlLocale } from '@/i18n/i18n'
 
@@ -17,7 +18,8 @@ export function buildUsageOverview(input: UsageOverviewInput): UsageOverviewMode
     createClaudeProvider(input.claude),
     createCodexProvider(input.codex),
     createOpenCodeProvider(input.opencode),
-    createMuseProvider(input.muse)
+    createMuseProvider(input.muse),
+    createPiProvider(input.pi)
   ]
   const daily = buildDailyOverview(input)
   const bestDay =

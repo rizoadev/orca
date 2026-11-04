@@ -3,18 +3,20 @@ import { useEffect, useRef } from 'react'
 
 // Strip terminal ANSI escape codes, OSC sequences, and control chars
 function cleanTerminalOutput(raw: string): string {
-  return raw
-    // OSC hyperlinks and titles
-    .replace(/\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)/g, '')
-    // CSI sequences (color, cursor, etc)
-    .replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, '')
-    // Other escape codes
-    .replace(/\x1b[@-Z\\-_]/g, '')
-    // Carriage returns
-    .replace(/\r\n/g, '\n')
-    .replace(/\r/g, '\n')
-    .replace(/\n{3,}/g, '\n\n')
-    .trim()
+  return (
+    raw
+      // OSC hyperlinks and titles
+      .replace(/\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)/g, '')
+      // CSI sequences (color, cursor, etc)
+      .replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, '')
+      // Other escape codes
+      .replace(/\x1b[@-Z\\-_]/g, '')
+      // Carriage returns
+      .replace(/\r\n/g, '\n')
+      .replace(/\r/g, '\n')
+      .replace(/\n{3,}/g, '\n\n')
+      .trim()
+  )
 }
 
 type WatcherOptions = {

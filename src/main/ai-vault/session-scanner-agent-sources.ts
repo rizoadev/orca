@@ -16,6 +16,7 @@ import { cursorChatMetaPath } from './scanners/cursor/session-scanner-cursor-cha
 import { devinSessionsDbDependencyPath } from './scanners/devin/session-scanner-devin-db'
 import { resolveKimiSessionsDir } from './scanners/kimi/session-scanner-kimi-paths'
 import { resolveMuseSessionsDir } from '../../shared/muse-session-log'
+import { resolvePiSessionsDir } from '../../shared/pi-session-paths'
 import { isKiroSessionMetadataPath } from './scanners/kiro/session-scanner-kiro-parser'
 
 import { OPENCLAW_AGENT_SOURCE } from './scanners/openclaw/openclaw-session-layout'
@@ -30,7 +31,7 @@ import {
 import { getHermesHome } from '../hermes/hermes-default-home'
 import { SUBAGENT_DIR_NAME } from './scanners/claude/session-scanner-subagent-transcripts'
 import type { AiVaultScanOptions } from './session-scanner-types'
-import { normalizeAgentSessionsDir, primeAgentSessionsDirFromEnv } from './session-scanner-values'
+import { primeAgentSessionsDirFromEnv } from './session-scanner-values'
 
 export const DEFAULT_CODEX_HOME_DIR = join(homedir(), '.codex')
 const GEMINI_SESSIONS_DIR = join(homedir(), '.gemini', 'tmp')
@@ -42,10 +43,7 @@ const CURSOR_PROJECTS_DIR = join(homedir(), '.cursor', 'projects')
 const CODEBUDDY_PROJECTS_DIR = join(homedir(), '.codebuddy', 'projects')
 const ROVO_SESSIONS_DIR = join(homedir(), '.rovodev', 'sessions')
 export function piSessionHistorySessionsDir(): string {
-  return normalizeAgentSessionsDir(
-    process.env.PI_CODING_AGENT_DIR?.trim() || join(homedir(), '.pi', 'agent', 'sessions'),
-    '.pi'
-  )
+  return resolvePiSessionsDir()
 }
 const PRIME_AGENT_SESSIONS_DIR = primeAgentSessionsDirFromEnv()
 const DEVIN_TRANSCRIPTS_DIR = join(

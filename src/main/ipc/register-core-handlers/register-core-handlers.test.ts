@@ -543,10 +543,7 @@ describe('registerCoreHandlers', () => {
       closeNotificationDismissals: vi.fn(async () => {})
     }
     const stats = { marker: 'stats' }
-    const claudeUsage = { marker: 'claudeUsage' }
-    const codexUsage = { marker: 'codexUsage' }
-    const openCodeUsage = { marker: 'openCodeUsage' }
-    const museUsage = { marker: 'museUsage' }
+    const usageStores = { marker: 'usageStores' }
     const codexAccounts = { marker: 'codexAccounts', runtimeHomeService: { marker: 'runtimeHome' } }
     const claudeAccounts = { marker: 'claudeAccounts' }
     const rateLimits = { marker: 'rateLimits' }
@@ -558,11 +555,8 @@ describe('registerCoreHandlers', () => {
       store as never,
       runtime as never,
       stats as never,
-      claudeUsage as never,
-      codexUsage as never,
-      openCodeUsage as never,
       // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: registration only forwards this marker to the mocked usage registrar.
-      museUsage as never,
+      usageStores as never,
       codexAccounts as never,
       claudeAccounts as never,
       rateLimits as never,

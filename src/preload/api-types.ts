@@ -16,6 +16,7 @@ import type {
   CodexUsageApi,
   MuseUsageApi,
   OpenCodeUsageApi,
+  PiUsageApi,
   RateLimitsApi
 } from './api/agent-usage-api'
 import type { AiVaultApi } from './api/ai-vault-api'
@@ -141,6 +142,7 @@ export type PreloadApi = {
   codexUsage: CodexUsageApi
   openCodeUsage: OpenCodeUsageApi
   museUsage: MuseUsageApi
+  piUsage: PiUsageApi
   aiVault: AiVaultApi
   nativeChat: NativeChatApi
   fs: FilesystemApi['fs']
@@ -176,7 +178,12 @@ export type PreloadApi = {
   speech: SpeechApi
   voiceCall?: VoiceCallApi
   /** GoT planner IPC; absent in builds without the planner — callers must guard. */
-  got?: { generatePlan: (args: { repoPath: string; taskDescription: string }) => Promise<{ ok: true; plan: string } | { ok: false; error: string }> }
+  got?: {
+    generatePlan: (args: {
+      repoPath: string
+      taskDescription: string
+    }) => Promise<{ ok: true; plan: string } | { ok: false; error: string }>
+  }
 }
 
 export type {

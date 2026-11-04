@@ -1,3 +1,4 @@
+import type { IssueSourcePreference } from '../../../../shared/repo-types'
 import type { GitLabSnippetDetail, GitLabSnippetVisibility } from '../../shared/types'
 import {
   getGlabKnownHosts,
@@ -57,7 +58,7 @@ export function mapSnippetDetail(row: RESTSnippet, contentOverride?: string): Gi
 
 export async function resolveProjectRef(
   repoPath: string,
-  preference: unknown,
+  preference: IssueSourcePreference | undefined,
   connectionId: string | null | undefined,
   localGitOptions: LocalGitExecOptions
 ): Promise<ProjectRef | null> {

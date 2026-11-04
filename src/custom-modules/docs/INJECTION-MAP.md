@@ -9,28 +9,28 @@ Last updated: setelah hero + cloudflare + right-sidebar + voice module.
 
 ## Ringkasan
 
-| #   | File Upstream                                                         | Modul         | Yang Di-inject                            |
-| --- | --------------------------------------------------------------------- | ------------- | ----------------------------------------- |
-| 1   | `src/renderer/src/components/tab-group/TabGroupSplitLayout.tsx`       | hero          | import + `<MainWindowHero>`               |
-| 2   | `src/renderer/src/assets/main.css`                                    | hero          | `@import` CSS                             |
-| 3   | `src/shared/global-settings-types.ts`                                 | cloudflare    | 4 optional fields                         |
-| 4   | `src/shared/cloudflare-relay-status.ts`                               | cloudflare    | file baru (kita buat)                     |
-| 5   | `src/preload/api/mobile-api.ts`                                       | cloudflare    | import type + 3 method types              |
-| 6   | `src/preload/api/mobile-bridge.ts`                                    | cloudflare    | 3 `ipcRenderer.invoke` calls              |
-| 7   | `src/main/ipc/mobile.ts`                                              | cloudflare    | import + 1 function call                  |
-| 8   | `src/renderer/src/components/settings/MobilePane.tsx`                 | cloudflare    | import + `<CloudflareRelaySection />`     |
-| 9   | `src/renderer/src/components/status-bar/StatusBarSurface.tsx`         | cloudflare    | import + `<CloudflareRelayStatusSegment>` |
-| 10  | `src/renderer/src/components/settings/RuntimePairingUrlGenerator.tsx` | cloudflare    | import + `<CloudflareRuntimeHint>`        |
-| 11  | `src/shared/voice-call-types.ts`                                      | voice         | file baru (kontrak tipe voice)            |
-| 12  | `src/preload/api/voice-call-bridge.ts`                                | voice         | file baru (bridge invoke/send/onEvent)    |
-| 13  | `src/preload/api-types.ts`                                            | voice         | import + field `voiceCall?`               |
-| 14  | `src/preload/index.ts`                                                | voice         | import + expose `voiceCall`               |
-| 15  | `src/main/ipc/speech.ts`                                              | voice         | import + call `registerVoiceCallHandlers` |
-| 16  | `src/shared/ui-chrome-types.ts`                                       | right-sidebar | union member `'issues'`, `'voice'`        |
-| 17  | `src/shared/rpc-contract/client-ui-params.ts`                         | right-sidebar | tab names di `STATIC_RIGHT_SIDEBAR_TABS`  |
-| 18  | `src/renderer/src/store/right-sidebar-route.ts`                       | right-sidebar | route whitelist check                     |
-| 19  | `src/renderer/src/components/right-sidebar/use-right-sidebar-activity-items.ts` | right-sidebar | import + `...getCustomActivityItems()` |
-| 20  | `src/renderer/src/components/right-sidebar/right-sidebar-panel-content.tsx`    | right-sidebar | import + `<CustomPanelContent />`      |
+| #   | File Upstream                                                                   | Modul         | Yang Di-inject                            |
+| --- | ------------------------------------------------------------------------------- | ------------- | ----------------------------------------- |
+| 1   | `src/renderer/src/components/tab-group/TabGroupSplitLayout.tsx`                 | hero          | import + `<MainWindowHero>`               |
+| 2   | `src/renderer/src/assets/main.css`                                              | hero          | `@import` CSS                             |
+| 3   | `src/shared/global-settings-types.ts`                                           | cloudflare    | 4 optional fields                         |
+| 4   | `src/shared/cloudflare-relay-status.ts`                                         | cloudflare    | file baru (kita buat)                     |
+| 5   | `src/preload/api/mobile-api.ts`                                                 | cloudflare    | import type + 3 method types              |
+| 6   | `src/preload/api/mobile-bridge.ts`                                              | cloudflare    | 3 `ipcRenderer.invoke` calls              |
+| 7   | `src/main/ipc/mobile.ts`                                                        | cloudflare    | import + 1 function call                  |
+| 8   | `src/renderer/src/components/settings/MobilePane.tsx`                           | cloudflare    | import + `<CloudflareRelaySection />`     |
+| 9   | `src/renderer/src/components/status-bar/StatusBarSurface.tsx`                   | cloudflare    | import + `<CloudflareRelayStatusSegment>` |
+| 10  | `src/renderer/src/components/settings/RuntimePairingUrlGenerator.tsx`           | cloudflare    | import + `<CloudflareRuntimeHint>`        |
+| 11  | `src/shared/voice-call-types.ts`                                                | voice         | file baru (kontrak tipe voice)            |
+| 12  | `src/preload/api/voice-call-bridge.ts`                                          | voice         | file baru (bridge invoke/send/onEvent)    |
+| 13  | `src/preload/api-types.ts`                                                      | voice         | import + field `voiceCall?`               |
+| 14  | `src/preload/index.ts`                                                          | voice         | import + expose `voiceCall`               |
+| 15  | `src/main/ipc/speech.ts`                                                        | voice         | import + call `registerVoiceCallHandlers` |
+| 16  | `src/shared/ui-chrome-types.ts`                                                 | right-sidebar | union member `'issues'`, `'voice'`        |
+| 17  | `src/shared/rpc-contract/client-ui-params.ts`                                   | right-sidebar | tab names di `STATIC_RIGHT_SIDEBAR_TABS`  |
+| 18  | `src/renderer/src/store/right-sidebar-route.ts`                                 | right-sidebar | route whitelist check                     |
+| 19  | `src/renderer/src/components/right-sidebar/use-right-sidebar-activity-items.ts` | right-sidebar | import + `...getCustomActivityItems()`    |
+| 20  | `src/renderer/src/components/right-sidebar/right-sidebar-panel-content.tsx`     | right-sidebar | import + `<CustomPanelContent />`         |
 
 ---
 
