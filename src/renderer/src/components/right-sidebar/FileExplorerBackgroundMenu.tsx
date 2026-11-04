@@ -1,7 +1,9 @@
 import { preventSecondaryMenuSelection } from '@/components/ui/prevent-secondary-menu-selection'
 import React, { useEffect } from 'react'
-import { FilePlus, FolderPlus } from 'lucide-react'
+import { FilePlus, FolderPlus, Code2 } from 'lucide-react'
 import { CLOSE_ALL_CONTEXT_MENUS_EVENT } from '@/lib/close-all-context-menus'
+import { useRepoById, useActiveWorktree } from '@/store/selectors'
+import { branchName } from '@/lib/git-utils'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -9,6 +11,10 @@ import {
   DropdownMenuTrigger
 } from '@/components/ui/dropdown-menu'
 import { translate } from '@/i18n/i18n'
+import { toast } from 'sonner'
+import { createProjectSnippet } from '../../../../custom-modules/snippets/main/gitlab/snippets'
+import type { GitLabSnippetCreateInput } from '../../../../custom-modules/snippets/shared/types'
+import type { IssueSourcePreference } from '../../../../shared/repo-types'
 
 /** Targets creation and paste at the displayed directory while keeping workspace operations rooted at the worktree. */
 export function FileExplorerBackgroundMenu({
@@ -28,9 +34,64 @@ export function FileExplorerBackgroundMenu({
 }): React.JSX.Element {
   useEffect(() => {
     const close = (): void => onOpenChange(false)
+    window.dispatchEvent(new Event(CLOSE_ALL_CONTEXT_MENUS_EVENT))
     window.addEventListener(CLOSE_ALL_CONTEXT_MENUS_EVENT, close)
     return () => window.removeEventListener(CLOSE_ALL_CONTEXT_MENUS_EVENT, close)
   }, [onOpenChange])
+
+  const activeWorktree = useActiveWorktree()
+  const activeRepo = useRepoById(activeWorktree?.repoId ?? null)
+  const isGitLab = activeRepo?.gitRemoteIdentity?.remoteUrl?.toLowerCase().includes('gitlab')
+
+  const handleSnippetSync = async () => {
+    if (!isGitLab || !activeRepo?.path || !activeRepo?.id) {
+      return
+    }
+
+    try {
+      // Read file content
+      const result = await window.api.fs
+        .readFile({ filePath: worktreePath })
+        .catch(() => ({ content: '' }))
+      const content = typeof result === 'string' ? result : (result?.content ?? '')
+      const fileName = worktreePath.split('/').pop() ?? 'snippet-file'
+
+      const isEnvFile = fileName.startsWith('.env')
+      const title = isEnvFile
+        ? `orca-sync:${branchName(activeWorktree?.branch ?? 'main')}:${fileName}`
+        : fileName.replace(/\.[^.]+$/, '')
+
+      const input: GitLabSnippetCreateInput = {
+        title,
+        fileName,
+        content,
+        visibility: 'private',
+        description: 'Sync from Orca File Explorer'
+      }
+
+      const preference: IssueSourcePreference = {
+        provider: 'gitlab',
+        remoteUrl: activeRepo.gitRemoteIdentity?.remoteUrl ?? '',
+        connectionId: activeRepo.connectionId ?? undefined,
+        branch: activeWorktree?.branch ?? 'main'
+      }
+
+      const snippetResult = await createProjectSnippet(
+        activeRepo.path,
+        input,
+        preference,
+        activeRepo.connectionId ?? null
+      )
+
+      if (snippetResult.ok) {
+        toast.success('Synced to GitLab snippet')
+      } else {
+        toast.error(snippetResult.error || 'Failed to sync snippet')
+      }
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to sync snippet')
+    }
+  }
 
   return (
     <DropdownMenu open={open} onOpenChange={onOpenChange} modal={false}>
@@ -63,6 +124,15 @@ export function FileExplorerBackgroundMenu({
             'New Folder'
           )}
         </DropdownMenuItem>
+        {isGitLab && (
+          <DropdownMenuItem onSelect={handleSnippetSync}>
+            <Code2 />
+            {translate(
+              'auto.components.right.sidebar.FileExplorerBackgroundMenu.snippetSync',
+              'Sync to GitLab Snippet'
+            )}
+          </DropdownMenuItem>
+        )}
       </DropdownMenuContent>
     </DropdownMenu>
   )
