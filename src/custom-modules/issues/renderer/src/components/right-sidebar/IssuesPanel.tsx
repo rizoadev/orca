@@ -1,7 +1,8 @@
 import React, { useEffect, useMemo, useState } from 'react'
-import { FolderKanban, Plus, RefreshCw } from 'lucide-react'
+import { FolderKanban, Plus, RefreshCw, ExternalLink } from 'lucide-react'
 import { useConfirmationDialog } from '@/components/confirmation-dialog-context'
 import { useActiveWorktree, useRepoById } from '@/store/selectors'
+import { useAppStore } from '@/store'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
@@ -17,6 +18,7 @@ import { useIssueRowActions } from './use-issue-row-actions'
 import { IssuesProviderTabs, providerLabel } from './issues-provider-tabs'
 // import { createOrchestrationTaskFromIssue } from '@/lib/issue-to-orchestration-task_DISABLED' // not available
 import { useIssueRowsFetch, type IssuesProviderTab } from './use-issue-rows-fetch'
+import { openHttpLink } from '@/lib/http-link-routing'
 import LinearIssueWorkspace from '@/components/LinearIssueWorkspace'
 
 export default function IssuesPanel({ isVisible }: { isVisible: boolean }): React.JSX.Element {
@@ -24,7 +26,30 @@ export default function IssuesPanel({ isVisible }: { isVisible: boolean }): Reac
   const activeRepo = useRepoById(activeWorktree?.repoId ?? null)
 
   const provider = useMemo(() => detectRepoIssueProvider(activeRepo), [activeRepo])
+
+  // Why: derive the repo's web URL from the canonical remote key so we can
+  // open the issue tracker in a browser without an extra IPC round-trip.
+  const repoWebUrl = useMemo(() => {
+    const canonicalKey = activeRepo?.gitRemoteIdentity?.canonicalKey
+    if (!canonicalKey) {
+      return null
+    }
+    // canonicalKey format: "github.com/owner/repo" or "gitlab.com/owner/repo"
+    return `https://${canonicalKey}`
+  }, [activeRepo])
   const linearBinding = activeRepo?.linear ?? null
+
+  // Why: use the cached project URL when available so the link goes directly
+  // to the Linear project rather than the workspace root.
+  const getCachedLinearProjects = useAppStore((s) => s.getCachedLinearProjects)
+  const linearProjectUrl = useMemo(() => {
+    if (!linearBinding) {
+      return null
+    }
+    const cached = getCachedLinearProjects(undefined, undefined, linearBinding.workspaceId)
+    const project = cached?.items?.find((p) => p.id === linearBinding.projectId)
+    return project?.url ?? null
+  }, [linearBinding, getCachedLinearProjects])
   // Why: the header is a provider switch. Default to the merged view so every
   // source is visible; single-provider tabs stay one click away.
   const [providerTab, setProviderTab] = useState<IssuesProviderTab | null>(null)
@@ -170,6 +195,38 @@ export default function IssuesPanel({ isVisible }: { isVisible: boolean }): Reac
           <div className="flex shrink-0 items-center gap-1.5">
             {activeTab !== 'linear' || linearBinding ? (
               <TooltipProvider delayDuration={300}>
+                {(() => {
+                  const linkUrl =
+                    activeTab === 'linear' && linearBinding
+                      ? (linearProjectUrl ?? `https://linear.app`)
+                      : repoWebUrl
+                  return linkUrl ? (
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon-xs"
+                          onClick={() =>
+                            void openHttpLink(linkUrl, { worktreeId: activeWorktree?.id ?? null })
+                          }
+                          aria-label={translate(
+                            'auto.components.right.sidebar.issuesPanel.openRepo',
+                            'Open repository'
+                          )}
+                        >
+                          <ExternalLink className="size-3.5" />
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent side="bottom">
+                        {translate(
+                          'auto.components.right.sidebar.issuesPanel.openRepo',
+                          'Open repository'
+                        )}
+                      </TooltipContent>
+                    </Tooltip>
+                  ) : null
+                })()}
                 {activeTab === 'linear' && linearBinding ? (
                   <Tooltip>
                     <TooltipTrigger asChild>

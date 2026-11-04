@@ -9,7 +9,13 @@ import { useAppStore } from '@/store'
 import { confirmCloseIssue } from './issues-panel-close-confirm'
 import { closeRepoIssue, createRepoIssue } from './issues-panel-create-actions'
 import type { CreateIssueSubmitInput } from './issues-panel-create-dialog'
-import { issueRowBody, type IssueRow } from './issues-panel-rows'
+import {
+  issueRowBody,
+  toGitHubIssueRows,
+  toGitLabIssueRows,
+  toLinearIssueRows,
+  type IssueRow
+} from './issues-panel-rows'
 import {
   startGitHubIssueFromPanel,
   startGitLabIssueFromPanel,
@@ -247,6 +253,15 @@ export function useIssueRowActions(args: Args) {
           return
         }
         args.setCreateOpen(false)
+        // Why: optimistically prepend the new row so it's visible immediately
+        // while the background force-refresh catches up with the server.
+        const newRows =
+          created.provider === 'github'
+            ? toGitHubIssueRows([created.item])
+            : created.provider === 'gitlab'
+              ? toGitLabIssueRows([created.item], repo.id)
+              : toLinearIssueRows([created.item])
+        setRows((current) => [...newRows, ...current])
         if (created.provider === 'github') {
           args.setSelectedGitHub(created.item)
         } else if (created.provider === 'gitlab') {
@@ -261,7 +276,7 @@ export function useIssueRowActions(args: Args) {
         args.setCreateSubmitting(false)
       }
     },
-    [repo, args]
+    [repo, args, setRows]
   )
 
   return {
