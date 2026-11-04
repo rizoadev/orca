@@ -134,7 +134,7 @@ export function IssuesPanelList({
                 <IssueAiWorkActions provider={row.provider} repoId={repoId} issueRef={issueRef} />
               ) : null}
               <TooltipProvider delayDuration={300}>
-                <div className="flex items-center gap-0.5">
+                <div className="-ml-1 flex items-center gap-0.5">
                   {onConvertToOrchestration ? (
                     <Tooltip>
                       <TooltipTrigger asChild>
