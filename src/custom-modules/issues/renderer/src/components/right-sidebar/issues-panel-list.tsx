@@ -13,6 +13,7 @@ import { useIssueListAgents } from './use-issue-list-agents'
 import { formatIssueRelativeTime, type IssueRow } from './issues-panel-rows'
 import { issueRefFromRow } from './issue-ref'
 import { IssueRowAiMenus } from './issue-row-ai-menus'
+import { IssueProviderIcon } from './issue-provider-icon'
 import type { IssueAiWorkMode } from './issues-panel-ai-work'
 import type { TuiAgent } from '../../../../../../shared/types'
 import { useAppStore } from '@/store'
@@ -116,6 +117,10 @@ export function IssuesPanelList({
             <CircleDot className="mt-0.5 size-3.5 shrink-0 text-emerald-600 dark:text-emerald-400" />
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-2">
+                <IssueProviderIcon
+                  provider={row.provider}
+                  className="size-3 shrink-0 text-muted-foreground"
+                />
                 <span className="font-mono text-[11px] text-muted-foreground">{row.label}</span>
                 <IssueStateBadge row={row} />
                 {row.updatedAt ? (
