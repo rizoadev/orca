@@ -27,15 +27,31 @@ export default function IssuesPanel({ isVisible }: { isVisible: boolean }): Reac
 
   const provider = useMemo(() => detectRepoIssueProvider(activeRepo), [activeRepo])
 
-  // Why: derive the repo's web URL from the canonical remote key so we can
-  // open the issue tracker in a browser without an extra IPC round-trip.
+  // Why: derive the repo's web URL — prefer canonicalKey (already normalized),
+  // fall back to remoteUrl so the button still renders for repos without a
+  // probed identity yet.
   const repoWebUrl = useMemo(() => {
-    const canonicalKey = activeRepo?.gitRemoteIdentity?.canonicalKey
-    if (!canonicalKey) {
+    const identity = activeRepo?.gitRemoteIdentity
+    if (!identity) {
       return null
     }
-    // canonicalKey format: "github.com/owner/repo" or "gitlab.com/owner/repo"
-    return `https://${canonicalKey}`
+    const key = identity.canonicalKey
+    if (key) {
+      return `https://${key}`
+    }
+    // remoteUrl fallback: convert SCP git@github.com:owner/repo.git → https://
+    const raw = identity.remoteUrl?.trim()
+    if (!raw) {
+      return null
+    }
+    if (raw.startsWith('http://') || raw.startsWith('https://')) {
+      return raw.replace(/\.git$/i, '')
+    }
+    const scp = raw.match(/^(?:[^@]+@)?([^:]+):(.+?)(?:\.git)?$/)
+    if (scp) {
+      return `https://${scp[1]}/${scp[2]}`
+    }
+    return null
   }, [activeRepo])
   const linearBinding = activeRepo?.linear ?? null
 
@@ -193,108 +209,110 @@ export default function IssuesPanel({ isVisible }: { isVisible: boolean }): Reac
             onSelect={setProviderTab}
           />
           <div className="flex shrink-0 items-center gap-1.5">
-            {activeTab !== 'linear' || linearBinding ? (
-              <TooltipProvider delayDuration={300}>
-                {(() => {
-                  const linkUrl =
-                    activeTab === 'linear' && linearBinding
-                      ? (linearProjectUrl ?? `https://linear.app`)
-                      : repoWebUrl
-                  return linkUrl ? (
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="icon-xs"
-                          onClick={() =>
-                            void openHttpLink(linkUrl, { worktreeId: activeWorktree?.id ?? null })
-                          }
-                          aria-label={translate(
-                            'auto.components.right.sidebar.issuesPanel.openRepo',
-                            'Open repository'
-                          )}
-                        >
-                          <ExternalLink className="size-3.5" />
-                        </Button>
-                      </TooltipTrigger>
-                      <TooltipContent side="bottom">
-                        {translate(
-                          'auto.components.right.sidebar.issuesPanel.openRepo',
-                          'Open repository'
-                        )}
-                      </TooltipContent>
-                    </Tooltip>
-                  ) : null
-                })()}
-                {activeTab === 'linear' && linearBinding ? (
+            <TooltipProvider delayDuration={300}>
+              {(() => {
+                const linkUrl =
+                  activeTab === 'linear' && linearBinding
+                    ? (linearProjectUrl ?? `https://linear.app`)
+                    : repoWebUrl
+                return linkUrl ? (
                   <Tooltip>
                     <TooltipTrigger asChild>
                       <Button
                         type="button"
                         variant="ghost"
                         size="icon-xs"
-                        onClick={() => setLinearPickerOpen((value) => !value)}
+                        onClick={() =>
+                          void openHttpLink(linkUrl, { worktreeId: activeWorktree?.id ?? null })
+                        }
                         aria-label={translate(
-                          'auto.components.right.sidebar.issuesPanel.linearChangeProject',
-                          'Change Linear project'
+                          'auto.components.right.sidebar.issuesPanel.openRepo',
+                          'Open repository'
                         )}
                       >
-                        <FolderKanban className="size-3.5" />
+                        <ExternalLink className="size-3.5" />
                       </Button>
                     </TooltipTrigger>
                     <TooltipContent side="bottom">
                       {translate(
-                        'auto.components.right.sidebar.issuesPanel.linearChangeProject',
-                        'Change Linear project'
+                        'auto.components.right.sidebar.issuesPanel.openRepo',
+                        'Open repository'
                       )}
                     </TooltipContent>
                   </Tooltip>
-                ) : null}
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon-xs"
-                      onClick={() => setCreateOpen(true)}
-                      aria-label={translate(
-                        'auto.components.right.sidebar.issuesPanel.newIssue',
-                        'New issue'
-                      )}
-                    >
-                      <Plus className="size-3.5" />
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent side="bottom">
-                    {translate('auto.components.right.sidebar.issuesPanel.newIssue', 'New issue')}
-                  </TooltipContent>
-                </Tooltip>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon-xs"
-                      onClick={bumpRefresh}
-                      disabled={loading}
-                      aria-label={translate(
+                ) : null
+              })()}
+              {activeTab !== 'linear' || linearBinding ? (
+                <>
+                  {activeTab === 'linear' && linearBinding ? (
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon-xs"
+                          onClick={() => setLinearPickerOpen((value) => !value)}
+                          aria-label={translate(
+                            'auto.components.right.sidebar.issuesPanel.linearChangeProject',
+                            'Change Linear project'
+                          )}
+                        >
+                          <FolderKanban className="size-3.5" />
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent side="bottom">
+                        {translate(
+                          'auto.components.right.sidebar.issuesPanel.linearChangeProject',
+                          'Change Linear project'
+                        )}
+                      </TooltipContent>
+                    </Tooltip>
+                  ) : null}
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon-xs"
+                        onClick={() => setCreateOpen(true)}
+                        aria-label={translate(
+                          'auto.components.right.sidebar.issuesPanel.newIssue',
+                          'New issue'
+                        )}
+                      >
+                        <Plus className="size-3.5" />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent side="bottom">
+                      {translate('auto.components.right.sidebar.issuesPanel.newIssue', 'New issue')}
+                    </TooltipContent>
+                  </Tooltip>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon-xs"
+                        onClick={bumpRefresh}
+                        disabled={loading}
+                        aria-label={translate(
+                          'auto.components.right.sidebar.issuesPanel.refresh',
+                          'Refresh issues'
+                        )}
+                      >
+                        <RefreshCw className={cn('size-3.5', loading && 'animate-spin')} />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent side="bottom">
+                      {translate(
                         'auto.components.right.sidebar.issuesPanel.refresh',
                         'Refresh issues'
                       )}
-                    >
-                      <RefreshCw className={cn('size-3.5', loading && 'animate-spin')} />
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent side="bottom">
-                    {translate(
-                      'auto.components.right.sidebar.issuesPanel.refresh',
-                      'Refresh issues'
-                    )}
-                  </TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
-            ) : null}
+                    </TooltipContent>
+                  </Tooltip>
+                </>
+              ) : null}
+            </TooltipProvider>
           </div>
         </div>
       </div>
@@ -329,7 +347,7 @@ export default function IssuesPanel({ isVisible }: { isVisible: boolean }): Reac
             void askAiWork(row, agent, mode)
           }}
           onCreateWorktree={createWorktree}
-          onConvertToOrchestration={() => undefined}
+          onConvertToOrchestration={undefined}
           repoId={activeRepo?.id ?? null}
           onMarkDone={(row) => {
             void markIssueDone(row)
