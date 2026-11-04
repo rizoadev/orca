@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react'
-import { Plus, RefreshCw } from 'lucide-react'
+import { FolderKanban, Plus, RefreshCw } from 'lucide-react'
 import { useConfirmationDialog } from '@/components/confirmation-dialog-context'
 import { useActiveWorktree, useRepoById } from '@/store/selectors'
 import { cn } from '@/lib/utils'
@@ -56,6 +56,7 @@ export default function IssuesPanel({ isVisible }: { isVisible: boolean }): Reac
   const [selectedGitLabItem, setSelectedGitLabItem] = useState<GitLabWorkItem | null>(null)
   const [selectedLinearItem, setSelectedLinearItem] = useState<LinearIssue | null>(null)
   const [createOpen, setCreateOpen] = useState(false)
+  const [linearPickerOpen, setLinearPickerOpen] = useState(false)
   const [createSubmitting, setCreateSubmitting] = useState(false)
   const [aiPlanningIssueId, setAiPlanningIssueId] = useState<string | null>(null)
   const [aiWorkingIssueId, setAiWorkingIssueId] = useState<string | null>(null)
@@ -149,6 +150,30 @@ export default function IssuesPanel({ isVisible }: { isVisible: boolean }): Reac
           />
           {activeTab !== 'linear' || linearBinding ? (
             <TooltipProvider delayDuration={300}>
+              {activeTab === 'linear' && linearBinding ? (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon-xs"
+                      onClick={() => setLinearPickerOpen((value) => !value)}
+                      aria-label={translate(
+                        'auto.components.right.sidebar.issuesPanel.linearChangeProject',
+                        'Change Linear project'
+                      )}
+                    >
+                      <FolderKanban className="size-3.5" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent side="bottom">
+                    {translate(
+                      'auto.components.right.sidebar.issuesPanel.linearChangeProject',
+                      'Change Linear project'
+                    )}
+                  </TooltipContent>
+                </Tooltip>
+              ) : null}
               <Tooltip>
                 <TooltipTrigger asChild>
                   <Button
@@ -197,35 +222,39 @@ export default function IssuesPanel({ isVisible }: { isVisible: boolean }): Reac
         <div className="border-b border-border px-3 py-2 text-xs text-destructive">{error}</div>
       ) : null}
 
-      {activeTab === 'linear' && !linearBinding ? (
-        <LinearProjectPicker onAttached={bumpRefresh} />
-      ) : (
-        <div className="min-h-0 flex-1 overflow-y-auto scrollbar-sleek">
-          <IssuesPanelList
-            loading={loading}
-            rows={rows}
-            worktreeId={activeWorktree?.id ?? null}
-            connectionId={activeRepo.connectionId}
-            aiPlanningIssueId={aiPlanningIssueId}
-            aiWorkingIssueId={aiWorkingIssueId}
-            closingIssueId={closingIssueId}
-            convertingIssueId={null}
-            onOpenIssue={openIssue}
-            onAskAiPlan={(row, agent) => {
-              void askAiPlan(row, agent)
-            }}
-            onAskAiWork={(row, agent, mode) => {
-              void askAiWork(row, agent, mode)
-            }}
-            onCreateWorktree={createWorktree}
-            onConvertToOrchestration={() => undefined}
-            repoId={activeRepo?.id ?? null}
-            onCloseIssue={(row) => {
-              void closeIssue(row)
-            }}
-          />
-        </div>
-      )}
+      {activeTab === 'linear' && (!linearBinding || linearPickerOpen) ? (
+        <LinearProjectPicker
+          onAttached={() => {
+            setLinearPickerOpen(false)
+            bumpRefresh()
+          }}
+        />
+      ) : null}
+      <div className="min-h-0 flex-1 overflow-y-auto scrollbar-sleek">
+        <IssuesPanelList
+          loading={loading}
+          rows={rows}
+          worktreeId={activeWorktree?.id ?? null}
+          connectionId={activeRepo.connectionId}
+          aiPlanningIssueId={aiPlanningIssueId}
+          aiWorkingIssueId={aiWorkingIssueId}
+          closingIssueId={closingIssueId}
+          convertingIssueId={null}
+          onOpenIssue={openIssue}
+          onAskAiPlan={(row, agent) => {
+            void askAiPlan(row, agent)
+          }}
+          onAskAiWork={(row, agent, mode) => {
+            void askAiWork(row, agent, mode)
+          }}
+          onCreateWorktree={createWorktree}
+          onConvertToOrchestration={() => undefined}
+          repoId={activeRepo?.id ?? null}
+          onCloseIssue={(row) => {
+            void closeIssue(row)
+          }}
+        />
+      </div>
 
       <IssuesPanelCreateDialog
         open={createOpen}

@@ -72,3 +72,7 @@ Restored because the panel needs them and orca-clean lacked the current versions
   (opens an agent tab with a no-code-change discussion prompt).
 - `providerForCreate` resolves `All` to the repo's detected provider for
   create/close flows.
+- **Linear binding**: the picker reuses Orca's existing Linear connection
+  (token in settings) — it lists the connected teams and a searchable project
+  dropdown (`listLinearTeams` / `listLinearProjects`); selecting a project
+  auto-saves the repo binding (project + workspace + name). No manual IDs.
