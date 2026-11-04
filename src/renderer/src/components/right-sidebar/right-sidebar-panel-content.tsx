@@ -5,14 +5,16 @@ import { isPluginPanelTabKey } from '../../../../shared/plugins/manifest/plugin-
 import { CustomPanelContent } from '../../../../custom-modules/custom-panel-content'
 import { isCustomSidebarTab } from '../../../../custom-modules/custom-right-sidebar-tabs'
 
-const FileExplorer = lazy(() => import('./FileExplorer'))
-const SourceControl = lazy(() => import('./SourceControl'))
-const ChecksPanel = lazy(() => import('./ChecksPanel'))
+const FileExplorer = lazy(() => import('./file-explorer/panel/FileExplorer'))
+const SourceControl = lazy(() => import('./source-control/panel/SourceControl'))
+const ChecksPanel = lazy(() => import('./checks-panel/ChecksPanel'))
 const PortsPanel = lazy(() => import('./PortsPanel'))
-const AiVaultSidebarPanel = lazy(() => import('./AiVaultSidebarPanel'))
+const AiVaultSidebarPanel = lazy(() => import('./ai-vault/panel/AiVaultSidebarPanel'))
 const FolderWorkspaceWorktreesPanel = lazy(() => import('./FolderWorkspaceWorktreesPanel'))
-const FolderWorkspacePrChecksPanel = lazy(() => import('./FolderWorkspacePrChecksPanel'))
-const PluginPanel = lazy(() => import('./PluginPanel'))
+const FolderWorkspacePrChecksPanel = lazy(
+  () => import('./hosted-review/folder-checks/FolderWorkspacePrChecksPanel')
+)
+const PluginPanel = lazy(() => import('./plugin-panels/PluginPanel'))
 
 type RightSidebarPanelContentProps = {
   effectiveTab: ActiveRightSidebarTab

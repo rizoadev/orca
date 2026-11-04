@@ -1,0 +1,376 @@
+import { preventSecondaryMenuSelection } from '@/components/ui/prevent-secondary-menu-selection'
+import React, { useCallback } from 'react'
+import {
+  Copy,
+  Download,
+  ExternalLink,
+  Eye,
+  File,
+  FilePlus,
+  Files,
+  FolderPlus,
+  Globe,
+  ListCollapse,
+  Pencil,
+  Search,
+  SquareTerminal,
+  Trash2,
+  Upload
+} from 'lucide-react'
+import { toast } from 'sonner'
+import {
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuSeparator,
+  ContextMenuShortcut
+} from '@/components/ui/context-menu'
+import { useAppStore } from '@/store/index'
+import { useShortcutLabel } from '@/hooks/useShortcutLabel'
+import { detectLanguage } from '@/lib/language-detect'
+import { openFileInBrowserTab } from '@/lib/file-preview'
+import { translate } from '@/i18n/i18n'
+import { LocalOnlyMenuHint } from '@/components/local-only-menu-hint'
+import {
+  getRevealInFileManagerLabel,
+  getWorkspaceFileRevealOwner,
+  revealInFileManager
+} from '@/lib/reveal-in-file-manager'
+import { isRevealOrEditorOpenBlocked } from '@/lib/local-path-open-guard'
+import { runtimeEnvironmentIdOrLocalUnlessTwin } from '@/lib/worktree-runtime-owner'
+import { OpenInContextSubmenu } from '../../../file-actions/OpenInContextSubmenu'
+import type { FileExplorerRowProps } from './FileExplorerRow'
+import {
+  shouldShowCollapseFolderAction,
+  shouldShowCopyFileAction,
+  shouldShowFindInFolderAction,
+  shouldShowOpenInTerminalAction,
+  shouldShowRemoteDownloadAction,
+  shouldShowViewFileAction
+} from './file-explorer-row-action-visibility'
+import { copyFileToOsClipboard, downloadRemoteFile } from './file-explorer-row-file-transfer'
+import { fileExplorerNodeTabRelativePath } from '../tree/file-explorer-directory-listing'
+import { useActiveWorktree, useRepoById } from '@/store/selectors'
+import { branchName } from '@/lib/git-utils'
+import { openHttpLink } from '@/lib/http-link-routing'
+import {
+  snippetTitle,
+  encodeSnippetFileName
+} from '../../../../../../custom-modules/snippets/renderer/components/snippet-encoding'
+
+const isMac = navigator.userAgent.includes('Mac')
+
+type FileExplorerRowContextMenuProps = Pick<
+  FileExplorerRowProps,
+  | 'node'
+  | 'isExpanded'
+  | 'deleteShortcutLabel'
+  | 'connectionId'
+  | 'runtimeDownloadContext'
+  | 'supportsFolderDownload'
+  | 'canOpenInOrcaBrowser'
+  | 'canCollapseFolderSubtree'
+  | 'targetDir'
+  | 'targetDepth'
+  | 'selectionSize'
+  | 'onViewFile'
+  | 'onCopyPaths'
+  | 'onStartNew'
+  | 'onStartRename'
+  | 'onDuplicate'
+  | 'onAddFolderAsProject'
+  | 'canAddAsProject'
+  | 'onOpenInTerminal'
+  | 'onRequestDelete'
+  | 'onCollapseFolderSubtree'
+  | 'onFindInFolder'
+>
+
+export function FileExplorerRowContextMenu({
+  node,
+  isExpanded,
+  deleteShortcutLabel,
+  connectionId,
+  runtimeDownloadContext,
+  supportsFolderDownload,
+  canOpenInOrcaBrowser,
+  canCollapseFolderSubtree,
+  targetDir,
+  targetDepth,
+  selectionSize,
+  onViewFile,
+  onCopyPaths,
+  onStartNew,
+  onStartRename,
+  onDuplicate,
+  onAddFolderAsProject,
+  canAddAsProject,
+  onOpenInTerminal,
+  onRequestDelete,
+  onCollapseFolderSubtree,
+  onFindInFolder
+}: FileExplorerRowContextMenuProps): React.JSX.Element {
+  const openMarkdownPreview = useAppStore((s) => s.openMarkdownPreview)
+  const activeWorktreeId = useAppStore((s) => s.activeWorktreeId)
+  const copyPathShortcutLabel = useShortcutLabel('fileExplorer.copyPath')
+  const copyRelativePathShortcutLabel = useShortcutLabel('fileExplorer.copyRelativePath')
+  const findInFolderShortcutLabel = useShortcutLabel('sidebar.search.toggle')
+  const showRemoteDownloadAction = shouldShowRemoteDownloadAction(
+    node,
+    connectionId,
+    runtimeDownloadContext,
+    supportsFolderDownload
+  )
+  const showCopyFileAction = shouldShowCopyFileAction(node, connectionId, selectionSize)
+  const revealOwner = useAppStore((s) =>
+    getWorkspaceFileRevealOwner(s, s.activeWorktreeId, {
+      connectionId,
+      runtimeEnvironmentId: runtimeEnvironmentIdOrLocalUnlessTwin(s, s.activeWorktreeId)
+    })
+  )
+  const revealBlocked = isRevealOrEditorOpenBlocked(revealOwner)
+  // Why: only opened files save outside projects; main refuses tree edits under an outside folder link.
+  const writesBlocked = node.outsideProject === true
+  const handleOpenInOrcaBrowser = useCallback(() => {
+    if (!activeWorktreeId) {
+      return
+    }
+    const result = openFileInBrowserTab({ filePath: node.path, worktreeId: activeWorktreeId })
+    if (result.status === 'unsupported') {
+      toast.error(result.message)
+    }
+  }, [activeWorktreeId, node.path])
+  const handleDownload = useCallback(() => {
+    const downloadTarget = connectionId || runtimeDownloadContext
+    if (!downloadTarget) {
+      return
+    }
+    void downloadRemoteFile(node, downloadTarget)
+  }, [connectionId, node, runtimeDownloadContext])
+  const handleCopyFile = useCallback(() => {
+    void copyFileToOsClipboard(node, connectionId)
+  }, [connectionId, node])
+
+  const activeWorktree = useActiveWorktree()
+  const activeRepo = useRepoById(activeWorktree?.repoId ?? null)
+  const handleSyncToSnippet = useCallback(async () => {
+    if (!activeWorktree || !activeRepo) {
+      return
+    }
+    const branch = branchName(activeWorktree.branch ?? '')
+    const relativePath = node.relativePath || node.name
+    const title = snippetTitle(branch, relativePath)
+    const fileName = encodeSnippetFileName(relativePath)
+    const toastId = toast.loading('Syncing to GitLab Snippet…', {
+      description: relativePath
+    })
+    try {
+      const fileResult = await window.api.fs.readFile({
+        filePath: node.path,
+        connectionId: activeRepo.connectionId ?? undefined
+      })
+      if (fileResult.isBinary) {
+        toast.error('Cannot sync binary file to snippet', {
+          id: toastId,
+          description: relativePath
+        })
+        return
+      }
+      const snippetResult = await window.api.gl.createProjectSnippet({
+        repoPath: activeWorktree.path,
+        repoId: activeRepo.id,
+        title,
+        fileName,
+        content: fileResult.content,
+        visibility: 'private'
+      })
+      if (snippetResult.ok) {
+        toast.success('Synced to GitLab Snippet', {
+          id: toastId,
+          description: `${relativePath} · ${snippetResult.snippet.visibility}`,
+          action: snippetResult.snippet.webUrl
+            ? {
+                label: 'Open',
+                onClick: () => void openHttpLink(snippetResult.snippet.webUrl)
+              }
+            : undefined
+        })
+      } else {
+        toast.error('Failed to sync snippet', {
+          id: toastId,
+          description: snippetResult.error
+        })
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      toast.error('Failed to sync snippet', { id: toastId, description: msg })
+    }
+  }, [activeWorktree, activeRepo, node.path, node.relativePath, node.name])
+
+  return (
+    <ContextMenuContent
+      className="min-w-64"
+      onPointerUpCapture={preventSecondaryMenuSelection}
+      onCloseAutoFocus={(e) => e.preventDefault()}
+    >
+      <ContextMenuItem
+        disabled={writesBlocked}
+        onSelect={() => onStartNew('file', targetDir, targetDepth)}
+      >
+        <FilePlus />
+        {translate('auto.components.right.sidebar.FileExplorerRow.37c875d827', 'New File')}
+      </ContextMenuItem>
+      <ContextMenuItem
+        disabled={writesBlocked}
+        onSelect={() => onStartNew('folder', targetDir, targetDepth)}
+      >
+        <FolderPlus />
+        {translate('auto.components.right.sidebar.FileExplorerRow.f61af83316', 'New Folder')}
+      </ContextMenuItem>
+      <ContextMenuSeparator />
+      {showCopyFileAction && (
+        <ContextMenuItem onSelect={handleCopyFile}>
+          <Copy />
+          {translate('auto.components.right.sidebar.FileExplorerRow.98a79948b3', 'Copy')}
+        </ContextMenuItem>
+      )}
+      <ContextMenuItem onSelect={() => onCopyPaths('absolute')}>
+        <Copy />
+        {selectionSize > 1
+          ? translate('auto.components.right.sidebar.FileExplorerRow.f9d7ca753d', 'Copy Paths')
+          : translate('auto.components.right.sidebar.FileExplorerRow.b5d436aa30', 'Copy Path')}
+        {copyPathShortcutLabel !== 'Unassigned' ? (
+          <ContextMenuShortcut>{copyPathShortcutLabel}</ContextMenuShortcut>
+        ) : null}
+      </ContextMenuItem>
+      <ContextMenuItem onSelect={() => onCopyPaths('relative')}>
+        <Copy />
+        {selectionSize > 1
+          ? translate(
+              'auto.components.right.sidebar.FileExplorerRow.42e10cbf57',
+              'Copy Relative Paths'
+            )
+          : translate(
+              'auto.components.right.sidebar.FileExplorerRow.66a29dde82',
+              'Copy Relative Path'
+            )}
+        {copyRelativePathShortcutLabel !== 'Unassigned' ? (
+          <ContextMenuShortcut>{copyRelativePathShortcutLabel}</ContextMenuShortcut>
+        ) : null}
+      </ContextMenuItem>
+      {!node.isDirectory && (
+        <ContextMenuItem disabled={writesBlocked} onSelect={() => onDuplicate(node)}>
+          <Files />
+          {translate('auto.components.right.sidebar.FileExplorerRow.0fec99bfd7', 'Duplicate')}
+        </ContextMenuItem>
+      )}
+      {canAddAsProject && (
+        <ContextMenuItem onSelect={onAddFolderAsProject}>
+          <FolderPlus />
+          {translate(
+            'auto.components.right.sidebar.FileExplorerRow.1bb9be455c',
+            'Add as Project...'
+          )}
+        </ContextMenuItem>
+      )}
+      {shouldShowOpenInTerminalAction(node) && (
+        <ContextMenuItem onSelect={onOpenInTerminal}>
+          <SquareTerminal />
+          {translate(
+            'auto.components.right.sidebar.FileExplorerRow.e887fa4b2e',
+            'Open in Terminal'
+          )}
+        </ContextMenuItem>
+      )}
+      {shouldShowViewFileAction(node) && (
+        <ContextMenuItem onSelect={onViewFile}>
+          <File />
+          {translate('auto.components.right.sidebar.FileExplorerRow.1d8e182c32', 'View File')}
+        </ContextMenuItem>
+      )}
+      {!node.isDirectory && activeWorktreeId && canOpenInOrcaBrowser && (
+        <ContextMenuItem onSelect={handleOpenInOrcaBrowser}>
+          <Globe />
+          {translate(
+            'auto.components.right.sidebar.FileExplorerRow.dd112c81d2',
+            'Open in Orca Browser'
+          )}
+        </ContextMenuItem>
+      )}
+      {!node.isDirectory && activeWorktreeId && detectLanguage(node.path) === 'markdown' && (
+        <ContextMenuItem
+          onSelect={() =>
+            openMarkdownPreview({
+              filePath: node.path,
+              relativePath: fileExplorerNodeTabRelativePath(node),
+              worktreeId: activeWorktreeId,
+              language: 'markdown'
+            })
+          }
+        >
+          <Eye />
+          {translate(
+            'auto.components.right.sidebar.FileExplorerRow.d87a4c42e1',
+            'Open Markdown Preview'
+          )}
+        </ContextMenuItem>
+      )}
+      {showRemoteDownloadAction && (
+        <ContextMenuItem onSelect={handleDownload}>
+          <Download />
+          {node.isDirectory
+            ? translate(
+                'auto.components.right.sidebar.FileExplorerRow.7ac885bd2f',
+                'Download Folder'
+              )
+            : translate('auto.components.right.sidebar.FileExplorerRow.c2112579f6', 'Download')}
+        </ContextMenuItem>
+      )}
+      {/* Sync file to GitLab Snippet — only for files, not directories */}
+      {!node.isDirectory && activeWorktree && activeRepo?.gitRemoteIdentity && (
+        <ContextMenuItem onSelect={() => void handleSyncToSnippet()}>
+          <Upload />
+          {translate('custom.syncToSnippet', 'Sync to GitLab Snippet')}
+        </ContextMenuItem>
+      )}
+      {canCollapseFolderSubtree && shouldShowCollapseFolderAction(node, isExpanded) && (
+        <ContextMenuItem onSelect={onCollapseFolderSubtree}>
+          <ListCollapse />
+          {translate('auto.components.right.sidebar.FileExplorerRow.d6a25618aa', 'Collapse Folder')}
+        </ContextMenuItem>
+      )}
+      {shouldShowFindInFolderAction(node) && (
+        <ContextMenuItem onSelect={onFindInFolder}>
+          <Search />
+          {translate('auto.components.right.sidebar.FileExplorerRow.0df0e5abac', 'Find in Folder')}
+          {findInFolderShortcutLabel !== 'Unassigned' ? (
+            <ContextMenuShortcut>{findInFolderShortcutLabel}</ContextMenuShortcut>
+          ) : null}
+        </ContextMenuItem>
+      )}
+      <OpenInContextSubmenu path={node.path} workspaceId={activeWorktreeId} owner={revealOwner} />
+      <ContextMenuItem
+        disabled={revealBlocked}
+        onSelect={() => void revealInFileManager(node.path, revealOwner)}
+      >
+        <ExternalLink />
+        {getRevealInFileManagerLabel()}
+        {revealBlocked ? <LocalOnlyMenuHint /> : null}
+      </ContextMenuItem>
+      <ContextMenuSeparator />
+      <ContextMenuItem disabled={writesBlocked} onSelect={() => onStartRename(node)}>
+        <Pencil />
+        {translate('auto.components.right.sidebar.FileExplorerRow.fc747429bf', 'Rename')}
+        <ContextMenuShortcut>
+          {isMac
+            ? '↩'
+            : translate('auto.components.right.sidebar.FileExplorerRow.a06551beee', 'Enter')}
+        </ContextMenuShortcut>
+      </ContextMenuItem>
+      <ContextMenuItem variant="destructive" disabled={writesBlocked} onSelect={onRequestDelete}>
+        <Trash2 />
+        {translate('auto.components.right.sidebar.FileExplorerRow.addc01145f', 'Delete')}
+        <ContextMenuShortcut>{deleteShortcutLabel}</ContextMenuShortcut>
+      </ContextMenuItem>
+    </ContextMenuContent>
+  )
+}

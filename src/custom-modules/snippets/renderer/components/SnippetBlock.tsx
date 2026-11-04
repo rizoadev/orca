@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from 'react'
+import { useState, useCallback, useEffect, useMemo } from 'react'
 import {
   ChevronRight,
   ChevronDown,
@@ -7,14 +7,24 @@ import {
   RefreshCw,
   Download,
   Trash2,
-  Eye
+  Eye,
+  GitBranch
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { Collapsible, CollapsibleTrigger, CollapsibleContent } from '@/components/ui/collapsible'
 import { Button } from '@/components/ui/button'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue
+} from '@/components/ui/select'
 import { useConfirmationDialog } from '@/components/confirmation-dialog-context'
+import { useAppStore } from '@/store'
 import { cn } from '@/lib/utils'
 import { joinPath } from '@/lib/path'
+import { branchName } from '@/lib/git-utils'
 import { translate } from '@/i18n/i18n'
 import type { GitLabSnippet } from '../../shared/types'
 import { parseSnippetTitle, snippetMatchesBranch } from './snippet-encoding'
@@ -29,11 +39,50 @@ type SnippetBlockProps = {
 
 export function SnippetBlock({ worktreePath, branch, repoId, connectionId }: SnippetBlockProps) {
   const [open, setOpen] = useState(false)
-  const [snippets, setSnippets] = useState<GitLabSnippet[]>([])
+  const [allSnippets, setAllSnippets] = useState<GitLabSnippet[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [previewSnippet, setPreviewSnippet] = useState<GitLabSnippet | null>(null)
   const confirm = useConfirmationDialog()
+
+  // Current branch name, normalised (strip refs/heads/)
+  const currentBranch = branchName(branch)
+
+  // Collect all known branches for this repo from the store
+  const repoBranches = useAppStore((s) => {
+    const worktrees = s.worktreesByRepo[repoId] ?? []
+    const names = worktrees
+      .map((w) => branchName(w.branch ?? ''))
+      .filter((b) => b && b !== 'HEAD')
+    // De-duplicate, keep current branch first
+    const seen = new Set<string>()
+    const result: string[] = []
+    for (const b of [currentBranch, ...names]) {
+      if (b && !seen.has(b)) {
+        seen.add(b)
+        result.push(b)
+      }
+    }
+    return result
+  })
+
+  // Selected branch — default to current branch
+  const [selectedBranch, setSelectedBranch] = useState<string>(currentBranch)
+
+  // Sync selectedBranch when the active branch changes (e.g. user switches worktree)
+  useEffect(() => {
+    setSelectedBranch(currentBranch)
+  }, [currentBranch])
+
+  // Snippets filtered by selectedBranch
+  const snippets = useMemo(
+    () =>
+      allSnippets.filter((s) => {
+        const parsed = parseSnippetTitle(s.title)
+        return parsed !== null && snippetMatchesBranch(parsed.branch, selectedBranch)
+      }),
+    [allSnippets, selectedBranch]
+  )
 
   const loadSnippets = useCallback(async () => {
     if (!window.api.gl?.listProjectSnippets) {
@@ -49,21 +98,18 @@ export function SnippetBlock({ worktreePath, branch, repoId, connectionId }: Sni
       })
       if (result.error) {
         setError(result.error.message ?? String(result.error))
-        setSnippets([])
+        setAllSnippets([])
         return
       }
-      const envSnippets = (result.items as GitLabSnippet[]).filter((s) => {
-        const parsed = parseSnippetTitle(s.title)
-        return parsed !== null && snippetMatchesBranch(parsed.branch, branch)
-      })
-      setSnippets(envSnippets)
+      // Store ALL snippets — filtering by branch is done in useMemo above
+      setAllSnippets(result.items as GitLabSnippet[])
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
       setError(message)
     } finally {
       setLoading(false)
     }
-  }, [worktreePath, repoId, branch])
+  }, [worktreePath, repoId])
 
   useEffect(() => {
     if (open) {
@@ -95,7 +141,7 @@ export function SnippetBlock({ worktreePath, branch, repoId, connectionId }: Sni
         })
         if (result.ok) {
           toast.success('Snippet deleted', { id: toastId, description: displayName })
-          setSnippets((prev) => prev.filter((s) => s.id !== snippet.id))
+          setAllSnippets((prev) => prev.filter((s) => s.id !== snippet.id))
         } else {
           toast.error('Failed to delete snippet', { id: toastId, description: result.error })
         }
@@ -134,10 +180,7 @@ export function SnippetBlock({ worktreePath, branch, repoId, connectionId }: Sni
           connectionId: connectionId ?? undefined
         })
         if (writeResult.ok) {
-          toast.success('Snippet downloaded', {
-            id: toastId,
-            description: relativePath
-          })
+          toast.success('Snippet downloaded', { id: toastId, description: relativePath })
         } else {
           toast.error('Failed to write file', {
             id: toastId,
@@ -157,10 +200,13 @@ export function SnippetBlock({ worktreePath, branch, repoId, connectionId }: Sni
     setPreviewSnippet(snippet)
   }, [])
 
+  const isViewingOtherBranch = selectedBranch !== currentBranch
+
   return (
     <>
       <div className="shrink-0 border-t border-sidebar-border bg-sidebar">
         <Collapsible open={open} onOpenChange={setOpen}>
+          {/* ── Header ── */}
           <div className="group flex items-center gap-0.5 pr-1">
             <CollapsibleTrigger asChild>
               <button
@@ -193,9 +239,44 @@ export function SnippetBlock({ worktreePath, branch, repoId, connectionId }: Sni
               <RefreshCw className={cn('h-3 w-3', loading && 'animate-spin')} />
             </Button>
           </div>
+
           <CollapsibleContent>
+            {/* ── Branch selector ── */}
+            <div className="flex items-center gap-1.5 px-2 pb-1 pt-0.5">
+              <GitBranch
+                className={cn(
+                  'h-3 w-3 shrink-0',
+                  isViewingOtherBranch ? 'text-amber-500' : 'text-muted-foreground'
+                )}
+              />
+              <Select value={selectedBranch} onValueChange={setSelectedBranch}>
+                <SelectTrigger
+                  className={cn(
+                    'h-5 min-w-0 flex-1 border-0 bg-transparent px-0 py-0 text-[11px] shadow-none focus:ring-0',
+                    isViewingOtherBranch ? 'text-amber-500' : 'text-muted-foreground'
+                  )}
+                >
+                  <SelectValue placeholder="Select branch…" />
+                </SelectTrigger>
+                <SelectContent>
+                  {repoBranches.map((b) => (
+                    <SelectItem key={b} value={b} className="text-xs">
+                      <span className="flex items-center gap-1.5">
+                        <GitBranch className="h-3 w-3 shrink-0" />
+                        {b}
+                        {b === currentBranch && (
+                          <span className="text-muted-foreground">(current)</span>
+                        )}
+                      </span>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* ── Snippet list ── */}
             <div className="max-h-48 overflow-y-auto scrollbar-sleek px-1 pb-2">
-              {loading && snippets.length === 0 ? (
+              {loading && allSnippets.length === 0 ? (
                 <div className="px-3 py-3 text-center text-[11px] text-muted-foreground">
                   <LoaderCircle className="mx-auto mb-1 h-3.5 w-3.5 animate-spin" />
                   {translate('custom.loading', 'Loading…')}
@@ -204,7 +285,9 @@ export function SnippetBlock({ worktreePath, branch, repoId, connectionId }: Sni
                 <div className="px-3 py-3 text-center text-[11px] text-destructive">{error}</div>
               ) : snippets.length === 0 ? (
                 <div className="px-3 py-3 text-center text-[11px] text-muted-foreground">
-                  {translate('custom.noSnippets', 'No snippets found for this branch')}
+                  {isViewingOtherBranch
+                    ? `No snippets for branch "${selectedBranch}"`
+                    : translate('custom.noSnippets', 'No snippets found for this branch')}
                 </div>
               ) : (
                 <div className="space-y-1">

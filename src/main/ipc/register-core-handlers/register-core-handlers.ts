@@ -95,7 +95,7 @@ import type { KeybindingService } from '../../keybindings/keybinding-service'
 import type {
   AiVaultPrepareSessionResumeArgs,
   AiVaultPrepareSessionResumeResult
-} from '../../../shared/ai-vault-resume-preparation'
+} from '../../../shared/ai-vault/resume/ai-vault-resume-preparation'
 import {
   getSavedRuntimeAiVaultHostInfos,
   deleteRuntimeAiVaultSession,
