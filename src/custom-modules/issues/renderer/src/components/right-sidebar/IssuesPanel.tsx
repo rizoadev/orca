@@ -55,6 +55,24 @@ export default function IssuesPanel({ isVisible }: { isVisible: boolean }): Reac
   const [selectedGitHubItem, setSelectedGitHubItem] = useState<GitHubWorkItem | null>(null)
   const [selectedGitLabItem, setSelectedGitLabItem] = useState<GitLabWorkItem | null>(null)
   const [selectedLinearItem, setSelectedLinearItem] = useState<LinearIssue | null>(null)
+
+  // Why: Electron window controls (minimize/maximize) sit over the slide-over
+  // header; close the sheet when the window state changes so it never returns
+  // stuck behind the overlay.
+  useEffect(() => {
+    if (!selectedLinearItem) {
+      return
+    }
+    const closeSheet = (): void => {
+      setSelectedLinearItem(null)
+    }
+    const unsubscribe = window.api.ui.onMaximizeChanged(closeSheet)
+    window.addEventListener('blur', closeSheet)
+    return () => {
+      unsubscribe()
+      window.removeEventListener('blur', closeSheet)
+    }
+  }, [selectedLinearItem])
   const [createOpen, setCreateOpen] = useState(false)
   const [linearPickerOpen, setLinearPickerOpen] = useState(false)
   const [createSubmitting, setCreateSubmitting] = useState(false)
