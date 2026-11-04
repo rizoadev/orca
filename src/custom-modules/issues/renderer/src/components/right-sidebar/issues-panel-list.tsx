@@ -133,133 +133,133 @@ export function IssuesPanelList({
               {repoId ? (
                 <IssueAiWorkActions provider={row.provider} repoId={repoId} issueRef={issueRef} />
               ) : null}
-            </div>
-            <TooltipProvider delayDuration={300}>
-              <div className="mt-0.5 flex shrink-0 items-center gap-0.5">
-                {onConvertToOrchestration ? (
+              <TooltipProvider delayDuration={300}>
+                <div className="flex items-center gap-0.5">
+                  {onConvertToOrchestration ? (
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon-xs"
+                          disabled={converting || planning || working}
+                          onClick={(event) => {
+                            event.stopPropagation()
+                            onConvertToOrchestration(row)
+                          }}
+                          aria-label={translate(
+                            'auto.components.right.sidebar.issuesPanel.toOrchestration',
+                            'Convert to orchestration task'
+                          )}
+                        >
+                          {converting ? (
+                            <LoaderCircle className="size-3.5 animate-spin" />
+                          ) : (
+                            <Layers className="size-3.5" />
+                          )}
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent side="left">
+                        {translate(
+                          'auto.components.right.sidebar.issuesPanel.toOrchestration',
+                          'Convert to orchestration task'
+                        )}
+                      </TooltipContent>
+                    </Tooltip>
+                  ) : null}
+                  <IssueRowAiMenus
+                    row={row}
+                    planning={planning}
+                    working={working}
+                    agents={agents}
+                    detectingAgents={detectingAgents}
+                    defaultAgent={defaultAgent}
+                    onAskAiPlan={onAskAiPlan}
+                    onAskAiWork={onAskAiWork}
+                  />
                   <Tooltip>
                     <TooltipTrigger asChild>
                       <Button
                         type="button"
                         variant="ghost"
                         size="icon-xs"
-                        disabled={converting || planning || working}
                         onClick={(event) => {
                           event.stopPropagation()
-                          onConvertToOrchestration(row)
+                          onCreateWorktree(row)
                         }}
                         aria-label={translate(
-                          'auto.components.right.sidebar.issuesPanel.toOrchestration',
-                          'Convert to orchestration task'
+                          'auto.components.right.sidebar.issuesPanel.newWorktree',
+                          'New worktree for this issue'
                         )}
                       >
-                        {converting ? (
+                        <FolderGit2 className="size-3.5" />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent side="left">
+                      {translate(
+                        'auto.components.right.sidebar.issuesPanel.newWorktree',
+                        'New worktree for this issue'
+                      )}
+                    </TooltipContent>
+                  </Tooltip>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon-xs"
+                        disabled={closing || planning || working}
+                        onClick={(event) => {
+                          event.stopPropagation()
+                          onCloseIssue(row)
+                        }}
+                        aria-label={translate(
+                          'auto.components.right.sidebar.issuesPanel.closeIssue',
+                          'Close issue'
+                        )}
+                      >
+                        {closing ? (
                           <LoaderCircle className="size-3.5 animate-spin" />
                         ) : (
-                          <Layers className="size-3.5" />
+                          <XCircle className="size-3.5" />
                         )}
                       </Button>
                     </TooltipTrigger>
                     <TooltipContent side="left">
                       {translate(
-                        'auto.components.right.sidebar.issuesPanel.toOrchestration',
-                        'Convert to orchestration task'
-                      )}
-                    </TooltipContent>
-                  </Tooltip>
-                ) : null}
-                <IssueRowAiMenus
-                  row={row}
-                  planning={planning}
-                  working={working}
-                  agents={agents}
-                  detectingAgents={detectingAgents}
-                  defaultAgent={defaultAgent}
-                  onAskAiPlan={onAskAiPlan}
-                  onAskAiWork={onAskAiWork}
-                />
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon-xs"
-                      onClick={(event) => {
-                        event.stopPropagation()
-                        onCreateWorktree(row)
-                      }}
-                      aria-label={translate(
-                        'auto.components.right.sidebar.issuesPanel.newWorktree',
-                        'New worktree for this issue'
-                      )}
-                    >
-                      <FolderGit2 className="size-3.5" />
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent side="left">
-                    {translate(
-                      'auto.components.right.sidebar.issuesPanel.newWorktree',
-                      'New worktree for this issue'
-                    )}
-                  </TooltipContent>
-                </Tooltip>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon-xs"
-                      disabled={closing || planning || working}
-                      onClick={(event) => {
-                        event.stopPropagation()
-                        onCloseIssue(row)
-                      }}
-                      aria-label={translate(
                         'auto.components.right.sidebar.issuesPanel.closeIssue',
                         'Close issue'
                       )}
-                    >
-                      {closing ? (
-                        <LoaderCircle className="size-3.5 animate-spin" />
-                      ) : (
-                        <XCircle className="size-3.5" />
-                      )}
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent side="left">
-                    {translate(
-                      'auto.components.right.sidebar.issuesPanel.closeIssue',
-                      'Close issue'
-                    )}
-                  </TooltipContent>
-                </Tooltip>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon-xs"
-                      onClick={(event) => {
-                        event.stopPropagation()
-                        void openHttpLink(row.url, { worktreeId })
-                      }}
-                      aria-label={translate(
+                    </TooltipContent>
+                  </Tooltip>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon-xs"
+                        onClick={(event) => {
+                          event.stopPropagation()
+                          void openHttpLink(row.url, { worktreeId })
+                        }}
+                        aria-label={translate(
+                          'auto.components.right.sidebar.issuesPanel.openInBrowser',
+                          'Open in browser'
+                        )}
+                      >
+                        <ExternalLink className="size-3.5" />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent side="left">
+                      {translate(
                         'auto.components.right.sidebar.issuesPanel.openInBrowser',
                         'Open in browser'
                       )}
-                    >
-                      <ExternalLink className="size-3.5" />
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent side="left">
-                    {translate(
-                      'auto.components.right.sidebar.issuesPanel.openInBrowser',
-                      'Open in browser'
-                    )}
-                  </TooltipContent>
-                </Tooltip>
-              </div>
-            </TooltipProvider>
+                    </TooltipContent>
+                  </Tooltip>
+                </div>
+              </TooltipProvider>
+            </div>
           </div>
         )
       })}
