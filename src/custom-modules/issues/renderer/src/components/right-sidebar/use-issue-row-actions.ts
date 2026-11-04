@@ -177,6 +177,30 @@ export function useIssueRowActions(args: Args) {
     [openModal, repo]
   )
 
+  // Why: one entry point per row — routes to the provider-specific worktree
+  // starter (GitHub creates in background; GitLab/Linear open a prefilled
+  // composer) so any issue can spin up a fresh worktree for an agent or a
+  // discussion.
+  const createWorktree = useCallback(
+    (row: IssueRow) => {
+      if (!repo) {
+        return
+      }
+      if (row.provider === 'github' && row.githubItem) {
+        startGitHubIssueFromPanel(openModal, repo, row.githubItem)
+        return
+      }
+      if (row.provider === 'gitlab' && row.gitlabItem) {
+        startGitLabIssueFromPanel(openModal, repo, row.gitlabItem)
+        return
+      }
+      if (row.provider === 'linear' && row.linearItem) {
+        startLinearIssueFromPanel(openModal, repo, row.linearItem)
+      }
+    },
+    [openModal, repo]
+  )
+
   const createIssue = useCallback(
     async (input: CreateIssueSubmitInput) => {
       if (!repo) {
@@ -216,6 +240,7 @@ export function useIssueRowActions(args: Args) {
     askAiPlan,
     askAiWork,
     closeIssue,
+    createWorktree,
     useGitHubItem,
     useGitLabItem,
     useLinearItem,

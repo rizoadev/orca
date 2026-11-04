@@ -1,5 +1,5 @@
 import React from 'react'
-import { CircleDot, ExternalLink, Layers, LoaderCircle, XCircle } from 'lucide-react'
+import { CircleDot, ExternalLink, FolderGit2, Layers, LoaderCircle, XCircle } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
@@ -46,6 +46,7 @@ export function IssuesPanelList({
   onAskAiPlan,
   onAskAiWork,
   onConvertToOrchestration,
+  onCreateWorktree,
   onCloseIssue,
   repoId
 }: {
@@ -61,6 +62,7 @@ export function IssuesPanelList({
   onAskAiPlan: (row: IssueRow, agent: TuiAgent) => void
   onAskAiWork: (row: IssueRow, agent: TuiAgent, mode: IssueAiWorkMode) => void
   onConvertToOrchestration?: (row: IssueRow) => void
+  onCreateWorktree: (row: IssueRow) => void
   onCloseIssue: (row: IssueRow) => void
   repoId: string | null
 }): React.JSX.Element {
@@ -176,6 +178,31 @@ export function IssuesPanelList({
                   onAskAiPlan={onAskAiPlan}
                   onAskAiWork={onAskAiWork}
                 />
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon-xs"
+                      onClick={(event) => {
+                        event.stopPropagation()
+                        onCreateWorktree(row)
+                      }}
+                      aria-label={translate(
+                        'auto.components.right.sidebar.issuesPanel.newWorktree',
+                        'New worktree for this issue'
+                      )}
+                    >
+                      <FolderGit2 className="size-3.5" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent side="left">
+                    {translate(
+                      'auto.components.right.sidebar.issuesPanel.newWorktree',
+                      'New worktree for this issue'
+                    )}
+                  </TooltipContent>
+                </Tooltip>
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <Button

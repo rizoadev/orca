@@ -1,7 +1,7 @@
 import { cn } from '@/lib/utils'
 import { translate } from '@/i18n/i18n'
 
-type ProviderTab = 'github' | 'gitlab' | 'linear'
+type ProviderTab = 'all' | 'github' | 'gitlab' | 'linear'
 
 /** Provider switch; hidden when the repo only offers Linear. */
 export function IssuesProviderTabs({
@@ -38,9 +38,11 @@ export function IssuesProviderTabs({
 }
 
 export function providerLabel(tab: ProviderTab): string {
-  return tab === 'github'
-    ? translate('auto.i18n.hostedReview.copy.c7d1e5f9a8', 'GitHub')
-    : tab === 'gitlab'
-      ? translate('auto.i18n.hostedReview.copy.91b5c8d7e6', 'GitLab')
-      : translate('auto.components.right.sidebar.issuesPanel.linearLabel', 'Linear')
+  return tab === 'all'
+    ? translate('auto.components.right.sidebar.issuesPanel.allLabel', 'All')
+    : tab === 'github'
+      ? translate('auto.i18n.hostedReview.copy.c7d1e5f9a8', 'GitHub')
+      : tab === 'gitlab'
+        ? translate('auto.i18n.hostedReview.copy.91b5c8d7e6', 'GitLab')
+        : translate('auto.components.right.sidebar.issuesPanel.linearLabel', 'Linear')
 }

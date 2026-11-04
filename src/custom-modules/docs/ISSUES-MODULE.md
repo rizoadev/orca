@@ -59,3 +59,16 @@ Restored because the panel needs them and orca-clean lacked the current versions
   Linear store slice, and `orchestration.taskCreate`.
 - `issues-panel-ai-work.ts` and `issue-ai-work-prompt.ts` both export a prompt builder; the
   richer one (`issue-ai-work-prompt.ts`, with `branchName` + focus comments) is the one under test.
+
+## Panel UX (2025-11 update)
+
+- **Provider tabs**: `All / GitHub / GitLab / Linear`. `All` merges the repo's
+  remote-provider rows with Linear rows (newest first); a Linear failure inside
+  `All` never blanks the remote rows. Fetching lives in `use-issue-rows-fetch.ts`.
+- **Row actions**: click a row opens the detail popup (GitHub/GitLab dialog or
+  Linear sheet). `FolderGit2` button starts a **new worktree** for the issue —
+  GitHub creates in background, GitLab/Linear open a prefilled composer.
+  AI menus: plan (comment), work (background / watch), and **discuss**
+  (opens an agent tab with a no-code-change discussion prompt).
+- `providerForCreate` resolves `All` to the repo's detected provider for
+  create/close flows.

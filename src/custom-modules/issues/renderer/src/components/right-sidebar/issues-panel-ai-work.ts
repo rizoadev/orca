@@ -9,7 +9,7 @@ import type { Repo, TuiAgent } from '../../../../../../shared/types'
 import type { RepoIssueProvider } from './repo-issue-provider'
 import { issueRefLabel } from './issue-ref'
 
-export type IssueAiWorkMode = 'background' | 'watch'
+export type IssueAiWorkMode = 'background' | 'watch' | 'discuss'
 
 export type IssueAiWorkTarget = {
   provider: RepoIssueProvider
@@ -24,6 +24,7 @@ export type IssueAiWorkTarget = {
 export function buildIssueAiWorkPrompt(
   args: IssueAiWorkTarget & {
     repoDisplayName?: string
+    discuss?: boolean
   }
 ): string {
   const providerLabel =
@@ -36,6 +37,26 @@ export function buildIssueAiWorkPrompt(
       : args.provider === 'gitlab'
         ? `glab issue close ${refLabel.replace(/^#/, '')}`
         : null
+  const taskLines = args.discuss
+    ? [
+        'Task:',
+        '1. Read the issue and inspect the relevant code in this worktree.',
+        '2. Discuss the issue with me: context, likely root cause, and possible approaches.',
+        '3. Lay out a recommended plan with trade-offs and open questions.',
+        '4. Do NOT modify any files or create branches/commits — this is a discussion only.',
+        '5. If details are missing, ask me before assuming.'
+      ]
+    : [
+        'Task:',
+        '1. Read the issue and inspect the relevant code in this worktree.',
+        '2. Implement the fix or feature described by the issue.',
+        '3. Run the focused tests/checks that cover your change; fix what you break.',
+        '4. Summarize what changed: files, behavior, and how you verified it.',
+        closeCommand
+          ? `5. Only after the change is verified, close the issue with: ${closeCommand}`
+          : '5. Only after the change is verified, report the outcome in the issue.',
+        '6. If the request is ambiguous or blocked, stop and ask rather than guessing.'
+      ]
 
   return [
     `You are working on ${providerLabel} issue ${refLabel}.`,
@@ -44,15 +65,7 @@ export function buildIssueAiWorkPrompt(
     `URL: ${args.url}`,
     body ? `Issue body:\n${body}` : 'Issue body: (empty)',
     '',
-    'Task:',
-    '1. Read the issue and inspect the relevant code in this worktree.',
-    '2. Implement the fix or feature described by the issue.',
-    '3. Run the focused tests/checks that cover your change; fix what you break.',
-    '4. Summarize what changed: files, behavior, and how you verified it.',
-    closeCommand
-      ? `5. Only after the change is verified, close the issue with: ${closeCommand}`
-      : '5. Only after the change is verified, report the outcome in the issue.',
-    '6. If the request is ambiguous or blocked, stop and ask rather than guessing.'
+    ...taskLines
   ]
     .filter((line): line is string => line !== null)
     .join('\n')
@@ -88,11 +101,15 @@ export async function launchIssueAiWorker(args: {
     return { ok: false }
   }
 
-  const prompt = buildIssueAiWorkPrompt({ ...args.issue, repoDisplayName: args.repo.displayName })
+  const prompt = buildIssueAiWorkPrompt({
+    ...args.issue,
+    repoDisplayName: args.repo.displayName,
+    discuss: args.mode === 'discuss'
+  })
   const refLabel = issueRefLabel(args.issue)
 
   try {
-    if (args.mode === 'watch') {
+    if (args.mode === 'watch' || args.mode === 'discuss') {
       const outcome = launchAgentInNewTabWithOutcome({
         requestId: newAgentLaunchRequestId(),
         agent,
