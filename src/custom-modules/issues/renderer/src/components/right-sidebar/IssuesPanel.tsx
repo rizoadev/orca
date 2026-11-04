@@ -128,7 +128,7 @@ export default function IssuesPanel({ isVisible }: { isVisible: boolean }): Reac
 
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-      <div className="flex items-center justify-between gap-2 border-b border-border px-3 py-2">
+      <div className="flex flex-col gap-1.5 border-b border-border px-3 py-2">
         <div className="min-w-0">
           <div className="truncate text-xs font-semibold text-foreground">
             {translate('auto.components.right.sidebar.issuesPanel.title', 'Issues')}
@@ -142,79 +142,84 @@ export default function IssuesPanel({ isVisible }: { isVisible: boolean }): Reac
                 : ''}
           </div>
         </div>
-        <div className="flex shrink-0 items-center gap-1.5">
+        <div className="flex items-center justify-between gap-2">
           <IssuesProviderTabs
             tabs={availableTabs}
             activeTab={activeTab}
             onSelect={setProviderTab}
           />
-          {activeTab !== 'linear' || linearBinding ? (
-            <TooltipProvider delayDuration={300}>
-              {activeTab === 'linear' && linearBinding ? (
+          <div className="flex shrink-0 items-center gap-1.5">
+            {activeTab !== 'linear' || linearBinding ? (
+              <TooltipProvider delayDuration={300}>
+                {activeTab === 'linear' && linearBinding ? (
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon-xs"
+                        onClick={() => setLinearPickerOpen((value) => !value)}
+                        aria-label={translate(
+                          'auto.components.right.sidebar.issuesPanel.linearChangeProject',
+                          'Change Linear project'
+                        )}
+                      >
+                        <FolderKanban className="size-3.5" />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent side="bottom">
+                      {translate(
+                        'auto.components.right.sidebar.issuesPanel.linearChangeProject',
+                        'Change Linear project'
+                      )}
+                    </TooltipContent>
+                  </Tooltip>
+                ) : null}
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <Button
                       type="button"
                       variant="ghost"
                       size="icon-xs"
-                      onClick={() => setLinearPickerOpen((value) => !value)}
+                      onClick={() => setCreateOpen(true)}
                       aria-label={translate(
-                        'auto.components.right.sidebar.issuesPanel.linearChangeProject',
-                        'Change Linear project'
+                        'auto.components.right.sidebar.issuesPanel.newIssue',
+                        'New issue'
                       )}
                     >
-                      <FolderKanban className="size-3.5" />
+                      <Plus className="size-3.5" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent side="bottom">
+                    {translate('auto.components.right.sidebar.issuesPanel.newIssue', 'New issue')}
+                  </TooltipContent>
+                </Tooltip>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon-xs"
+                      onClick={bumpRefresh}
+                      disabled={loading}
+                      aria-label={translate(
+                        'auto.components.right.sidebar.issuesPanel.refresh',
+                        'Refresh issues'
+                      )}
+                    >
+                      <RefreshCw className={cn('size-3.5', loading && 'animate-spin')} />
                     </Button>
                   </TooltipTrigger>
                   <TooltipContent side="bottom">
                     {translate(
-                      'auto.components.right.sidebar.issuesPanel.linearChangeProject',
-                      'Change Linear project'
-                    )}
-                  </TooltipContent>
-                </Tooltip>
-              ) : null}
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon-xs"
-                    onClick={() => setCreateOpen(true)}
-                    aria-label={translate(
-                      'auto.components.right.sidebar.issuesPanel.newIssue',
-                      'New issue'
-                    )}
-                  >
-                    <Plus className="size-3.5" />
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent side="bottom">
-                  {translate('auto.components.right.sidebar.issuesPanel.newIssue', 'New issue')}
-                </TooltipContent>
-              </Tooltip>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon-xs"
-                    onClick={bumpRefresh}
-                    disabled={loading}
-                    aria-label={translate(
                       'auto.components.right.sidebar.issuesPanel.refresh',
                       'Refresh issues'
                     )}
-                  >
-                    <RefreshCw className={cn('size-3.5', loading && 'animate-spin')} />
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent side="bottom">
-                  {translate('auto.components.right.sidebar.issuesPanel.refresh', 'Refresh issues')}
-                </TooltipContent>
-              </Tooltip>
-            </TooltipProvider>
-          ) : null}
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            ) : null}
+          </div>
         </div>
       </div>
 
