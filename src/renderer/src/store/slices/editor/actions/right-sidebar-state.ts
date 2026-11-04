@@ -23,6 +23,8 @@ export type RightSidebarState = {
   setRightSidebarOpen: (open: boolean) => void
   setRightSidebarWidth: (width: number) => void
   setRightSidebarTab: (tab: ActiveRightSidebarTab) => void
+  /** Show the issues sidebar's orchestration board view. */
+  openOrchestrationBoardPage: () => void
   setRightSidebarExplorerView: (view: RightSidebarExplorerView) => void
   showRightSidebarFiles: () => void
   showRightSidebarSearch: (payload?: {
@@ -55,6 +57,12 @@ export function createRightSidebarState(set: EditorSet, _get: EditorGet): RightS
         rightSidebarTab: tab,
         rightSidebarRouteRequestId: s.rightSidebarRouteRequestId + 1,
         ...(tab === 'explorer' ? { rightSidebarExplorerView: 'files' as const } : {})
+      })),
+    openOrchestrationBoardPage: () =>
+      set((s) => ({
+        rightSidebarTab: 'orchestration',
+        rightSidebarOpen: true,
+        rightSidebarRouteRequestId: s.rightSidebarRouteRequestId + 1
       })),
     setRightSidebarExplorerView: (view) =>
       set((s) => ({

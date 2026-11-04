@@ -570,6 +570,15 @@ if (!isHelpOrVersion) {
   announceDevInstance({ repoRoot, profile: devProfile, ...ports })
 }
 const forwardedArgs = ['dev', ...forwardedRaw, ...forwardedExtras]
+// Inject Wayland ozone flag on Linux if WAYLAND_DISPLAY is available
+if (process.platform === 'linux') {
+  const waylandDisplay = process.env.WAYLAND_DISPLAY
+  if (waylandDisplay && !forwardedRaw.includes('--ozone-platform=wayland')) {
+    // Pass after '--' so electron-vite sets ELECTRON_CLI_ARGS correctly
+    forwardedArgs.push('--', '--ozone-platform=wayland')
+    process.env.ELECTRON_OZONE_PLATFORM_HINT = 'wayland'
+  }
+}
 const child = spawn(process.execPath, [electronViteCli, ...forwardedArgs], {
   stdio: 'inherit',
   env: withDevRolldownRuntimeEnv(process.env),

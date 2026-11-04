@@ -13,10 +13,11 @@ import {
   saveOpenAiSpeechApiKey
 } from '../speech/openai-api-key-store'
 import type { Store } from '../persistence/loading-store/store'
-import { registerVoiceCallHandlers } from '../../custom-modules/voice/main/ipc/voice-call'
+// import { registerVoiceCallHandlers } from '../../custom-modules/voice/main/ipc/voice-call'
+// Voice Call (Pi Standby) disabled — IPC handlers tidak diregistrasi.
 
 export function registerSpeechHandlers(store: Store): void {
-  registerVoiceCallHandlers() // custom-modules/voice
+  // registerVoiceCallHandlers() // custom-modules/voice — disabled
   ipcMain.handle('speech:getCatalog', () => {
     return SPEECH_MODEL_CATALOG
   })

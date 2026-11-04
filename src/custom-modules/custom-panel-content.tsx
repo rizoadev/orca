@@ -8,7 +8,8 @@ import type { ActiveRightSidebarTab } from '@/store/slices/editor'
 import { isCustomSidebarTab } from './custom-right-sidebar-tabs'
 
 const IssuesPanel = React.lazy(() => import('./issues/panel'))
-const VoicePanel = React.lazy(() => import('./voice/panel'))
+// VoicePanel disabled — Google Voice (Pi Standby) fitur dimatikan.
+// const VoicePanel = React.lazy(() => import('./voice/panel'))
 
 type State = { hasError: boolean; error: Error | null }
 
@@ -46,7 +47,8 @@ class PanelErrorBoundary extends React.Component<{ children: React.ReactNode }, 
 }
 
 export function CustomPanelContent({
-  tab
+  tab,
+  rightSidebarOpen
 }: {
   tab: ActiveRightSidebarTab
   rightSidebarOpen?: boolean
@@ -58,8 +60,10 @@ export function CustomPanelContent({
   return (
     <PanelErrorBoundary>
       <Suspense fallback={<div className="p-4 text-muted-foreground text-xs">Memuat panel…</div>}>
-        {tab === 'issues' && <IssuesPanel />}
-        {tab === 'voice' && <VoicePanel />}
+        {tab === 'issues' && (
+          <IssuesPanel isVisible={rightSidebarOpen === true && tab === 'issues'} />
+        )}
+        {/* voice (Pi Standby) disabled */}
       </Suspense>
     </PanelErrorBoundary>
   )

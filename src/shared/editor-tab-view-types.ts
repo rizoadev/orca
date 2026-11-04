@@ -1,3 +1,4 @@
+import type { OpenIssueDetailsState } from './issue-details-tab'
 // Share nonplain editor views with runtime layout records and renderer open files.
 
 import type {
@@ -107,3 +108,4 @@ export type EditorTabView =
     }
   | { mode: 'conflict-review'; conflictReview?: ConflictReviewState }
   | { mode: 'check-details'; checkRunDetails?: OpenCheckRunDetailsState }
+  | { mode: 'issue-details'; issueDetails?: OpenIssueDetailsState }

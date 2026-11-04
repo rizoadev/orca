@@ -13642,6 +13642,19 @@
         },
         "SettingsSearchableSelect": {
           "noMatches": "No matches."
+        },
+        "CloudflareRelaySection": {
+          "connect": "Connect / create persistent tunnel",
+          "domainLabel": "Domain on Cloudflare",
+          "domainPlaceholder": "your-domain.com",
+          "note": "Needs the cloudflared binary installed (or ORCA_CLOUDFLARED_PATH set). The tunnel stays up while Orca is off, until you clear the token here.",
+          "overview": "Self-hosted persistent tunnel: each machine gets its own wss://orca-<id>.<domain> endpoint, created and run by Orca itself. Replaces Orca Cloud relay.",
+          "reconnect": "Reconnect tunnel",
+          "statusLabel": "Active:",
+          "title": "Cloudflare Relay",
+          "tokenLabel": "Cloudflare API token",
+          "tokenPlaceholder": "Cloudflare API token (Account-Tunnel:Edit, Zone-DNS:Edit)",
+          "useHint": "Now open Pair a phone → This computer’s address and pick the tunnel endpoint, then scan the QR from Orca Mobile."
         }
       },
       "right": {
@@ -15184,6 +15197,113 @@
             "createInProgress": "Create PR in progress...",
             "workspaceHostUnresolved": "The workspace host is unresolved. Refresh the workspace and retry.",
             "branchDiscoveryFailed": "Branch discovery failed."
+          },
+          "issuesPanel": {
+            "agentLaunchFailed": "Failed to launch AI planner for this issue.",
+            "aiBadge": {
+              "done": "AI done · {{value0}}",
+              "failed": "AI failed",
+              "openTab": "Open the AI worker terminal for {{value0}}",
+              "working": "AI · {{value0}} · {{value1}}"
+            },
+            "aiPlanStartedBackground": "AI is drafting a plan comment on {{value0}} in the background.",
+            "aiPlanTabTitle": "AI plan · {{value0}}",
+            "aiWorkAlreadyRunning": "AI is already working on {{value0}}. Open that worktree to send a follow-up.",
+            "aiWorkCoalesced": "Queued follow-up for the existing AI run on {{value0}}.",
+            "aiWorkCompleted": "AI finished issue {{value0}}. Review the branch, then create a PR/MR or discard.",
+            "aiWorkStarted": "AI is working on {{value0}}.",
+            "aiWorkTabTitle": "AI work · {{value0}}",
+            "askAiPlan": "Ask AI to plan and comment",
+            "askAiPlanShort": "Ask AI to plan",
+            "askAiWork": "Work on this with AI",
+            "askAiWorkShort": "Work with AI",
+            "assigneeAdded": "Assigned {{value0}}",
+            "assigneeRemoved": "Unassigned {{value0}}",
+            "assignees": "Assignees",
+            "backToIssues": "Issues",
+            "branchLabel": "Branch: {{value0}}",
+            "cancel": "Cancel",
+            "chooseAgent": "Plan with agent",
+            "closeAsCompleted": "Close as completed",
+            "closeAsDuplicate": "Close as duplicate",
+            "closeAsNotPlanned": "Close as not planned",
+            "closeConfirmBody": "This closes \"{{value0}}\" on {{value1}}. You can reopen it later from the provider.",
+            "closeConfirmTitle": "Close issue {{value0}}?",
+            "closed": "Closed issue {{value0}}",
+            "closeFailed": "Failed to close issue.",
+            "closeIssue": "Close issue",
+            "closeIssueShort": "Close",
+            "created": "Opened issue #{{value0}}",
+            "createdLinear": "Created {{value0}}",
+            "createFailed": "Failed to create issue.",
+            "createIssue": "Create issue",
+            "createPrBtn": "Create PR/MR",
+            "createPrTitle": "Review changes and create a Pull Request / Merge Request",
+            "createWorkspaceBtn": "Create workspace",
+            "defaultAgent": "Default",
+            "detectingAgents": "Detecting agents…",
+            "discardBtn": "Discard branch",
+            "discardConfirmAction": "Discard",
+            "discardConfirmBody": "The worktree folder and the branch will be removed. Any uncommitted changes will be lost. This does not affect the issue on the remote.",
+            "discardConfirmTitle": "Discard branch {{value0}}?",
+            "discardedBranch": "Discarded branch {{value0}}.",
+            "duplicateOfPlaceholder": "Issue number (e.g. 42)",
+            "emptyBody": "Open issues for this repository will show up here.",
+            "emptyTitle": "No open issues",
+            "generatePlan": "Generate GoT plan",
+            "generating": "Generating…",
+            "generatingHint": "Scanning codebase + AI planning…",
+            "githubDetail": "Issue detail",
+            "githubDetailBody": "GitHub issue detail",
+            "issueDescription": "Description",
+            "issueDescriptionPlaceholder": "What needs to be fixed or built?",
+            "issueTitle": "Title",
+            "issueTitlePlaceholder": "Short summary of the problem",
+            "labelAdded": "Added label {{value0}}",
+            "labelRemoved": "Removed label {{value0}}",
+            "labels": "Labels",
+            "linearAttachFirst": "Attach a Linear project before creating issues.",
+            "linearLabel": "Linear",
+            "linearNoCompletedState": "No completed state is available for this Linear team.",
+            "linearNoTeam": "No Linear team is available in the attached workspace.",
+            "loading": "Loading issues…",
+            "loadingOptions": "Loading…",
+            "newIssue": "New issue",
+            "newIssueBody": "Create a {{value0}} issue in {{value1}}.",
+            "newIssueTitle": "New issue",
+            "noActiveWorktree": "Select a worktree first.",
+            "noAgent": "No AI agent is available to plan this issue.",
+            "noAgentsDetected": "No agents detected",
+            "noAssignees": "No assignees found",
+            "noLabels": "No labels found",
+            "noMatchingOptions": "No matching options.",
+            "noRepoBody": "Select a git worktree to browse its open issues.",
+            "noRepoTitle": "No repository selected",
+            "openBoard": "Board",
+            "openBtn": "Open worktree",
+            "openInBrowser": "Open in browser",
+            "openOnGitHub": "Open on GitHub",
+            "openOnGitLab": "Open on GitLab",
+            "openWorktree": "Open worktree",
+            "orchestrationCreated": "Created orchestration task for #{n}",
+            "orchestrationExists": "Orchestration task already exists for #{n}",
+            "refresh": "Refresh issues",
+            "reopenIssue": "Open",
+            "searchLabels": "Search labels…",
+            "searchPeople": "Search people…",
+            "selectedCount": "{{value0}} selected",
+            "statusClosed": "Closed",
+            "statusOpen": "Open",
+            "title": "Issues",
+            "toOrchestration": "Convert to orchestration task",
+            "toOrchestrationShort": "To orchestration",
+            "workAndWatch": "Work & watch (open terminal)",
+            "workAndWatchShort": "watch",
+            "workInBackground": "Work in background"
+          },
+          "pomodoroTimerStore": {
+            "breakComplete": "Break over — back to focus",
+            "focusComplete": "Focus session complete — time for a break"
           }
         }
       },
@@ -16410,7 +16530,8 @@
           "8a0898ae4c": "Text diff is unavailable for this file.",
           "3c6e71df22": "Text diff is unavailable for this file in branch compare.",
           "6c4f1a8d2e": "Check details are unavailable.",
-          "resolveConflictGuidance": "Resolve the conflict in Git or restore one side before reopening it."
+          "resolveConflictGuidance": "Resolve the conflict in Git or restore one side before reopening it.",
+          "issueDetailsUnavailable": "Issue unavailable."
         },
         "EditorPanelHeader": {
           "fb8331694e": "Open Preview to the Side",
@@ -19238,6 +19359,30 @@
           "conflict": "Not used: {{value0}}, installed first, replaces it",
           "detail": "From its shortcut, the palette and menus. If the plugin fails, Orca’s own runs.",
           "switch": "Use {{value0}} instead of Orca’s {{value1}}"
+        }
+      },
+      "issueBoard": {
+        "allLabels": "All labels",
+        "back": "Back",
+        "columnClosed": "Closed",
+        "columnOpen": "Open",
+        "gitlabOnly": "Issue Board is GitLab-only for now. Open a GitLab repo worktree.",
+        "loading": "Loading issues…",
+        "newIssue": "New issue",
+        "noRepo": "Select a GitLab worktree to open its issue board.",
+        "refresh": "Refresh",
+        "searchPlaceholder": "Search issues…",
+        "title": "Issue Board"
+      },
+      "statusbar": {
+        "CloudflareRelay": {
+          "active": "Tunnel active",
+          "copyUrl": "Copy tunnel URL",
+          "down": "Tunnel down",
+          "provisioning": "Provisioning…",
+          "restart": "Restart tunnel / WS",
+          "title": "Cloudflare relay",
+          "wsPort": "WS port"
         }
       }
     },
@@ -23670,5 +23815,9 @@
       "message": "{{plugin}} wants to open {{host}}",
       "alwaysAllow": "Always allow {{host}} for this plugin"
     }
+  },
+  "custom": {
+    "issues": "Issues",
+    "voice": "Voice Call (Pi CLI)"
   }
 }

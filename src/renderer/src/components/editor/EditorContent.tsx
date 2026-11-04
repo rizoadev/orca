@@ -1,3 +1,4 @@
+import { IssueDetailsSurface } from '../../../../custom-modules/issues/renderer/src/components/editor/issue-details-surface'
 import { useAppStore } from '@/store'
 import type { ActivePluginCustomEditor } from '@/store/plugin-custom-editors'
 import type { MarkdownViewMode, OpenFile, PendingEditorReveal } from '@/store/slices/editor'
@@ -161,6 +162,10 @@ export function EditorContent({
         }}
       />
     )
+  }
+
+  if (activeFile.mode === 'issue-details') {
+    return <IssueDetailsSurface activeFile={activeFile} />
   }
 
   if (activeFile.mode === 'conflict-review') {

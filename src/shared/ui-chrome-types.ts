@@ -104,6 +104,7 @@ export type RightSidebarTab =
   | 'ports'
   | 'issues' // custom-modules/issues
   | 'voice' // custom-modules/voice
+  | 'orchestration' // custom-modules/issues → orchestration board
   // Plugin IDs encode their dynamic panel namespace without opening the static tab union.
   | `plugin:${string}`
 export type ActiveRightSidebarTab = Exclude<RightSidebarTab, 'search'>

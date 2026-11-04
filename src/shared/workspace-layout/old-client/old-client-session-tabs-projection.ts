@@ -155,6 +155,7 @@ function projectTab(tab: LayoutTab, scope: Scope): RuntimeMobileSessionSnapshotT
     }
     case 'conflict-review':
     case 'check-details':
+    case 'issue-details':
       // Virtual views have no file to read and no compatible session.tabs kind.
       return []
     // A simulator needs the desktop to draw it; the window lists none either.

@@ -231,7 +231,7 @@
 1 src/renderer/src/lib/linear-issue-write.ts
 1 src/renderer/src/lib/local-preflight-context.ts
 2 src/renderer/src/lib/provider-runtime-context.ts
-2 src/renderer/src/lib/repo-runtime-owner.ts
+3 src/renderer/src/lib/repo-runtime-owner.ts # +settingsForRepoRuntimeOwner restored with the issues panel
 1 src/renderer/src/lib/runtime-session-mirror-owners.ts
 1 src/renderer/src/lib/runtime-session-mirror-targets.ts
 1 src/renderer/src/lib/single-runtime-legacy-owner.ts

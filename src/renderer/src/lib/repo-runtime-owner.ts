@@ -109,3 +109,55 @@ export function getHostlessSourceRepoOwnerEnvironmentId(
   const parsed = parseExecutionHostId(getRepoExecutionHostId(matches[0]))
   return parsed?.kind === 'runtime' ? parsed.environmentId : null
 }
+
+type OwnerRoutedSettingsCacheEntry = {
+  settingsSource: RepoRuntimeOwnerState['settings']
+  reposSource: RepoRuntimeOwnerState['repos']
+  environmentId: string | null
+  value: Pick<GlobalSettings, 'activeRuntimeEnvironmentId'>
+}
+
+// Why keyed by repo id: every PR/task row calls this with its own repo while
+// sharing one settings object, so a single-entry cache would thrash.
+const ownerRoutedSettingsCache = new Map<string, OwnerRoutedSettingsCacheEntry>()
+// Why bounded: repo ids come from remote listings, so the key space is not closed.
+const MAX_OWNER_ROUTED_SETTINGS_CACHE_KEYS = 256
+
+export function getSettingsForRepoRuntimeOwner(
+  state: RepoRuntimeOwnerState,
+  repoId: string | null | undefined
+): Pick<GlobalSettings, 'activeRuntimeEnvironmentId'> {
+  const environmentId = getRuntimeEnvironmentIdForRepo(state, repoId)
+  // Why a stable identity: this runs inside useShallow selectors on every store
+  // write, and spreading the whole settings object per row made unrelated writes
+  // allocate and re-compare every field. Reusing the reference when nothing it
+  // derives from changed lets useShallow settle on the Object.is fast path.
+  const cacheKey = repoId ?? ''
+  const cached = ownerRoutedSettingsCache.get(cacheKey)
+  if (
+    cached &&
+    cached.settingsSource === state.settings &&
+    cached.reposSource === state.repos &&
+    cached.environmentId === environmentId
+  ) {
+    return cached.value
+  }
+  // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: settings is only read for this one field downstream.
+  const value: Pick<GlobalSettings, 'activeRuntimeEnvironmentId'> = {
+    ...state.settings,
+    activeRuntimeEnvironmentId: environmentId
+  }
+  ownerRoutedSettingsCache.set(cacheKey, {
+    settingsSource: state.settings,
+    reposSource: state.repos,
+    environmentId,
+    value
+  })
+  if (ownerRoutedSettingsCache.size > MAX_OWNER_ROUTED_SETTINGS_CACHE_KEYS) {
+    const oldest = ownerRoutedSettingsCache.keys().next()
+    if (!oldest.done) {
+      ownerRoutedSettingsCache.delete(oldest.value)
+    }
+  }
+  return value
+}

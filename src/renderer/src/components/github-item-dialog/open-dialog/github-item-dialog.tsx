@@ -40,6 +40,7 @@ function GitHubItemDialogItem({
   backLabel = 'Back',
   projectOrigin,
   onUse,
+  tabBarTrailingSlot,
   onReviewRequestsChange,
   onClose
 }: GitHubItemDialogProps): React.JSX.Element {
@@ -197,6 +198,7 @@ function GitHubItemDialogItem({
           effectiveRepoId={effectiveRepoId}
           repoPath={repoPath}
           issueAttachedWorkspaceLabel={issueAttachedWorkspaceLabel}
+          tabBarTrailingSlot={tabBarTrailingSlot}
         />
       ) : (
         <GitHubItemDialogPRHeader

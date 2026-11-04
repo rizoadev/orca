@@ -13,6 +13,20 @@ import type { CloudflareRelayStatusPayload } from '../../../shared/cloudflare-re
 
 let relay: CloudflareRelayService | null = null
 
+// Why: the WS port is only known once the runtime transport binds; the relay
+// needs a live provider so enable/restart toggles work before next launch.
+function createRelay(): CloudflareRelayService {
+  return new CloudflareRelayService({
+    store: state.store!,
+    userDataPath: getCanonicalUserDataPath(),
+    getWsPort: () => {
+      const endpoint = state.runtimeRpc?.getWebSocketEndpoint?.()
+      const match = endpoint ? /:\d+$/.exec(endpoint) : null
+      return match ? Number(match[0].slice(1)) : null
+    }
+  })
+}
+
 function buildPayload(): CloudflareRelayStatusPayload {
   const settings = state.store?.getSettings()
   const configured = Boolean(settings?.cloudflareRelayToken && settings?.cloudflareRelayDomain)
@@ -72,10 +86,7 @@ export function registerCloudflareRelayHandlers(): void {
         return { ok: false, error: 'Store not available yet — try again after startup.' }
       }
       if (!relay) {
-        relay = new CloudflareRelayService({
-          store,
-          userDataPath: getCanonicalUserDataPath()
-        })
+        relay = createRelay()
       }
       return relay.setEnabled(true)
     }
@@ -94,15 +105,10 @@ export function registerCloudflareRelayHandlers(): void {
       // Not configured — stay dormant, segment will be hidden.
       return
     }
-    relay = new CloudflareRelayService({
-      store,
-      userDataPath: getCanonicalUserDataPath()
-    })
+    relay = createRelay()
     // WS port discovery: poll until the runtime WebSocket is bound.
     const tryStart = (): void => {
-      const endpoint = state.runtimeRpc?.getWebSocketEndpoint?.()
-      const match = endpoint ? /:\d+$/.exec(endpoint) : null
-      const port = match ? Number(match[0].slice(1)) : null
+      const port = relay?.getWsPortValue() ?? null
       if (port !== null) {
         void relay?.start(port)
       } else {

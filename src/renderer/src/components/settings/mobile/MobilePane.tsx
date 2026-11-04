@@ -18,7 +18,7 @@ import { MobilePairingSetupSection } from './pairing/MobilePairingSetupSection'
 import { MobileRelayMintFailureNotice } from '../../mobile/mobile-relay-mint-failure-notice'
 import { WindowsFirewallNotice } from '../../mobile/WindowsFirewallNotice'
 import { translate } from '@/i18n/i18n'
-import { CloudflareRelaySection } from '../../../../custom-modules/cloudflare/CloudflareRelaySection'
+import { CloudflareRelaySection } from '../../../../../custom-modules/cloudflare/CloudflareRelaySection'
 import {
   canMintMobilePairingOffer,
   type MobilePairingConnectionMode

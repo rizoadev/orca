@@ -21,7 +21,8 @@ export default function GitLabItemDialog({
   repoId,
   sourceContext,
   onClose,
-  onCreateWorkspace
+  onCreateWorkspace,
+  tabBarTrailingSlot
 }: GitLabItemDialogProps) {
   const itemId = item?.id ?? null
   // Why: one owner for provider-scoped state — the target the selector routes to (task source, GitLab
@@ -68,6 +69,7 @@ export default function GitLabItemDialog({
       item={item}
       onClose={onClose}
       onCreateWorkspace={onCreateWorkspace}
+      tabBarTrailingSlot={tabBarTrailingSlot}
       state={state}
       detailsEditing={detailsEditing}
       pipelineActions={pipelineActions}

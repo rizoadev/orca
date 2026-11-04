@@ -1,3 +1,4 @@
+import type React from 'react'
 import { ImeTextarea } from '@/lib/ime-text-field'
 import { CircleDot, ExternalLink, GitMerge, LoaderCircle, RefreshCw, Send, X } from 'lucide-react'
 import * as VisuallyHidden from 'radix-ui/visually-hidden'
@@ -37,6 +38,7 @@ type Props = {
   reviewActions: GitLabReviewActions
   handleRefresh: () => void
   updateCommentDraft: (value: string) => void
+  tabBarTrailingSlot?: React.ReactNode
 }
 
 export function GitLabItemDialogView({
@@ -49,7 +51,8 @@ export function GitLabItemDialogView({
   primaryActions,
   reviewActions,
   handleRefresh,
-  updateCommentDraft
+  updateCommentDraft,
+  tabBarTrailingSlot
 }: Props) {
   const { actionInFlight, commentDraft, commentSubmitting, details, error, loading } = state
   const Icon = item?.type === 'mr' ? GitMerge : CircleDot
@@ -146,6 +149,10 @@ export function GitLabItemDialogView({
                 </div>
               </div>
             </header>
+
+            {tabBarTrailingSlot ? (
+              <div className="border-b border-border/50 px-5 py-2">{tabBarTrailingSlot}</div>
+            ) : null}
 
             <Tabs defaultValue="description" className="flex min-h-0 flex-1 flex-col">
               <TabsList className="mx-5 mt-3 self-start">

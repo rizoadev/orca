@@ -4,7 +4,9 @@
  */
 import type { ActiveRightSidebarTab } from '@/store/slices/editor'
 
-export const CUSTOM_SIDEBAR_TAB_IDS = ['issues', 'voice'] as const
+export const CUSTOM_SIDEBAR_TAB_IDS = ['issues'] as const
+// 'voice' disabled — Google Voice (Pi Standby) fitur dimatikan.
+// Untuk re-enable: tambahkan kembali 'voice' di array ini.
 
 export type CustomSidebarTabId = (typeof CUSTOM_SIDEBAR_TAB_IDS)[number]
 

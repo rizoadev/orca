@@ -5,13 +5,13 @@ Target: `/home/rizoa/PROJECTS_IKAMAI/orca-clean/src/custom-modules/`
 
 ## Status
 
-| Module       | Complexity | IPC Main? | Status     | Notes                                                |
-| ------------ | ---------- | --------- | ---------- | ---------------------------------------------------- |
-| `hero`       | Low        | No        | ✅ Done    | Lihat `HERO-MODULE.md`                               |
-| `cloudflare` | Medium     | Yes       | ✅ Done    | Lihat `CLOUDFLARE-MODULE.md`                         |
-| `issues`     | High       | No        | ⏳ Pending | `openOrchestrationBoardPage` tidak ada di orca-clean |
-| `snippets`   | Medium     | Yes       | ⏳ Pending | Dependency upstream OK                               |
-| `s3`         | Medium     | Yes       | ⏳ Pending | Dependency upstream OK                               |
+| Module       | Complexity | IPC Main? | Status     | Notes                                                     |
+| ------------ | ---------- | --------- | ---------- | --------------------------------------------------------- |
+| `hero`       | Low        | No        | ✅ Done    | Lihat `HERO-MODULE.md`                                    |
+| `cloudflare` | Medium     | Yes       | ✅ Done    | Lihat `CLOUDFLARE-MODULE.md`                              |
+| `issues`     | High       | No        | ✅ Done    | Lihat `ISSUES-MODULE.md`                                  |
+| `snippets`   | Medium     | Yes       | ⏳ Pending | Dependency upstream OK                                    |
+| `s3`         | Medium     | Yes       | ⏳ Pending | Dependency upstream OK                                    |
 | `voice`      | High       | Yes       | ✅ Done    | Google Gemini Live standby → Auto-send ke Pi CLI terminal |
 
 ---
@@ -39,11 +39,15 @@ Lihat `CLOUDFLARE-MODULE.md` dan `INJECTION-MAP.md`.
 - `setRightSidebarTab` — ✅ ada di store
 - `LinearIssueWorkspace` component — ✅ ada
 - `window.api.gh.*`, `window.api.gl.*` — ✅ ada
-- `openOrchestrationBoardPage` — ❌ **tidak ada** di orca-clean
-- `createOrchestrationTaskFromIssue` — ❌ **tidak ada** di orca-clean
+- `openOrchestrationBoardPage` — ✅ ditambahkan (menggeser right sidebar ke tab `orchestration`)
+- `createOrchestrationTaskFromIssue` — ✅ dipulihkan via RPC `orchestration.taskCreate`
 
-**Strategi port**: Copy semua file, hapus/stub bagian orchestration (`handleConvertToOrchestration`,
-`convertingIssueId`, `openOrchestrationBoardPage`). Fitur core issues + AI plan/work tetap jalan.
+**Strategi port**: Semua file di-copy utuh (termasuk orchestration). API upstream yang sudah
+berubah disesuaikan ke bentuk sekarang: `updateRepo(id, updates, { hostId })`,
+`observeLinearIssueRead()` untuk baca Linear, `launchAgentInNewTabWithOutcome({ requestId })`,
+`removeWorktree({ id, executionHostId })`, helper `confirmHooks`/`readIssueCommand`/
+`resolvePrStartPoint` memakai host repo (bukan settings). Tab detail issue dibuka sebagai tab
+editor mode `issue-details` (pola sama dengan `check-details`).
 
 **Files yang perlu di-copy** (dari orca-old):
 

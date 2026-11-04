@@ -81,23 +81,23 @@ else
 fi
 
 # ─────────────────────────────────────────────────────────────
-# ── 3. cloudflare — global-settings-types.ts (4 fields)
+# ── 3. cloudflare — global-settings-types.ts (CloudflareRelaySettings intersection)
 # ─────────────────────────────────────────────────────────────
 SETTINGS="$ROOT/src/shared/global-settings-types.ts"
 if [ ! -f "$SETTINGS" ]; then
   echo "✗ global-settings-types.ts not found"
   FAIL=1
 else
-  if grep -qF 'cloudflareRelayToken' "$SETTINGS"; then
+  if grep -qF 'CloudflareRelaySettings' "$SETTINGS"; then
     echo "✓ global-settings-types.ts — already injected"
   else
-    # Insert 4 fields after mobilePairingCustomAddresses line
-    ANCHOR="mobilePairingCustomAddresses"
-    if grep -qF "$ANCHOR" "$SETTINGS"; then
-      sed -i "/$ANCHOR/a\\  cloudflareRelayToken?: string\\n  cloudflareRelayDomain?: string\\n  cloudflareRelayEnabled?: boolean\\n  cloudflareRelayHostname?: string" "$SETTINGS"
+    # Insert import after AgentLaunchChoices import and intersection on GlobalSettings
+    inject_import "$SETTINGS" "import type { CloudflareRelaySettings } from './cloudflare-relay-settings'"
+    if grep -qF 'GlobalSettings = GlobalSettingsBase &' "$SETTINGS"; then
+      sed -i 's/GlobalSettings = GlobalSettingsBase & {/GlobalSettings = GlobalSettingsBase \& CloudflareRelaySettings \& {/' "$SETTINGS"
       echo "✓ global-settings-types.ts — injected"
     else
-      echo "✗ global-settings-types.ts — anchor not found, add cloudflare fields manually"
+      echo "✗ global-settings-types.ts — GlobalSettings anchor not found, add intersection manually"
       FAIL=1
     fi
   fi
@@ -167,7 +167,7 @@ fi
 # ─────────────────────────────────────────────────────────────
 # ── 7. cloudflare — MobilePane.tsx (import + 1 render)
 # ─────────────────────────────────────────────────────────────
-MOBILE_PANE="$ROOT/src/renderer/src/components/settings/MobilePane.tsx"
+MOBILE_PANE="$ROOT/src/renderer/src/components/settings/mobile/MobilePane.tsx"
 if [ ! -f "$MOBILE_PANE" ]; then
   echo "✗ MobilePane.tsx not found"
   FAIL=1
@@ -219,37 +219,39 @@ fi
 
 # ─────────────────────────────────────────────────────────────
 # ── 10. voice — preload/api-types.ts & preload/index.ts
+# DISABLED: Google Voice (Pi Standby) dimatikan. Section dipertahankan
+# sebagai referensi; jangan di-uncomment kecuali mau re-enable fitur.
 # ─────────────────────────────────────────────────────────────
-PRELOAD_INDEX="$ROOT/src/preload/index.ts"
-if [ ! -f "$PRELOAD_INDEX" ]; then
-  echo "✗ preload/index.ts not found"
-  FAIL=1
-else
-  if grep -qF 'voiceCallBridge' "$PRELOAD_INDEX"; then
-    echo "✓ preload/index.ts — already injected"
-  else
-    inject_import "$PRELOAD_INDEX" "import { voiceCallBridge } from './api/voice-call-bridge'"
-    sed -i '/speech: speechApi/a\  voiceCall: voiceCallBridge,' "$PRELOAD_INDEX"
-    echo "✓ preload/index.ts — injected"
-  fi
-fi
+# PRELOAD_INDEX="$ROOT/src/preload/index.ts"
+# if [ ! -f "$PRELOAD_INDEX" ]; then
+#   echo "✗ preload/index.ts not found"
+#   FAIL=1
+# else
+#   if grep -qF 'voiceCallBridge' "$PRELOAD_INDEX"; then
+#     echo "✓ preload/index.ts — already injected"
+#   else
+#     inject_import "$PRELOAD_INDEX" "import { voiceCallBridge } from './api/voice-call-bridge'"
+#     sed -i '/speech: speechApi/a\  voiceCall: voiceCallBridge,' "$PRELOAD_INDEX"
+#     echo "✓ preload/index.ts — injected"
+#   fi
+# fi
 
 # ─────────────────────────────────────────────────────────────
-# ── 11. voice — main/ipc/speech.ts
+# ── 11. voice — main/ipc/speech.ts (DISABLED — Pi Standby)
 # ─────────────────────────────────────────────────────────────
-SPEECH_IPC="$ROOT/src/main/ipc/speech.ts"
-if [ ! -f "$SPEECH_IPC" ]; then
-  echo "✗ main/ipc/speech.ts not found"
-  FAIL=1
-else
-  if grep -qF 'registerVoiceCallHandlers' "$SPEECH_IPC"; then
-    echo "✓ main/ipc/speech.ts — already injected"
-  else
-    inject_import "$SPEECH_IPC" "import { registerVoiceCallHandlers } from '../../custom-modules/voice/main/ipc/voice-call'"
-    sed -i '/export function registerSpeechHandlers/a\  registerVoiceCallHandlers() // custom-modules/voice' "$SPEECH_IPC"
-    echo "✓ main/ipc/speech.ts — injected"
-  fi
-fi
+# SPEECH_IPC="$ROOT/src/main/ipc/speech.ts"
+# if [ ! -f "$SPEECH_IPC" ]; then
+#   echo "✗ main/ipc/speech.ts not found"
+#   FAIL=1
+# else
+#   if grep -qF 'registerVoiceCallHandlers' "$SPEECH_IPC"; then
+#     echo "✓ main/ipc/speech.ts — already injected"
+#   else
+#     inject_import "$SPEECH_IPC" "import { registerVoiceCallHandlers } from '../../custom-modules/voice/main/ipc/voice-call'"
+#     sed -i '/export function registerSpeechHandlers/a\  registerVoiceCallHandlers() // custom-modules/voice' "$SPEECH_IPC"
+#     echo "✓ main/ipc/speech.ts — injected"
+#   fi
+# fi
 
 # ─────────────────────────────────────────────────────────────
 # ── Summary
@@ -265,7 +267,7 @@ if [ $FAIL -eq 0 ]; then
   echo "  4. src/shared/cloudflare-relay-status.ts                          — new shared type"
   echo "  5. src/preload/api/mobile-api.ts                                  — cloudflare methods"
   echo "  6. src/main/ipc/mobile.ts                                         — cloudflare handlers"
-  echo "  7. src/renderer/src/components/settings/MobilePane.tsx            — cloudflare UI"
+  echo "  7. src/renderer/src/components/settings/mobile/MobilePane.tsx          — cloudflare UI"
   echo "  8. src/renderer/src/components/right-sidebar/use-right-sidebar-activity-items.ts — sidebar tab buttons"
   echo "  9. src/renderer/src/components/right-sidebar/right-sidebar-panel-content.tsx    — sidebar panel router"
   echo " 10. src/preload/index.ts                                           — voice preload bridge"

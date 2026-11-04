@@ -9,6 +9,7 @@ import type { RepoProjectHostSetupMethod } from './project-types'
 import type { JiraProjectReference } from './jira/jira-project-reference'
 import type { OrcadRetainedMarker } from './orcad-retained-marker'
 import type { EditorFormatter } from './editor-formatter'
+import type { LinearRepoBinding } from './linear-repo-binding'
 
 export type RepoKind = 'git' | 'folder'
 
@@ -64,6 +65,8 @@ export type Repo = {
   issueSourcePreference?: IssueSourcePreference
   /** Host-owned Jira project default; users can override it in each composer. */
   defaultJiraProject?: JiraProjectReference | null
+  /** Per-repo Linear Issues tab binding (workspace + project); null clears. */
+  linear?: LinearRepoBinding | null
   /** Bind host/login only; resolve a short-lived gh token at spawn and inject into that child’s environment. */
   ghAccount?: GhAccountBinding
   /** Controls Orca's fork-default-branch sync offer for repos with upstream metadata. */

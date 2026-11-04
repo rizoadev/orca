@@ -47,7 +47,8 @@ export function GitHubItemDialogIssueHeader({
   localState,
   effectiveRepoId,
   repoPath,
-  issueAttachedWorkspaceLabel
+  issueAttachedWorkspaceLabel,
+  tabBarTrailingSlot
 }: {
   refreshTask?: () => Promise<void>
   refreshing: boolean
@@ -66,6 +67,8 @@ export function GitHubItemDialogIssueHeader({
   effectiveRepoId: string | null
   repoPath: string | null
   issueAttachedWorkspaceLabel: string | null
+  /** Extra action row rendered at the end of the header (e.g. the issue AI bar). */
+  tabBarTrailingSlot?: React.ReactNode
 }): React.JSX.Element {
   const ownerRepo = parseOwnerRepoFromItemUrl(workItem.url)
   const issueStateBadgeTone =
@@ -304,6 +307,7 @@ export function GitHubItemDialogIssueHeader({
             </span>
           ) : null}
         </div>
+        {tabBarTrailingSlot ? <div className="mt-3">{tabBarTrailingSlot}</div> : null}
       </div>
     </>
   )

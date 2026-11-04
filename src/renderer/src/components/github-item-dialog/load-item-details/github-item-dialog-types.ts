@@ -1,3 +1,4 @@
+import type React from 'react'
 import type { GitHubAssignableUser } from '../../../../../shared/github/pull-request-types'
 import type { GitHubWorkItem } from '../../../../../shared/github/work-item-types'
 import type { TaskSourceContext } from '../../../../../shared/task-source-context'
@@ -30,6 +31,10 @@ export type GitHubItemDialogProps = {
   initialTab?: ItemDialogTab
   backLabel?: string
   onUse: (item: GitHubWorkItem) => void
+  /** Extra action row under the header (e.g. the issue AI bar). */
+  tabBarTrailingSlot?: React.ReactNode
+  /** Opens the item in the main view instead of a modal. */
+  onOpenInMainView?: (item: GitHubWorkItem) => void
   onReviewRequestsChange?: (
     itemKey: { id: string; repoId: string },
     reviewRequests: GitHubAssignableUser[]

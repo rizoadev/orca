@@ -1,3 +1,4 @@
+import type { OpenIssueDetailsState } from '../../../../../../shared/issue-details-tab'
 import type { HttpLinkSourceOwner } from '@/lib/http-link-routing'
 import type { CheckRunDetailsTabPatch } from '@/components/editor/check-run-details-tab'
 import type {
@@ -220,6 +221,8 @@ export type EditorFilesSlice = {
     state: CheckRunDetailsTabPatch
   ) => void
   reloadOpenCheckRunDetailsTab: (fileId: string) => Promise<void>
+  /** Open a virtual issue-detail tab in the main view for the worktree. */
+  openIssueDetails: (worktreeId: string, state: OpenIssueDetailsState) => void
   openBranchAllDiffs: (
     worktreeId: string,
     worktreePath: string,
