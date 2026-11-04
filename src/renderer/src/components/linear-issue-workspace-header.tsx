@@ -26,6 +26,7 @@ import { translate } from '@/i18n/i18n'
 import type { LinearIssue } from '../../../shared/linear/issue-types'
 import { copyLinearIssueText } from './linear-issue-clipboard'
 import { openAppHttpLink } from '@/lib/app-http-link-open'
+import { cn } from '@/lib/utils'
 
 export function LinearIssueWorkspaceHeader({
   issue,
@@ -47,7 +48,13 @@ export function LinearIssueWorkspaceHeader({
   onUseIssue: () => void
 }): React.JSX.Element {
   return (
-    <header className="flex h-[61px] flex-none items-center justify-between gap-4 border-b border-border/60 px-5">
+    <header
+      className={cn(
+        'flex h-[61px] flex-none items-center justify-between gap-4 border-b border-border/60 px-5',
+        // Why: the sheet overlays the window's top-right, where Electron window controls (minimize/maximize/close) live.
+        variant === 'sheet' && 'pr-[max(1.25rem,var(--window-controls-width,0px))]'
+      )}
+    >
       <div className="flex min-w-0 items-center gap-2 text-sm text-muted-foreground">
         {variant === 'page' ? (
           <Button
