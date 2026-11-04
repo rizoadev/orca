@@ -20,6 +20,7 @@ import {
   repoConnectionId
 } from './gitlab-repo-access'
 import { registerGitLabWorkItemHandlers } from './gitlab-work-item-handlers'
+import { registerGitLabSnippetHandlers } from '../../../custom-modules/snippets/main/snippets-ipc'
 
 export function registerGitLabHandlers(store: Store): void {
   ipcMain.handle('gitlab:viewer', async () => {
@@ -44,6 +45,7 @@ export function registerGitLabHandlers(store: Store): void {
   registerGitLabWorkItemHandlers(store)
   registerGitLabMergeRequestMutationHandlers(store)
   registerGitLabCiJobHandlers(store)
+  registerGitLabSnippetHandlers(store)
 
   // Todos are user-scoped; repoPath is only the registration guard.
   ipcMain.handle('gitlab:todos', async (_event, args: GitLabRepoSelectorArgs) => {

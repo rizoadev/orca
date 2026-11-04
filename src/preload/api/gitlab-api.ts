@@ -22,6 +22,12 @@ import type {
   MRInfo,
   MRListState
 } from '../../shared/gitlab-types'
+import type {
+  GitLabSnippet,
+  GitLabSnippetDetail,
+  GitLabSnippetCreateInput,
+  GitLabSnippetUpdateInput
+} from '../../custom-modules/snippets/shared/types'
 
 export type GitLabRepoSelectorArgs = {
   repoPath: string
@@ -175,4 +181,28 @@ export type GitLabApi = {
       type: 'issue' | 'mr'
     }
   ) => Promise<Omit<GitLabWorkItem, 'repoId'> | null>
+  listProjectSnippets: (
+    args: GitLabRepoSelectorArgs & {
+      limit?: number
+    }
+  ) => Promise<{ items: GitLabSnippet[]; error?: ClassifiedError }>
+  getProjectSnippet: (
+    args: GitLabRepoSelectorArgs & {
+      snippetId: number
+    }
+  ) => Promise<{ ok: true; snippet: GitLabSnippetDetail } | { ok: false; error: string }>
+  createProjectSnippet: (
+    args: GitLabRepoSelectorArgs & GitLabSnippetCreateInput
+  ) => Promise<{ ok: true; snippet: GitLabSnippetDetail } | { ok: false; error: string }>
+  updateProjectSnippet: (
+    args: GitLabRepoSelectorArgs & {
+      snippetId: number
+      updates: GitLabSnippetUpdateInput
+    }
+  ) => Promise<{ ok: true; snippet: GitLabSnippetDetail } | { ok: false; error: string }>
+  deleteProjectSnippet: (
+    args: GitLabRepoSelectorArgs & {
+      snippetId: number
+    }
+  ) => Promise<{ ok: true } | { ok: false; error: string }>
 }

@@ -161,5 +161,40 @@ export const glApi = {
       iid: number
       type: 'issue' | 'mr'
     }
-  ) => ipcRenderer.invoke('gitlab:workItemByPath', args)
+  ) => ipcRenderer.invoke('gitlab:workItemByPath', args),
+
+  listProjectSnippets: (
+    args: GitLabRepoSelectorArgs & {
+      limit?: number
+    }
+  ) => ipcRenderer.invoke('gl:listProjectSnippets', args),
+
+  getProjectSnippet: (
+    args: GitLabRepoSelectorArgs & {
+      snippetId: number
+    }
+  ) => ipcRenderer.invoke('gl:getProjectSnippet', args),
+
+  createProjectSnippet: (
+    args: GitLabRepoSelectorArgs & {
+      title: string
+      fileName: string
+      content: string
+      description?: string
+      visibility?: 'public' | 'internal' | 'private'
+    }
+  ) => ipcRenderer.invoke('gl:createProjectSnippet', args),
+
+  updateProjectSnippet: (
+    args: GitLabRepoSelectorArgs & {
+      snippetId: number
+      updates: unknown
+    }
+  ) => ipcRenderer.invoke('gl:updateProjectSnippet', args),
+
+  deleteProjectSnippet: (
+    args: GitLabRepoSelectorArgs & {
+      snippetId: number
+    }
+  ) => ipcRenderer.invoke('gl:deleteProjectSnippet', args)
 }
