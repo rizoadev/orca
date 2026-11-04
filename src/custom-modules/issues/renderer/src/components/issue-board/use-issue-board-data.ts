@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import type { GitLabWorkItem, Repo } from '../../../../../../shared/types'
-import { getRepoIssueSourceContext } from '../right-sidebar/issues-panel-rows'
+import { gitLabModuleApi, gitLabModuleSelector } from '../../gitlab-host-api'
 
 const PAGE_LIMIT = 100
 
@@ -20,12 +20,9 @@ async function fetchColumn(
   repo: Repo,
   state: 'opened' | 'closed'
 ): Promise<{ items: GitLabWorkItem[]; error?: string }> {
-  const sourceContext = getRepoIssueSourceContext(repo, 'gitlab')
-  // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: gl.listIssues types error as a wider union than this board reads.
-  const result = (await window.api.gl.listIssues({
-    repoPath: repo.path,
-    repoId: repo.id,
-    sourceContext,
+  // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: listIssues types error as a wider union than this board reads.
+  const result = (await gitLabModuleApi(repo).listIssues({
+    ...gitLabModuleSelector(repo),
     state,
     limit: PAGE_LIMIT
   })) as { items: GitLabWorkItem[]; error?: { type?: string; message: string } }
@@ -122,11 +119,8 @@ export function useIssueBoardData(repo: Repo | null): IssueBoardData {
       }
 
       try {
-        const sourceContext = getRepoIssueSourceContext(repo, 'gitlab')
-        const result = await window.api.gl.updateIssue({
-          repoPath: repo.path,
-          repoId: repo.id,
-          sourceContext,
+        const result = await gitLabModuleApi(repo).updateIssue({
+          ...gitLabModuleSelector(repo),
           number: issue.number,
           updates: { state: targetState }
         })

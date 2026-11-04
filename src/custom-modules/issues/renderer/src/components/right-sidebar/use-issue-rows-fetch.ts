@@ -5,6 +5,8 @@
  */
 import { useEffect, useMemo, useState } from 'react'
 import { useAppStore } from '@/store'
+import { gitLabApiFor } from '@/runtime/gitlab-owner-api'
+import { getRepoExecutionHostId } from '../../../../../../shared/execution-host'
 import { observeLinearIssueRead } from '@/store/slices/linear/linear-issue-publication'
 import { normalizeTaskSourceContext } from '../../../../../../shared/task-source-context'
 import type { GitLabWorkItem, Repo } from '../../../../../../shared/types'
@@ -118,11 +120,17 @@ export function useIssueRowsFetch(args: {
           remoteRows = toGitHubIssueRows(items ?? [])
         } else if (wantGitlab) {
           const sourceContext = getRepoIssueSourceContext(activeRepo, 'gitlab')
-          // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: gl.listIssues types error as a wider union than this list reads.
-          const result = (await window.api.gl.listIssues({
+          // Why: route through the host holding the GitLab credentials (same as
+          // the Tasks page) — raw `gl` IPC rejects repos it cannot resolve locally.
+          const selector = {
             repoPath: activeRepo.path,
             repoId: activeRepo.id,
             sourceContext,
+            repoOwnerExecutionHostId: getRepoExecutionHostId(activeRepo)
+          }
+          // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: listIssues types error as a wider union than this list reads.
+          const result = (await gitLabApiFor(selector).listIssues({
+            ...selector,
             state: 'opened',
             limit: ISSUE_LIST_LIMIT
           })) as {

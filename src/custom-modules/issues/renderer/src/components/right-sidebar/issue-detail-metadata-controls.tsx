@@ -15,6 +15,7 @@ import type {
 } from '../../../../../../shared/types'
 import { MultiSelectMenu, StatusMenu, type IssueStateValue } from './issue-detail-metadata-menus'
 import { getRepoIssueSourceContext } from './issues-panel-rows'
+import { gitLabModuleApi, gitLabModuleSelector } from '../../gitlab-host-api'
 import type { RepoIssueProvider } from './repo-issue-provider'
 
 export type IssueDetailMetadataControlsProps = {
@@ -75,11 +76,9 @@ export function IssueDetailMetadataControls(
     let cancelled = false
     setGitlabUsersLoading(true)
     setGitlabLabelsLoading(true)
-    const selector = sourceSelector(props.repo, 'gitlab')
-    void Promise.all([
-      window.api.gl.listAssignableUsers(selector),
-      window.api.gl.listLabels(selector)
-    ])
+    const api = gitLabModuleApi(props.repo)
+    const selector = gitLabModuleSelector(props.repo)
+    void Promise.all([api.listAssignableUsers(selector), api.listLabels(selector)])
       .then(([users, nextLabels]) => {
         if (!cancelled) {
           // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: the runtime details payload is the GitLab assignee shape and the labels list is string[].
@@ -168,8 +167,8 @@ export function IssueDetailMetadataControls(
       addAssignees?: string[]
       removeAssignees?: string[]
     }) => {
-      return window.api.gl.updateIssue({
-        ...sourceSelector(props.repo, 'gitlab'),
+      return gitLabModuleApi(props.repo).updateIssue({
+        ...gitLabModuleSelector(props.repo),
         number: props.issueNumber,
         updates
       })

@@ -10,6 +10,7 @@ import { linearCreateIssue, linearUpdateIssue } from '@/runtime/runtime-linear-i
 import { linearListTeams, linearTeamStates } from '@/runtime/runtime-linear-project-client'
 import type { CreateIssueSubmitInput } from './issues-panel-create-dialog'
 import type { TaskSourceContext } from '../../../../../../shared/task-source-context'
+import { gitLabModuleApi, gitLabModuleSelector } from '../../gitlab-host-api'
 import { getRepoIssueSourceContext, type IssueRow } from './issues-panel-rows'
 import type { RepoIssueProvider } from './repo-issue-provider'
 
@@ -144,10 +145,8 @@ export async function createRepoIssue(args: {
     }
   }
 
-  const result = await window.api.gl.createIssue({
-    repoPath: args.repo.path,
-    repoId: args.repo.id,
-    sourceContext: getRepoIssueSourceContext(args.repo, 'gitlab'),
+  const result = await gitLabModuleApi(args.repo).createIssue({
+    ...gitLabModuleSelector(args.repo),
     title: args.input.title,
     body: args.input.body
   })
@@ -264,10 +263,8 @@ export async function closeRepoIssue(args: {
       return false
     }
   } else {
-    const result = await window.api.gl.updateIssue({
-      repoPath: args.repo.path,
-      repoId: args.repo.id,
-      sourceContext: getRepoIssueSourceContext(args.repo, 'gitlab'),
+    const result = await gitLabModuleApi(args.repo).updateIssue({
+      ...gitLabModuleSelector(args.repo),
       number: args.row.number ?? 0,
       updates: { state: 'closed' }
     })
