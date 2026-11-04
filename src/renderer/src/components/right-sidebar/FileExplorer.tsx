@@ -43,6 +43,8 @@ import { useWslHostUnavailableReason } from '../terminal-pane/use-wsl-host-unava
 import { useStoppedWslHost } from '../wsl-host-stopped/use-stopped-wsl-host'
 import { translate } from '@/i18n/i18n'
 import { useUiLanguageRevision } from '@/i18n/use-ui-language-revision'
+import { branchName } from '@/lib/git-utils'
+import { SnippetBlock } from '../../../../custom-modules/snippets/renderer/components/SnippetBlock'
 
 /** Coordinates scoped navigation while retaining the actual worktree root for file operations and runtime routing. */
 function FileExplorerFiles(): React.JSX.Element {
@@ -361,6 +363,16 @@ function FileExplorerFiles(): React.JSX.Element {
         displayDepth={displayDepth}
         onStartNew={inlineInputState.startNew}
       />
+      {/* GitLab Snippets Block - only visible for GitLab repos */}
+      {activeRepo?.gitRemoteIdentity?.remoteUrl?.toLowerCase().includes('gitlab') &&
+        isFilesViewActive && (
+          <SnippetBlock
+            worktreePath={worktreePath}
+            branch={branchName(activeWorktree?.branch ?? '')}
+            repoId={activeRepo.id}
+            connectionId={activeRepo.connectionId ?? null}
+          />
+        )}
     </>
   )
 }

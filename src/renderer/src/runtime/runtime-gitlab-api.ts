@@ -98,21 +98,28 @@ export function createRuntimeGitLabApi(transport: RuntimeGitLabTransport): GitLa
     retryJob: (args) => route<GitLabApiResult<'retryJob'>>(GITLAB_WEB_RPC_METHODS.retryJob, args),
     workItemByPath: (args) =>
       route<GitLabApiResult<'workItemByPath'>>(GITLAB_WEB_RPC_METHODS.workItemByPath, args),
-    // Snippets — not yet implemented; methods exist on the host but no RPC routing.
-    listProjectSnippets: () => {
-      throw new Error('listProjectSnippets not implemented in runtime')
-    },
-    getProjectSnippet: () => {
-      throw new Error('getProjectSnippet not implemented in runtime')
-    },
-    createProjectSnippet: () => {
-      throw new Error('createProjectSnippet not implemented in runtime')
-    },
-    updateProjectSnippet: () => {
-      throw new Error('updateProjectSnippet not implemented in runtime')
-    },
-    deleteProjectSnippet: () => {
-      throw new Error('deleteProjectSnippet not implemented in runtime')
-    }
+    // Snippets API - routes through RPC like other GitLab methods
+    listProjectSnippets: (args) =>
+      route<GitLabApiResult<'listProjectSnippets'>>(
+        GITLAB_WEB_RPC_METHODS.listProjectSnippets,
+        args
+      ),
+    getProjectSnippet: (args) =>
+      route<GitLabApiResult<'getProjectSnippet'>>(GITLAB_WEB_RPC_METHODS.getProjectSnippet, args),
+    createProjectSnippet: (args) =>
+      route<GitLabApiResult<'createProjectSnippet'>>(
+        GITLAB_WEB_RPC_METHODS.createProjectSnippet,
+        args
+      ),
+    updateProjectSnippet: (args) =>
+      route<GitLabApiResult<'updateProjectSnippet'>>(
+        GITLAB_WEB_RPC_METHODS.updateProjectSnippet,
+        args
+      ),
+    deleteProjectSnippet: (args) =>
+      route<GitLabApiResult<'deleteProjectSnippet'>>(
+        GITLAB_WEB_RPC_METHODS.deleteProjectSnippet,
+        args
+      )
   } satisfies GitLabApi
 }

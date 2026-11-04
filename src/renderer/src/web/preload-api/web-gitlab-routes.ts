@@ -22,6 +22,11 @@ export type WebGitLabRouteKey =
   | 'jobTrace'
   | 'retryJob'
   | 'workItemByPath'
+  | 'listProjectSnippets'
+  | 'getProjectSnippet'
+  | 'createProjectSnippet'
+  | 'updateProjectSnippet'
+  | 'deleteProjectSnippet'
 
 export type WebGitLabRuntimeMethod =
   | 'gitlab.diagnoseAuth'
@@ -46,6 +51,11 @@ export type WebGitLabRuntimeMethod =
   | 'gitlab.jobTrace'
   | 'gitlab.retryJob'
   | 'gitlab.workItemByPath'
+  | 'gitlab.listProjectSnippets'
+  | 'gitlab.getProjectSnippet'
+  | 'gitlab.createProjectSnippet'
+  | 'gitlab.updateProjectSnippet'
+  | 'gitlab.deleteProjectSnippet'
 
 export const GITLAB_WEB_RPC_METHODS = {
   diagnoseAuth: 'gitlab.diagnoseAuth',
@@ -70,5 +80,10 @@ export const GITLAB_WEB_RPC_METHODS = {
   resolveMRDiscussion: 'gitlab.resolveMRDiscussion',
   jobTrace: 'gitlab.jobTrace',
   retryJob: 'gitlab.retryJob',
-  workItemByPath: 'gitlab.workItemByPath'
+  workItemByPath: 'gitlab.workItemByPath',
+  listProjectSnippets: 'gitlab.listProjectSnippets',
+  getProjectSnippet: 'gitlab.getProjectSnippet',
+  createProjectSnippet: 'gitlab.createProjectSnippet',
+  updateProjectSnippet: 'gitlab.updateProjectSnippet',
+  deleteProjectSnippet: 'gitlab.deleteProjectSnippet'
 } as const satisfies Record<WebGitLabRouteKey, WebGitLabRuntimeMethod>
