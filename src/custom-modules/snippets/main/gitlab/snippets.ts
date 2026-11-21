@@ -1,6 +1,6 @@
 import type { GitLabSnippet } from '../../shared/types'
-import type { ClassifiedError } from '../../../../shared/classified-error'
-import type { IssueSourcePreference } from '../../../../shared/repo-types'
+import type { ClassifiedError } from '../../../../shared/errors/classified-error'
+import type { IssueSourcePreference } from '../../../../shared/repository/repo-types'
 import {
   acquire,
   classifyListIssuesError,

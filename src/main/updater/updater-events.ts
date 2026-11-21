@@ -6,6 +6,7 @@ import {
 } from './mac-install/updater-mac-install'
 import { compareVersions } from './releases/updater-fallback'
 import { fetchChangelog } from './releases/updater-changelog'
+import { getUnsupportedSystemUpdate } from './releases/updater-system-requirement'
 import type { UpdaterHandlerContext } from './updater-handler-context'
 import { recordUpdaterLifecycle } from './updater-lifecycle-diagnostics'
 import {
@@ -15,7 +16,7 @@ import {
 } from './linux-package/linux-package-downloaded-status'
 import { isExternallyManagedLinuxInstall } from './linux-package/linux-update-package-type'
 import * as linuxPackageRecovery from './linux-package/linux-package-update-recovery'
-import { preExtractDownloadedAppImageUpdate } from '../cli/appimage-copy-pre-extraction'
+import { preExtractDownloadedAppImageUpdate } from '../cli/appimage/appimage-copy-pre-extraction'
 
 const AUTO_UPDATE_CHECK_INTERVAL_MS = 24 * 60 * 60 * 1000
 const AUTO_UPDATE_RETRY_INTERVAL_MS = 60 * 60 * 1000
@@ -48,12 +49,14 @@ export function registerAutoUpdaterHandlers({
   failMacStaging,
   isAwaitingMacStaging,
   isMacStagingDeferredToInstall,
+  watchMacStaging,
   shouldDeferMacQuitForInstall,
   recordCompletedUpdateCheck,
   restoreReleaseUpdateSource,
   sendCheckFailureStatus,
   sendErrorStatus,
   sendStatus,
+  publishUpdateOffer,
   scheduleAutomaticUpdateCheck,
   shouldSuppressMissingManifestPrereleaseFallbackEvent,
   suppressMissingManifestPrereleaseFallbackPromiseFailure,
@@ -156,13 +159,21 @@ export function registerAutoUpdaterHandlers({
           }
         }
 
-        sendStatus(
+        publishUpdateOffer(
           getRetainedLinuxPackageManualInstallStatus() ?? {
             state: 'available',
             version: info.version,
             changelog,
             // Tell clients this host cannot self-update before offering a download.
             ...(isExternallyManagedLinuxInstall() ? { externallyManaged: true } : {})
+          },
+          {
+            eligible:
+              !isLocalBuildCheck() &&
+              !isPinnedBuildCheck() &&
+              !missingManifestFallback &&
+              !publishingWindowLastGoodCheck,
+            backgroundCheck: !wasUserInitiated && !getUserInitiatedCheck()
           }
         )
       } finally {
@@ -171,7 +182,7 @@ export function registerAutoUpdaterHandlers({
     })()
   })
 
-  autoUpdater.on('update-not-available', () => {
+  autoUpdater.on('update-not-available', (info) => {
     if (getActiveUpdateCheckEventAttemptId() === null) {
       return
     }
@@ -197,9 +208,14 @@ export function registerAutoUpdaterHandlers({
         }
       }
     }
+    const unsupportedSystemUpdate = getUnsupportedSystemUpdate(info, app.getVersion())
     // Preserve manual-install recovery when a recheck finds no newer release.
     sendStatus(
-      retainedStatus ?? { state: 'not-available', userInitiated: wasUserInitiated || undefined }
+      retainedStatus ?? {
+        state: 'not-available',
+        userInitiated: wasUserInitiated || undefined,
+        ...(unsupportedSystemUpdate ? { unsupportedSystemUpdate } : {})
+      }
     )
     if (localBuildCheck || pinnedBuildCheck) {
       restoreReleaseUpdateSource()
@@ -253,6 +269,7 @@ export function registerAutoUpdaterHandlers({
     // Squirrel must finish staging before macOS can install.
     if (process.platform === 'darwin' && !macInstallerReady && !isMacStagingDeferredToInstall()) {
       recordUpdaterLifecycle('macos_waiting_for_squirrel', { version: info.version })
+      watchMacStaging(info.version)
       sendStatus({ state: 'downloading', percent: 100, version: info.version })
       return
     }

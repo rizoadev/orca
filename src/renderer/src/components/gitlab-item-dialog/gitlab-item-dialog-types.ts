@@ -1,6 +1,6 @@
-import type React from 'react'
-import type { GitLabWorkItem } from '../../../../shared/gitlab-types'
-import type { TaskSourceContext } from '../../../../shared/task-source-context'
+import type { ReactNode } from 'react'
+import type { GitLabWorkItem } from '../../../../shared/gitlab/gitlab-types'
+import type { TaskSourceContext } from '../../../../shared/work-items/task-source-context'
 
 export type GitLabItemDialogProps = {
   item: GitLabWorkItem | null
@@ -9,14 +9,14 @@ export type GitLabItemDialogProps = {
   sourceContext?: TaskSourceContext | null
   onClose: () => void
   onCreateWorkspace?: (item: GitLabWorkItem) => void
-  /** Header action row (issue AI bar); rendered above the tabs. */
-  tabBarTrailingSlot?: React.ReactNode
-  /** Kept for callers that render the dialog as a modal. */
-  presentation?: 'modal' | 'sheet'
-  /** Hides the footer's external-provider actions for issues. */
-  hideFooterExternalActions?: boolean
-  /** Opens the item in the main view instead of a modal. */
+  /** Trailing control slot rendered on the dialog's tab bar (custom-modules). */
+  tabBarTrailingSlot?: ReactNode
+  /** Opens the work item in the main editor view instead of the composer (custom-modules). */
   onOpenInMainView?: (item: GitLabWorkItem) => void
+  /** Presentation context for the dialog chrome (custom-modules). */
+  presentation?: string
+  /** Hides the footer's external provider actions, e.g. for pure issues (custom-modules). */
+  hideFooterExternalActions?: boolean
 }
 
 export type GitLabDialogRepoSelector = {

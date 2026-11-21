@@ -10,7 +10,7 @@ import {
   SelectValue
 } from '@/components/ui/select'
 import { useAppStore } from '@/store'
-import { useActiveRepo } from '@/store/selectors'
+import { useActiveRepo } from '@/store/repos/use-repository-catalog'
 import { translate } from '@/i18n/i18n'
 import type { GitLabWorkItem } from '../../../../../../shared/types'
 import { detectRepoIssueProvider } from '../right-sidebar/repo-issue-provider'

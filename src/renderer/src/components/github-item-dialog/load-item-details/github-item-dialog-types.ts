@@ -1,7 +1,7 @@
-import type React from 'react'
-import type { GitHubAssignableUser } from '../../../../../shared/github/pull-request-types'
-import type { GitHubWorkItem } from '../../../../../shared/github/work-item-types'
-import type { TaskSourceContext } from '../../../../../shared/task-source-context'
+import type { ReactNode } from 'react'
+import type { GitHubAssignableUser } from '../../../../../shared/github/pull-requests/pull-request-types'
+import type { GitHubWorkItem } from '../../../../../shared/github/work-items/work-item-types'
+import type { TaskSourceContext } from '../../../../../shared/work-items/task-source-context'
 import type {
   GitHubWorkItemProjectOrigin,
   ItemDialogTab
@@ -31,10 +31,6 @@ export type GitHubItemDialogProps = {
   initialTab?: ItemDialogTab
   backLabel?: string
   onUse: (item: GitHubWorkItem) => void
-  /** Extra action row under the header (e.g. the issue AI bar). */
-  tabBarTrailingSlot?: React.ReactNode
-  /** Opens the item in the main view instead of a modal. */
-  onOpenInMainView?: (item: GitHubWorkItem) => void
   onReviewRequestsChange?: (
     itemKey: { id: string; repoId: string },
     reviewRequests: GitHubAssignableUser[]
@@ -42,6 +38,10 @@ export type GitHubItemDialogProps = {
   onClose: () => void
   /** Optional Project-origin context; when set, edits route via slug-addressed IPCs against the row's repo (slug routing wins for writes). */
   projectOrigin?: GitHubItemDialogProjectOrigin
+  /** Trailing control slot rendered on the dialog's tab bar (custom-modules). */
+  tabBarTrailingSlot?: ReactNode
+  /** Opens the work item in the main editor view instead of the composer (custom-modules). */
+  onOpenInMainView?: (item: GitHubWorkItem) => void
 }
 
 export type GitHubItemDialogEditSectionProps = {

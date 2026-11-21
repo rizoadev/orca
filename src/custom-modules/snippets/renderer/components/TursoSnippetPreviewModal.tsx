@@ -3,9 +3,9 @@
  */
 import React, { useEffect, useState } from 'react'
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet'
-import { detectLanguage } from '@/lib/language-detect'
+import { detectLanguage } from '../../../../shared/editor-language/editor-language-detect'
 import { joinPath } from '@/lib/path'
-import { userNamedFileAccess } from '@/lib/local-file-access'
+import { userNamedFileAccess } from '@/lib/files/access/local-file-access'
 import { translate } from '@/i18n/i18n'
 import type { TursoSnippet } from '../../../../shared/turso/turso-snippet-types'
 import { SnippetDiffSheet, isLocalFileMissing } from './snippet-diff-sheet'

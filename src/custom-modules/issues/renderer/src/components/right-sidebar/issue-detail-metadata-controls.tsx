@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import { FolderPlus, Tag, UserRound } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
-import { useRepoAssignees, useRepoLabels } from '@/hooks/useGitHubRepoMetadata'
+import { useRepoAssignees, useRepoLabels } from '@/lib/work-items/github/useGitHubRepoMetadata'
 import { useAppStore } from '@/store'
 import { translate } from '@/i18n/i18n'
 import type {

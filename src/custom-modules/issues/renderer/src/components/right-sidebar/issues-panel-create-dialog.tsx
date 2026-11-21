@@ -75,7 +75,7 @@ export function IssuesPanelCreateDialog({
     setGenerating(true)
 
     try {
-      const result = await window.api.got.generatePlan({
+      const result = await window.api.got!.generatePlan({
         repoPath,
         taskDescription: body.trim() ? `${title}\n\n${body}` : title
       })
@@ -88,7 +88,7 @@ export function IssuesPanelCreateDialog({
       // Why: only append if the user hasn't typed since we started generating.
       // If they did, show the plan in a toast so it's not lost.
       if (bodyAtGenerationStart.current === body) {
-        setBody((prev) => (prev ? `${prev}\n\n---\n${result.plan}` : result.plan))
+        setBody((prev) => (prev ? `${prev}\n\n---\n${result.plan ?? ''}` : (result.plan ?? '')))
       } else {
         toast.success('GoT plan generated (body was edited — plan preview available in clipboard)')
         // Could also offer to replace, but for now just notify.

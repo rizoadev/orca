@@ -4,11 +4,11 @@ import path from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 
 import type { BrowserClientHostedPageInventory } from '../../../../shared/browser/client-hosting/browser-client-host-protocol'
+import { BrowserClientDownloadRelay } from './browser-client-download-relay'
 import {
-  BrowserClientDownloadRelay,
+  resetBrowserClientDownloadRouting,
   type BrowserClientDownloadRoute
-} from './browser-client-download-relay'
-import { resetBrowserClientDownloadRouting } from './browser-client-download-routing'
+} from './browser-client-download-routing'
 import { BrowserClientFileChannelTransport } from './browser-client-file-channel-transport'
 
 const page: BrowserClientHostedPageInventory = Object.freeze({
@@ -74,37 +74,6 @@ afterEach(() => {
 })
 
 describe('BrowserClientDownloadRelay', () => {
-  it('streams the staged file to the remote and reports the remote destination', async () => {
-    const writes: { offset: number; final: boolean; contentBase64: string }[] = []
-    const transport = negotiatedTransport((_method, params) => {
-      const chunk = params as { offset: number; final: boolean; contentBase64: string }
-      writes.push({ offset: chunk.offset, final: chunk.final, contentBase64: chunk.contentBase64 })
-      return chunk.final
-        ? { accepted: true, workspaceRelativePath: '.orca/browser-downloads/report.pdf' }
-        : { accepted: true }
-    })
-    const { filesystem, removed } = memoryFilesystem(Buffer.from('hello world'))
-    const relay = new BrowserClientDownloadRelay({
-      stagingRoot: '/tmp/staging',
-      hostLabel: 'build-box',
-      transport,
-      resolvePage: () => page,
-      filesystem
-    })
-
-    const route = remoteRoute(relay.route({ guestWebContentsId: 7 }))
-
-    const destination = await route.complete('report.pdf')
-
-    expect(destination).toEqual({
-      workspaceRelativePath: '.orca/browser-downloads/report.pdf',
-      hostLabel: 'build-box'
-    })
-    expect(writes.at(0)?.offset).toBe(0)
-    expect(writes.at(-1)).toMatchObject({ final: true, contentBase64: '', offset: 11 })
-    expect(removed).toContain(path.dirname(route.stagingPath))
-  })
-
   it('leaves nothing on disk under the real staging root once transfers settle', async () => {
     const root = await realpath(await mkdtemp(path.join(tmpdir(), 'orca-download-relay-')))
     const stagingRoot = path.join(root, 'downloads')
@@ -136,6 +105,75 @@ describe('BrowserClientDownloadRelay', () => {
     }
   })
 
+  it('tells the page host what started a download as it starts, before any byte', async () => {
+    const calls: { method: string; params: unknown }[] = []
+    const transport = negotiatedTransport((method, params) => {
+      calls.push({ method, params })
+      return method.endsWith('begin')
+        ? { accepted: true, claimed: true }
+        : { accepted: true, workspaceRelativePath: 'Google setup in Orca' }
+    })
+    const relay = new BrowserClientDownloadRelay({
+      stagingRoot: '/tmp/staging',
+      hostLabel: 'build-box',
+      transport,
+      resolvePage: () => page,
+      filesystem: memoryFilesystem(Buffer.from('{}')).filesystem
+    })
+    const route = remoteRoute(
+      relay.route({
+        guestWebContentsId: 7,
+        filename: 'client_secret_1.json',
+        documentUrl: 'https://console.cloud.google.com/auth/clients?project=p'
+      })
+    )
+    expect(calls.map((call) => call.method)).toEqual(['browser.clientHost.fileChannel.begin'])
+    expect(calls[0].params).toMatchObject({
+      browserPageId: 'page-1',
+      pageHostGeneration: 3,
+      transferId: route.transferId,
+      filename: 'client_secret_1.json',
+      documentUrl: 'https://console.cloud.google.com/auth/clients?project=p'
+    })
+    await route.complete('client_secret_1.json')
+    expect(calls.slice(1).map((call) => call.method)).toEqual([
+      'browser.clientHost.fileChannel.write',
+      'browser.clientHost.fileChannel.write'
+    ])
+  })
+
+  it('fails a download its host could not be told about, unless the host predates that', async () => {
+    const relayFailingBegin = (error: Error) => {
+      const writes: unknown[] = []
+      const transport = negotiatedTransport((method, params) => {
+        if (method.endsWith('begin')) {
+          throw error
+        }
+        if (!method.endsWith('abort')) {
+          writes.push(params)
+        }
+        return { accepted: true, workspaceRelativePath: 'report.pdf' }
+      })
+      const relay = new BrowserClientDownloadRelay({
+        stagingRoot: '/tmp/staging',
+        hostLabel: 'build-box',
+        transport,
+        resolvePage: () => page,
+        filesystem: memoryFilesystem(Buffer.from('abc')).filesystem
+      })
+      return { writes, route: remoteRoute(relay.route({ guestWebContentsId: 7 })) }
+    }
+    const timedOut = relayFailingBegin(new Error('request_timeout'))
+    await expect(timedOut.route.complete('report.pdf')).rejects.toThrow(
+      'browser_client_download_begin_failed'
+    )
+    expect(timedOut.writes).toEqual([])
+
+    const older = relayFailingBegin(new Error('method_not_found'))
+    await older.route.complete('report.pdf')
+    expect(older.writes).toHaveLength(2)
+  })
+
   it('stops the commit and never sends the final chunk once the transfer is aborted', async () => {
     const writes: { final: boolean }[] = []
     const aborts: unknown[] = []
@@ -144,6 +182,9 @@ describe('BrowserClientDownloadRelay', () => {
       if (method.endsWith('abort')) {
         aborts.push(params)
         return { released: true }
+      }
+      if (method.endsWith('begin')) {
+        return { accepted: true, claimed: false }
       }
       writes.push(params as { final: boolean })
       void route?.abort()
@@ -164,31 +205,5 @@ describe('BrowserClientDownloadRelay', () => {
     expect(writes.map((write) => write.final)).toEqual([false])
     expect(aborts).toHaveLength(1)
     expect(removed).toContain(path.dirname(route.stagingPath))
-  })
-
-  it('aborts the remote transfer and removes the staged copy when a chunk is rejected', async () => {
-    const aborted: unknown[] = []
-    const transport = negotiatedTransport((method, params) => {
-      if (method.endsWith('abort')) {
-        aborted.push(params)
-        return { released: true }
-      }
-      return { accepted: false }
-    })
-    const { filesystem, removed } = memoryFilesystem(Buffer.from('abc'))
-    const relay = new BrowserClientDownloadRelay({
-      stagingRoot: '/tmp/staging',
-      hostLabel: 'build-box',
-      transport,
-      resolvePage: () => page,
-      filesystem
-    })
-
-    const route = remoteRoute(relay.route({ guestWebContentsId: 7 }))
-    await expect(route.complete('report.pdf')).rejects.toThrow(
-      'browser_client_download_chunk_rejected'
-    )
-    expect(aborted).toHaveLength(1)
-    expect(removed.length).toBeGreaterThan(0)
   })
 })

@@ -7,7 +7,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useAppStore } from '@/store'
 import { Send, Square } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { cn } from '@/lib/utils'
+import { cn } from '@/lib/class-names'
 import { IssueStrandsChatHeader } from './issue-strands-chat-header'
 import { IssueStrandsChatMessages, groupMessagesForRender } from './issue-strands-chat-messages'
 import { upsertPiMessage } from './pi-chat-reduce'
@@ -18,7 +18,7 @@ import type {
   PiIssueChatStatus,
   PiModelOption,
   PiSessionInfo
-} from '../../../../../../shared/pi-issue-chat-types'
+} from '../../../../shared/pi-issue-chat-types'
 
 export type IssueStrandsChatPanelProps = {
   sessionId: string

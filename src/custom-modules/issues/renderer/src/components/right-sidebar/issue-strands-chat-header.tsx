@@ -4,12 +4,12 @@
  * issue-strands-chat-panel to keep that module within the max-lines budget.
  */
 import { ChevronDown, Clock, LoaderCircle, Plus, Sparkles, Trash2 } from 'lucide-react'
-import { cn } from '@/lib/utils'
+import { cn } from '@/lib/class-names'
 import type {
   PiIssueChatStatus,
   PiModelOption,
   PiSessionInfo
-} from '../../../../../../shared/pi-issue-chat-types'
+} from '../../../../shared/pi-issue-chat-types'
 
 function formatRelativeTime(epochMs: number): string {
   const diff = Date.now() - epochMs

@@ -1,6 +1,6 @@
 import React from 'react'
 import { CircleDot, User } from 'lucide-react'
-import { cn } from '@/lib/utils'
+import { cn } from '@/lib/class-names'
 import type { GitLabWorkItem } from '../../../../../../shared/types'
 
 export function IssueBoardCard({

@@ -7,7 +7,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useShallow } from 'zustand/react/shallow'
 import { Github, Gitlab, Pencil, Check, Moon, Sun } from 'lucide-react'
-import { applyDocumentTheme } from '@/lib/document-theme'
+import { applyDocumentTheme } from '@/app-shell/appearance/document-theme'
 import mountainLandscapeUrl from '../../../resources/mountain-landscape-transparent.svg?url'
 import catPlayingUrl from '../../../resources/cat-playing.svg?url'
 import catWatermelonUrl from '../../../resources/cat-watermelon.svg?url'
@@ -17,11 +17,11 @@ import {
   type PomodoroPhase
 } from './renderer/src/components/right-sidebar/pomodoro-timer-store'
 import { parseRemoteRepo } from '@/components/right-sidebar/source-control/review/remote-repo'
-import { branchName } from '@/lib/git-utils'
+import { branchName } from '@/lib/source-control/branches/branch-name'
 import { useAppStore } from '@/store'
 import { useMottoStore } from './motto-store'
 import type { GitStatusEntry } from '../../shared/git/status/git-status-types'
-import type { DocumentThemePreference } from '@/lib/document-theme'
+import type { DocumentThemePreference } from '@/app-shell/appearance/document-theme'
 
 const HERO_PETS = [
   { url: catPlayingUrl, className: 'pet-hero-roam-left' },
@@ -152,7 +152,7 @@ export function PetHeroBanner({ worktreeId }: { worktreeId: string }): React.JSX
     let hasWorkingAgent = false
     let hasWaitingAgent = false
     for (const entry of Object.values(state.agentStatusByPaneKey)) {
-      if (entry.worktreeId !== worktreeId) {
+      if (!entry || entry.worktreeId !== worktreeId) {
         continue
       }
       if (entry.state === 'working') {
@@ -162,7 +162,7 @@ export function PetHeroBanner({ worktreeId }: { worktreeId: string }): React.JSX
       }
     }
     const hasSleepingAgent = Object.values(state.sleepingAgentSessionsByPaneKey).some(
-      (entry) => entry.worktreeId === worktreeId
+      (entry) => !!entry && entry.worktreeId === worktreeId
     )
     if (hasWorkingAgent) {
       return 'working'
@@ -196,7 +196,7 @@ export function PetHeroBanner({ worktreeId }: { worktreeId: string }): React.JSX
   const clickTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const clickCountRef = useRef(0)
   const gitEntries = useAppStore(
-    (state) => state.gitStatusByWorktree[worktreeId] ?? EMPTY_GIT_ENTRIES
+    (state) => state.gitStatusByWorktree?.[worktreeId] ?? EMPTY_GIT_ENTRIES
   )
   const rightSidebarOpen = useAppStore((s) => s.rightSidebarOpen)
   const gitDiffStats = useMemo(() => {

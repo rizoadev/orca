@@ -1,9 +1,9 @@
-import { projectHostSetupProjectionFromRepos } from '../../../../../../shared/project-host-setup-projection'
-import { getRepoExecutionHostId } from '../../../../../../shared/execution-host'
+import { projectHostSetupProjectionFromRepos } from '../../../../../../shared/project/host-setup/project-host-setup-projection'
+import { getRepoExecutionHostId } from '../../../../../../shared/execution-host/execution-host'
 import {
   normalizeTaskSourceContext,
   type TaskSourceContext
-} from '../../../../../../shared/task-source-context'
+} from '../../../../../../shared/work-items/task-source-context'
 import type {
   GitHubWorkItem,
   GitLabProjectRef,

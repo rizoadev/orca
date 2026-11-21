@@ -3,8 +3,8 @@
  * body used by the sidebar, but full-size inside the editor tab strip.
  */
 import React from 'react'
-import GitHubItemDialog from '@/components/GitHubItemDialog'
-import GitLabItemDialog from '@/components/GitLabItemDialog'
+import GitHubItemDialog from '@/components/github-item-dialog/open-dialog/github-item-dialog'
+import GitLabItemDialog from '@/components/gitlab-item-dialog/GitLabItemDialog'
 import { useAppStore } from '@/store'
 import { translate } from '@/i18n/i18n'
 import type { OpenFile } from '@/store/slices/editor/types/open-file'

@@ -1,4 +1,4 @@
-import { execFileSync } from 'node:child_process'
+import { execFileSync, type ChildProcessWithoutNullStreams } from 'node:child_process'
 import {
   chmodSync,
   existsSync,
@@ -14,7 +14,6 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { spawnProcess } from '@orca/process-host'
-import type { PipedChildProcess } from '@orca/process-host/process-spec'
 import { uploadDirectoryIntoWsl } from './wsl-directory-upload'
 import {
   createWslOrcadHostTransport,
@@ -37,7 +36,7 @@ describe.skipIf(process.platform === 'win32' || !hasSha256sum())('uploadDirector
   let dest: string
   let commands: string[]
   const transports: WslOrcadHostTransport[] = []
-  const children: PipedChildProcess[] = []
+  const children: ChildProcessWithoutNullStreams[] = []
 
   const getTransport = (): WslOrcadHostTransport => {
     const transport = transports.at(-1)
@@ -92,18 +91,13 @@ describe.skipIf(process.platform === 'win32' || !hasSha256sum())('uploadDirector
     expect(readdirSync(dest).filter((name) => name.startsWith('.orca-upload-'))).toEqual([])
   }
 
-  it('falls back to the tar stream when the mount is missing', async () => {
-    await uploadDirectoryIntoWsl(getTransport(), source, join(root, 'not-mounted'), dest)
-    expectUploaded()
-    expect(commands.some((command) => command.includes('tar -x'))).toBe(true)
-  })
-
-  it('merges into an existing destination, replacing changed files', async () => {
+  it('uses the tar stream to merge an upload when the mount is missing', async () => {
     mkdirSync(dest, { recursive: true })
     writeFileSync(join(dest, 'keep.txt'), 'kept')
     writeFileSync(join(dest, 'large.bin'), 'stale')
-    await uploadDirectoryIntoWsl(getTransport(), source, null, dest)
+    await uploadDirectoryIntoWsl(getTransport(), source, join(root, 'not-mounted'), dest)
     expectUploaded()
+    expect(commands.some((command) => command.includes('tar -x'))).toBe(true)
     expect(readFileSync(join(dest, 'keep.txt'), 'utf8')).toBe('kept')
   })
 

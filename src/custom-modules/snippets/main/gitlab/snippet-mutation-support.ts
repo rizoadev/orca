@@ -1,4 +1,4 @@
-import type { IssueSourcePreference } from '../../../../shared/repo-types'
+import type { IssueSourcePreference } from '../../../../shared/repository/repo-types'
 import type { GitLabSnippetDetail, GitLabSnippetVisibility } from '../../shared/types'
 import {
   getGlabKnownHosts,

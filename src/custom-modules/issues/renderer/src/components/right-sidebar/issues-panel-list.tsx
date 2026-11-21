@@ -8,11 +8,11 @@ import {
   LoaderCircle,
   XCircle
 } from 'lucide-react'
-import { cn } from '@/lib/utils'
+import { cn } from '@/lib/class-names'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
-import { TaskPageGitHubWorkItemStateBadge } from '@/components/task-page/github/task-page-github-work-item-status-badge'
-import { openHttpLink } from '@/lib/http-link-routing'
+import { TaskPageGitHubWorkItemStateBadge } from '@/components/task-page/github/listing/task-page-github-work-item-status-badge'
+import { openHttpLink } from '@/lib/browser/navigation/http-link-routing'
 import { translate } from '@/i18n/i18n'
 import { IssueAiWorkActions } from './issue-ai-work-actions'
 import { IssueAiWorkBadge } from './issue-ai-work-badge'

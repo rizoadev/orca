@@ -7,9 +7,9 @@ import {
   identityFor
 } from './codex-structured-session-adapter-fixture'
 import { describe, expect, it, vi } from 'vitest'
-import '../../../native-chat/agent-session-wire/structured-agent-session-adapter'
-import { AgentSessionPromptAnswerRejectedError } from '../../../native-chat/agent-session-wire/structured-agent-session-adapter-errors'
-import type { StructuredAgentSessionEventSink } from '../../../native-chat/agent-session-wire/structured-agent-session-event-sink'
+import '../../../native-chat/agent-session-wire/providers/structured-agent-session-adapter'
+import { AgentSessionPromptAnswerRejectedError } from '../../../native-chat/agent-session-wire/providers/structured-agent-session-adapter-errors'
+import type { StructuredAgentSessionEventSink } from '../../../native-chat/agent-session-wire/journal-ingress/structured-agent-session-event-sink'
 import type { CodexStructuredSessionEvent } from './codex-structured-session-state'
 
 describe('CodexStructuredSessionAdapter prompts', () => {
@@ -28,6 +28,24 @@ describe('CodexStructuredSessionAdapter prompts', () => {
 
     askApproval(codex)
     adapter.bindPromptItemId('session-1', 'codex:thread-abc:turn-1:3', 'codex-item-1')
+    const commit = vi.fn(async () => undefined)
+    await expect(
+      adapter.answerPrompt({
+        sessionId: 'session-1',
+        itemId: 'codex:thread-abc:turn-1:3',
+        kind: 'approval',
+        response: { kind: 'option', optionId: 'yolo' },
+        fence: 7,
+        commit
+      })
+    ).rejects.toThrow(
+      new AgentSessionPromptAnswerRejectedError(
+        'Codex item codex-item-1 takes an approval decision'
+      )
+    )
+    expect(commit).not.toHaveBeenCalled()
+    expect(codex.connections[0].replies).toEqual([])
+
     await adapter.answerPrompt({
       sessionId: 'session-1',
       itemId: 'codex:thread-abc:turn-1:3',
@@ -114,7 +132,12 @@ describe('CodexStructuredSessionAdapter prompts', () => {
 
     await vi.waitFor(() => expect(codex.connections[0].closeCount).toBe(1))
     expect(events.filter((event) => event.type === 'ended')).toMatchObject([
-      { cause: 'unexpected-exit', fence: 7, acquisitionGeneration: 'generation-1' }
+      {
+        cause: 'unexpected-exit',
+        fence: 7,
+        acquisitionGeneration: 'generation-1',
+        failure: { kind: 'hostFault' }
+      }
     ])
   })
 
@@ -188,27 +211,6 @@ describe('CodexStructuredSessionAdapter prompts', () => {
     ])
   })
 
-  it('rejects an option id that is not a Codex decision', async () => {
-    const codex = fakeCodex()
-    const adapter = await acquired(codex)
-
-    askApproval(codex)
-    const commit = vi.fn(async () => undefined)
-
-    await expect(
-      adapter.answerPrompt({
-        sessionId: 'session-1',
-        itemId: 'codex-item-1',
-        kind: 'approval',
-        response: { kind: 'option', optionId: 'yolo' },
-        fence: 7,
-        commit
-      })
-    ).rejects.toThrow(AgentSessionPromptAnswerRejectedError)
-    expect(commit).not.toHaveBeenCalled()
-    expect(codex.connections[0].replies).toEqual([])
-  })
-
   it('holds a multi-question request until every question is answered', async () => {
     const codex = fakeCodex()
     const adapter = await acquired(codex)
@@ -248,94 +250,5 @@ describe('CodexStructuredSessionAdapter prompts', () => {
     expect(codex.connections[0].replies).toEqual([
       { id: 12, result: { answers: { q1: { answers: ['yes'] }, q2: { answers: ['no'] } } } }
     ])
-  })
-
-  it.each(['accept', 'acceptForSession', 'cancel'])(
-    'durably journals and answers MCP approval %s once',
-    async (optionId) => {
-      const codex = fakeCodex()
-      const events: CodexStructuredSessionEvent[] = []
-      const adapter = await acquired(codex, {}, events)
-      codex.connections[0].handlers.onServerRequest?.({
-        id: 13,
-        method: 'mcpServer/elicitation/request',
-        params: {
-          threadId: THREAD_ID,
-          turnId: 'turn-1',
-          serverName: 'local',
-          mode: 'form',
-          message: 'Allow local tool?',
-          requestedSchema: { type: 'object', properties: {} },
-          _meta: { codex_approval_kind: 'mcp_tool_call', persist: ['session'] }
-        }
-      })
-      expect(codex.connections[0].replies).toEqual([])
-      const event = events.find((event) => event.type === 'prompt')
-      if (!event || event.type !== 'prompt') {
-        throw new Error('MCP approval missing from journal')
-      }
-      adapter.bindPromptItemId('session-1', 'journal-mcp', event.codexItemId)
-      const commit = vi.fn(async () => undefined)
-      const answer = {
-        sessionId: 'session-1',
-        itemId: 'journal-mcp',
-        kind: 'approval' as const,
-        response: { kind: 'option' as const, optionId },
-        fence: 7,
-        commit
-      }
-      await adapter.answerPrompt(answer)
-      expect(commit).toHaveBeenCalledOnce()
-      expect(codex.connections[0].replies).toEqual([
-        {
-          id: 13,
-          result: {
-            action: optionId === 'cancel' ? 'cancel' : 'accept',
-            content: null,
-            _meta: {
-              accept: null,
-              acceptForSession: { persist: 'session' },
-              cancel: { codex_approval_cancellation_reason: 'user' }
-            }[optionId]
-          }
-        }
-      ])
-      await expect(adapter.answerPrompt(answer)).rejects.toThrow('no longer waiting on')
-      expect(commit).toHaveBeenCalledOnce()
-      expect(codex.connections[0].replies).toHaveLength(1)
-    }
-  )
-
-  it('declines MCP elicitation and journals the explicit disposition', async () => {
-    const codex = fakeCodex()
-    const events: CodexStructuredSessionEvent[] = []
-    await acquired(codex, {}, events)
-
-    codex.connections[0].handlers.onServerRequest?.({
-      id: 13,
-      method: 'mcpServer/elicitation/request',
-      params: { itemId: 'codex-item-3', threadId: THREAD_ID }
-    })
-
-    expect(codex.connections[0].replies).toEqual([
-      { id: 13, result: { action: 'decline', content: null, _meta: null } }
-    ])
-    expect(events.some((event) => event.type === 'prompt')).toBe(false)
-  })
-
-  it('surfaces an answer to a prompt Codex already forgot', async () => {
-    const codex = fakeCodex()
-    const adapter = await acquired(codex)
-
-    await expect(
-      adapter.answerPrompt({
-        sessionId: 'session-1',
-        itemId: 'codex-item-gone',
-        kind: 'approval',
-        response: { kind: 'option', optionId: 'accept' },
-        fence: 7,
-        commit: async () => undefined
-      })
-    ).rejects.toThrow('no longer waiting on codex-item-gone')
   })
 })

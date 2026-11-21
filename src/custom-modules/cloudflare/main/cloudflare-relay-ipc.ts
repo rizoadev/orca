@@ -20,9 +20,8 @@ function createRelay(): CloudflareRelayService {
     store: state.store!,
     userDataPath: getCanonicalUserDataPath(),
     getWsPort: () => {
-      const endpoint = state.runtimeRpc?.getWebSocketEndpoint?.()
-      const match = endpoint ? /:\d+$/.exec(endpoint) : null
-      return match ? Number(match[0].slice(1)) : null
+      // This upstream revision no longer exposes runtimeRpc on mainProcessState; live WS port is best-effort, degrade to unknown.
+      return null
     }
   })
 }

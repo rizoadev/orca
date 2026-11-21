@@ -1,6 +1,6 @@
 import React from 'react'
 import { CircleDot } from 'lucide-react'
-import { cn } from '@/lib/utils'
+import { cn } from '@/lib/class-names'
 
 export function IssuesPanelEmpty({
   title,

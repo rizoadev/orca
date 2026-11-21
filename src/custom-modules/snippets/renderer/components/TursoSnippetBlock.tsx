@@ -20,11 +20,11 @@ import {
   SelectTrigger,
   SelectValue
 } from '@/components/ui/select'
-import { useConfirmationDialog } from '@/components/confirmation-dialog-context'
+import { useConfirmationDialog } from '@/components/dismiss/confirmation/confirmation-dialog-context'
 import { useAppStore } from '@/store'
-import { cn } from '@/lib/utils'
+import { cn } from '@/lib/class-names'
 import { joinPath } from '@/lib/path'
-import { branchName } from '@/lib/git-utils'
+import { branchName } from '@/lib/source-control/branches/branch-name'
 import { translate } from '@/i18n/i18n'
 import { parseSnippetTitle } from './snippet-encoding'
 import type { TursoSnippet } from '../../../../shared/turso/turso-snippet-types'
@@ -76,11 +76,8 @@ export function TursoSnippetBlock({
     return result
   }, [worktrees, currentBranch])
 
-  const [selectedBranch, setSelectedBranch] = useState<string>(currentBranch)
-
-  useEffect(() => {
-    setSelectedBranch(currentBranch)
-  }, [currentBranch])
+  const [branchOverride, setBranchOverride] = useState<string | null>(null)
+  const selectedBranch = branchOverride ?? currentBranch
 
   const snippets = useMemo(
     () => allSnippets.filter((s) => s.branch === selectedBranch),
@@ -120,8 +117,7 @@ export function TursoSnippetBlock({
         title: 'Delete snippet',
         description: `Delete "${snippet.title}" from Turso? This cannot be undone.`,
         confirmLabel: 'Delete',
-        confirmVariant: 'destructive',
-        icon: Trash2
+        confirmVariant: 'destructive'
       })
       if (!confirmed) {
         return
@@ -223,7 +219,7 @@ export function TursoSnippetBlock({
           <CollapsibleContent>
             {/* ── Branch selector ── */}
             <div className="flex items-center gap-1.5 px-2 py-0.5">
-              <Select value={selectedBranch} onValueChange={setSelectedBranch}>
+              <Select value={selectedBranch} onValueChange={setBranchOverride}>
                 <SelectTrigger
                   className={cn(
                     'h-4 min-w-0 flex-1 border-0 bg-transparent px-1.5 py-0 text-[11px] shadow-none focus:ring-0 [&_svg]:size-3',

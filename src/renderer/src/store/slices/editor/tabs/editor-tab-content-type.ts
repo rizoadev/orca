@@ -1,9 +1,9 @@
-import type { Tab } from '../../../../../../shared/tab-types'
+import type { Tab } from '../../../../../../shared/workspace-layout/tab-groups/tab-types'
 import type { OpenFile } from '../types/open-file'
 
 export type EditorTabContentType = Extract<
   Tab['contentType'],
-  'editor' | 'diff' | 'conflict-review' | 'check-details' | 'issue-details'
+  'editor' | 'diff' | 'conflict-review' | 'check-details' | 'git-graph' | 'issue-details'
 >
 
 export function isEditorTabContentType(
@@ -14,18 +14,20 @@ export function isEditorTabContentType(
     contentType === 'diff' ||
     contentType === 'conflict-review' ||
     contentType === 'check-details' ||
+    contentType === 'git-graph' ||
     contentType === 'issue-details'
   )
 }
 
 /** Editor tabs with no file behind them: their path is a synthetic id, never a workspace path. */
 export function isVirtualEditorFile(file: Pick<OpenFile, 'mode'>): boolean {
-  return file.mode === 'check-details' || file.mode === 'issue-details'
+  return file.mode === 'check-details' || file.mode === 'git-graph' || file.mode === 'issue-details'
 }
 
 export function editorTabContentTypeForMode(mode: OpenFile['mode']): EditorTabContentType {
   return mode === 'conflict-review' ||
     mode === 'check-details' ||
+    mode === 'git-graph' ||
     mode === 'issue-details' ||
     mode === 'diff'
     ? mode

@@ -24,9 +24,10 @@ import {
   SelectValue
 } from '@/components/ui/select'
 import { useAppStore } from '@/store'
-import { useActiveWorktree, useRepoById } from '@/store/selectors'
+import { useActiveWorktree } from '@/store/workspaces/selection/use-selected-worktree'
+import { useRepoById } from '@/store/repos/use-repository-catalog'
 import { translate } from '@/i18n/i18n'
-import { getRepoExecutionHostId } from '../../../../../../shared/execution-host'
+import { getRepoExecutionHostId } from '../../../../../../shared/execution-host/execution-host'
 import type { LinearProjectSummary } from '../../../../../../shared/linear/project-types'
 import type { LinearTeam } from '../../../../../../shared/linear/workspace-types'
 

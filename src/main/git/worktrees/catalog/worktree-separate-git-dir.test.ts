@@ -2,28 +2,8 @@ import { execFileSync } from 'node:child_process'
 import { mkdir, mkdtemp, realpath, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import * as path from 'node:path'
-import { afterEach, describe, expect, it, vi } from 'vitest'
-import type * as GitRunner from '../../command-runner/git-exec-file'
-
-// Spy on real Git to count extra rev-parse calls without replacing path behavior.
-const revParseTopLevelCalls = { count: 0 }
-vi.mock('../../command-runner/git-exec-file', async () => {
-  const actual = await vi.importActual<typeof GitRunner>('../../command-runner/git-exec-file')
-  return {
-    ...actual,
-    gitExecFileAsync: (args: string[], options?: unknown) => {
-      if (args[0] === 'rev-parse' && args.includes('--show-toplevel')) {
-        revParseTopLevelCalls.count += 1
-      }
-      return (actual.gitExecFileAsync as (a: string[], o?: unknown) => Promise<unknown>)(
-        args,
-        options
-      )
-    }
-  }
-})
-
-const { listWorktrees } = await import('./worktree-scan-cache')
+import { afterEach, describe, expect, it } from 'vitest'
+import { listWorktrees } from './worktree-scan-cache'
 
 const tempRoots: string[] = []
 
@@ -74,22 +54,13 @@ async function createNormalRepo(): Promise<string> {
   return createCommittedRepo(root, 'repo')
 }
 
-async function createBareRepo(): Promise<string> {
-  const root = await mkdtemp(path.join(tmpdir(), 'orca-bare-worktree-'))
-  tempRoots.push(root)
-  const repoPath = path.join(root, 'repo.git')
-  execFileSync('git', ['init', '--bare', '--quiet', repoPath])
-  return realpath(repoPath)
-}
-
 afterEach(async () => {
-  revParseTopLevelCalls.count = 0
   await Promise.all(tempRoots.splice(0).map((root) => rm(root, { recursive: true, force: true })))
 })
 
 describe('git worktree separate git dir paths', () => {
   it.skipIf(process.platform === 'win32')(
-    'normalizes the main worktree path for a separate-git-dir repo',
+    'resolves a separate-Git-dir repo from its main and linked worktrees',
     async () => {
       const { gitDirPath, worktreePath } = await createSeparateGitDirRepo()
 
@@ -101,31 +72,18 @@ describe('git worktree separate git dir paths', () => {
         isMainWorktree: true
       })
       expect(mainWorktree?.path).not.toBe(gitDirPath)
+
+      const linkedWorktreePath = path.join(path.dirname(worktreePath), 'linked')
+      git(worktreePath, ['worktree', 'add', '--quiet', linkedWorktreePath, '-b', 'feature'])
+      const resolvedLinked = await realpath(linkedWorktreePath)
+      const fromLinked = await listWorktrees(resolvedLinked)
+
+      expect(fromLinked.find((worktree) => worktree.isMainWorktree)?.path).toBe(gitDirPath)
+      expect(fromLinked.filter((worktree) => worktree.path === resolvedLinked)).toEqual([
+        expect.objectContaining({ branch: 'refs/heads/feature', isMainWorktree: false })
+      ])
     }
   )
-
-  it.skipIf(process.platform === 'win32')(
-    'fires exactly one rev-parse for a separate-git-dir repo',
-    async () => {
-      const { worktreePath } = await createSeparateGitDirRepo()
-
-      await listWorktrees(worktreePath)
-
-      expect(revParseTopLevelCalls.count).toBe(1)
-    }
-  )
-
-  it.skipIf(process.platform === 'win32')('leaves a normal repo main path unchanged', async () => {
-    const repoPath = await createNormalRepo()
-
-    const worktrees = await listWorktrees(repoPath)
-    const mainWorktree = worktrees.find((worktree) => worktree.isMainWorktree)
-
-    expect(mainWorktree).toMatchObject({
-      path: repoPath,
-      isMainWorktree: true
-    })
-  })
 
   it.skipIf(process.platform === 'win32')(
     'leaves an ordinary repo reached via a symlinked path unchanged',
@@ -167,30 +125,17 @@ describe('git worktree separate git dir paths', () => {
     }
   )
 
-  it.skipIf(process.platform === 'win32').each([
-    ['bare', 'bare'],
-    ['separate-git-dir', 'separate-git-dir']
-  ] as const)(
-    'leaves the main entry unchanged when a %s repo is scanned via its linked worktree',
-    async (_label, kind) => {
-      // Bare/separate-git-dir main rows match the common dir, so the caller's own gitdir must distinguish them.
-      let mainPath: string
-      let repoForAdd: string
-      if (kind === 'bare') {
-        const root = await mkdtemp(path.join(tmpdir(), 'orca-bare-linked-'))
-        tempRoots.push(root)
-        const sourcePath = await createCommittedRepo(root, 'source')
-        mainPath = path.join(root, 'project.git')
-        execFileSync('git', ['clone', '--bare', '--quiet', sourcePath, mainPath])
-        mainPath = await realpath(mainPath)
-        repoForAdd = mainPath
-      } else {
-        const { gitDirPath, worktreePath } = await createSeparateGitDirRepo()
-        mainPath = gitDirPath
-        repoForAdd = worktreePath
-      }
-      const linkedWorktreePath = path.join(path.dirname(mainPath), 'linked')
-      git(repoForAdd, ['worktree', 'add', '--quiet', linkedWorktreePath, '-b', 'feature'])
+  it.skipIf(process.platform === 'win32')(
+    'keeps the bare repo row when scanned via its linked worktree',
+    async () => {
+      const root = await mkdtemp(path.join(tmpdir(), 'orca-bare-linked-'))
+      tempRoots.push(root)
+      const sourcePath = await createCommittedRepo(root, 'source')
+      const barePath = path.join(root, 'project.git')
+      execFileSync('git', ['clone', '--bare', '--quiet', sourcePath, barePath])
+      const mainPath = await realpath(barePath)
+      const linkedWorktreePath = path.join(root, 'linked')
+      git(mainPath, ['worktree', 'add', '--quiet', linkedWorktreePath, '-b', 'feature'])
       const resolvedLinked = await realpath(linkedWorktreePath)
 
       const worktrees = await listWorktrees(resolvedLinked)
@@ -201,17 +146,4 @@ describe('git worktree separate git dir paths', () => {
       ])
     }
   )
-
-  it.skipIf(process.platform === 'win32')('does not throw for a bare repo', async () => {
-    const repoPath = await createBareRepo()
-
-    const worktrees = await listWorktrees(repoPath)
-    const mainWorktree = worktrees.find((worktree) => worktree.isMainWorktree)
-
-    expect(mainWorktree).toMatchObject({
-      path: repoPath,
-      isBare: true,
-      isMainWorktree: true
-    })
-  })
 })

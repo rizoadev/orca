@@ -20,11 +20,11 @@ import {
   SelectTrigger,
   SelectValue
 } from '@/components/ui/select'
-import { useConfirmationDialog } from '@/components/confirmation-dialog-context'
+import { useConfirmationDialog } from '@/components/dismiss/confirmation/confirmation-dialog-context'
 import { useAppStore } from '@/store'
-import { cn } from '@/lib/utils'
+import { cn } from '@/lib/class-names'
 import { joinPath } from '@/lib/path'
-import { branchName } from '@/lib/git-utils'
+import { branchName } from '@/lib/source-control/branches/branch-name'
 import { translate } from '@/i18n/i18n'
 import type { GitLabSnippet } from '../../shared/types'
 import type { Worktree } from '../../../../shared/worktree/types'
@@ -69,13 +69,9 @@ export function SnippetBlock({ worktreePath, branch, repoId, connectionId }: Sni
     return result
   }, [worktrees, currentBranch])
 
-  // Selected branch — default to current branch
-  const [selectedBranch, setSelectedBranch] = useState<string>(currentBranch)
-
-  // Sync selectedBranch when the active branch changes (e.g. user switches worktree)
-  useEffect(() => {
-    setSelectedBranch(currentBranch)
-  }, [currentBranch])
+  // Branch selection — user override wins, otherwise follows the current branch
+  const [branchOverride, setBranchOverride] = useState<string | null>(null)
+  const selectedBranch = branchOverride ?? currentBranch
 
   // Snippets filtered by selectedBranch
   const snippets = useMemo(
@@ -129,8 +125,7 @@ export function SnippetBlock({ worktreePath, branch, repoId, connectionId }: Sni
         title: 'Delete snippet',
         description: `Delete "${displayName}" from GitLab? This cannot be undone.`,
         confirmLabel: 'Delete',
-        confirmVariant: 'destructive',
-        icon: Trash2
+        confirmVariant: 'destructive'
       })
       if (!confirmed) {
         return
@@ -246,7 +241,7 @@ export function SnippetBlock({ worktreePath, branch, repoId, connectionId }: Sni
           <CollapsibleContent>
             {/* ── Branch selector ── */}
             <div className="flex items-center gap-1.5 px-2 py-0.5">
-              <Select value={selectedBranch} onValueChange={setSelectedBranch}>
+              <Select value={selectedBranch} onValueChange={setBranchOverride}>
                 <SelectTrigger
                   className={cn(
                     'h-4 min-w-0 flex-1 border-0 bg-transparent px-1.5 py-0 text-[11px] shadow-none focus:ring-0 [&_svg]:size-3',

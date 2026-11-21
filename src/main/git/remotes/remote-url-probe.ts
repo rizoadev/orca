@@ -1,17 +1,36 @@
+import { AsyncLocalStorage } from 'node:async_hooks'
 import { gitExecFileAsync } from '../command-runner/git-exec-file'
 import { isStableMissingGitRemoteError } from './stable-missing-git-remote-error'
-import type { GitAdmissionTier } from '../../../shared/rpc-contract/git-admission-tier-params'
+import type { GitAdmissionTier } from '../../../shared/rpc-contract/source-control/git-admission-tier-params'
 import { requireReachableGitRoute } from '../../providers/execution-host-provider-dispatch'
-import { getConnectionExecutionHostId } from '../../../shared/execution-host'
+import { getConnectionExecutionHostId } from '../../../shared/execution-host/execution-host'
 
-// Bound config probes so stalled mounts or WSL cannot hold every forge lookup indefinitely.
-export const REMOTE_URL_PROBE_TIMEOUT_MS = 30_000
+import { REMOTE_URL_PROBE_TIMEOUT_MS } from './remote-git-probe-timeout'
+import { isRemoteListedAbsent } from './remote-name-listing'
+
+export { REMOTE_URL_PROBE_TIMEOUT_MS }
 
 export type RemoteUrlProbeContext = {
   repoPath: string
   connectionId?: string | null
   wslDistro?: string
   admissionTier?: GitAdmissionTier
+}
+
+type SharedRemoteUrlReads = { open: boolean; reads: Map<string, Promise<string>> }
+
+const sharedRemoteUrlReads = new AsyncLocalStorage<SharedRemoteUrlReads>()
+
+/** Reads each remote URL at most once while `work` runs, so a provider-by-provider scan shares one read. */
+export async function withSharedRemoteUrlReads<T>(work: () => Promise<T>): Promise<T> {
+  const scope: SharedRemoteUrlReads = { open: true, reads: new Map() }
+  try {
+    return await sharedRemoteUrlReads.run(scope, work)
+  } finally {
+    // Work scheduled from inside the scope must read fresh Git config later.
+    scope.open = false
+    scope.reads.clear()
+  }
 }
 
 /** Reads a remote URL, or null for an SSH repo, which this process does not serve. */
@@ -21,6 +40,39 @@ export async function readRemoteUrl(
 ): Promise<string | null> {
   if (context.connectionId) {
     return null
+  }
+  const scope = sharedRemoteUrlReads.getStore()
+  if (!scope?.open) {
+    return readUncachedRemoteUrl(context, remoteName)
+  }
+  const key = [
+    context.wslDistro ?? '',
+    context.admissionTier ?? '',
+    context.repoPath,
+    remoteName
+  ].join('\0')
+  let read = scope.reads.get(key)
+  if (!read) {
+    read = readUncachedRemoteUrl(context, remoteName)
+    scope.reads.set(key, read)
+  }
+  return read
+}
+
+async function readUncachedRemoteUrl(
+  context: RemoteUrlProbeContext,
+  remoteName: string
+): Promise<string> {
+  // A fresh listing signed by the unchanged repo config already answered; Git would say the same.
+  if (
+    await isRemoteListedAbsent(
+      context.repoPath,
+      remoteName,
+      context.connectionId,
+      context.wslDistro ? { wslDistro: context.wslDistro } : {}
+    )
+  ) {
+    throw new Error(`error: No such remote '${remoteName}'`)
   }
   const { stdout } = await gitExecFileAsync(['remote', 'get-url', remoteName], {
     cwd: context.repoPath,

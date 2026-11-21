@@ -8,18 +8,17 @@ import {
   createClaudeProvider,
   createCodexProvider,
   createMuseProvider,
-  createOpenCodeProvider,
-  createPiProvider
+  createOpenCodeProvider
 } from './usage-provider-normalization'
 import { getIntlLocale } from '@/i18n/i18n'
+import type { Translate } from '@/i18n/use-translate'
 
-export function buildUsageOverview(input: UsageOverviewInput): UsageOverviewModel {
+export function buildUsageOverview(input: UsageOverviewInput, t?: Translate): UsageOverviewModel {
   const providers = [
-    createClaudeProvider(input.claude),
-    createCodexProvider(input.codex),
-    createOpenCodeProvider(input.opencode),
-    createMuseProvider(input.muse),
-    createPiProvider(input.pi)
+    createClaudeProvider(input.claude, t),
+    createCodexProvider(input.codex, t),
+    createOpenCodeProvider(input.opencode, t),
+    createMuseProvider(input.muse, t)
   ]
   const daily = buildDailyOverview(input)
   const bestDay =
@@ -80,7 +79,7 @@ export function buildUsageOverview(input: UsageOverviewInput): UsageOverviewMode
   }
 }
 
-export function formatUsageTokens(value: number): string {
+export function formatUsageTokens(value: number, intlLocale: string = getIntlLocale()): string {
   if (value >= 1_000_000_000) {
     return `${(value / 1_000_000_000).toFixed(1)}B`
   }
@@ -90,7 +89,7 @@ export function formatUsageTokens(value: number): string {
   if (value >= 1_000) {
     return `${(value / 1_000).toFixed(1)}k`
   }
-  return value.toLocaleString(getIntlLocale())
+  return value.toLocaleString(intlLocale)
 }
 
 export function formatUsageCost(value: number | null): string {

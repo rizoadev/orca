@@ -1,5 +1,6 @@
-import type { RecentlyClosedTabPosition } from '../../recently-closed-tabs'
-import type { EditorFileOperationProvenance } from '@/lib/editor-file-operation-owner'
+import type { ExecutionHostId } from '../../../../../../shared/execution-host/execution-host'
+import type { RecentlyClosedTabPosition } from '../../tabs/recently-closed-tab-position'
+import type { EditorFileOperationProvenance } from '@/lib/editor/file-operations/editor-file-operation-provenance'
 import type {
   GitBranchChangeEntry,
   GitBranchCompareSummary,
@@ -16,7 +17,7 @@ import type {
   DiffSource,
   OpenCheckRunDetailsState,
   OpenConflictMetadata
-} from '../../../../../../shared/editor-tab-view-types'
+} from '../../../../../../shared/editor/views/editor-tab-view-types'
 
 export type BranchCompareLike = Pick<
   GitBranchCompareSummary,
@@ -83,7 +84,7 @@ export type OpenFile = {
   fileContentReloadNonce?: number
   /** Why: CI check-details tabs are virtual editor tabs backed by fetched PR check-run metadata, not a file on disk. */
   checkRunDetails?: OpenCheckRunDetailsState
-  /** Virtual tab: an issue detail view backed by provider data, not a file on disk. */
+  /** Open issue-detail tab state (custom-modules/issues). */
   issueDetails?: OpenIssueDetailsState
   // Only host-mirrored tabs may be culled on omission; locally opened tabs survive.
   mirroredFromRuntimeSession?: boolean
@@ -93,10 +94,15 @@ export type OpenFile = {
   csvPreviewOnly?: boolean
   /** Why: explicit live tail, only meaningful for a read-only local log. */
   liveTail?: boolean
-  mode: 'edit' | 'diff' | 'conflict-review' | 'markdown-preview' | 'check-details' | 'issue-details'
+  mode:
+    | 'edit'
+    | 'diff'
+    | 'conflict-review'
+    | 'markdown-preview'
+    | 'check-details'
+    | 'git-graph'
+    | 'issue-details'
 }
-
-export type ActivityBarPosition = 'top' | 'side'
 
 export type MarkdownViewMode = 'source' | 'rich' | 'preview'
 
@@ -122,6 +128,8 @@ export const MAX_RECENT_CLOSED_EDITOR_TABS = 10
 export type EditorTabSelection = 'focus' | 'background' | 'none'
 
 export type EditorOpenTargetOptions = {
+  placementWorkspaceId?: string
+  executionHostId?: ExecutionHostId
   targetGroupId?: string
   preview?: boolean
   runtimeEnvironmentId?: string | null

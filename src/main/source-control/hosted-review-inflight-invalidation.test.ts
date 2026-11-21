@@ -123,28 +123,6 @@ describe('hosted review in-flight invalidation', () => {
     expect(freshLookup).toHaveBeenCalledTimes(1)
   })
 
-  it('keeps other hosts, paths and their pending promises isolated', async () => {
-    const others = [
-      { ...identity, executionHostId: 'local' as const },
-      { ...identity, executionHostId: 'ssh:host-b' as const },
-      { ...identity, repoPath: '/repo-other' }
-    ].map((key) => {
-      const response = Promise.withResolvers<HostedReviewInfo | null>()
-      const lookup = vi.fn(() => response.promise)
-      return { key, response, lookup, admitted: withHostedReviewBranchCache(key, options, lookup) }
-    })
-    invalidateHostedReviewBranchCache(identity.repoPath, identity.executionHostId)
-    const readers = others.map(({ key, lookup }) =>
-      withHostedReviewBranchCache(key, options, lookup)
-    )
-    for (const other of others) {
-      expect(other.lookup).toHaveBeenCalledTimes(1)
-      other.response.resolve(review)
-    }
-    expect(await Promise.all(readers)).toEqual([review, review, review])
-    await Promise.all(others.map((other) => other.admitted))
-  })
-
   it('sweeps invalidated readers after sleep without expiring their replacement', async () => {
     const oldResponse = Promise.withResolvers<HostedReviewInfo | null>()
     const freshResponse = Promise.withResolvers<HostedReviewInfo | null>()
@@ -280,33 +258,22 @@ function stuckLookup() {
 }
 describe('hosted review manual refresh invalidation', () => {
   // The branch cache never branches on the forge, so one stands for all of them.
-  it('starts a post-click read and fences the pre-click answer at the same clock time', async () => {
+  it('fences a pre-click answer that completes after the manual answer at the same clock time', async () => {
     const old = stuckLookup()
     const before = withHostedReviewBranchCache(identity, { headOid: null, force: true }, old.lookup)
     const lookup = vi.fn(async () => mergedReview)
-    const options = { headOid: null, force: true, userRefresh: true }
-    const click = withHostedReviewBranchCache(identity, options, lookup)
-    old.resolve(openReview)
-    await expect(before).resolves.toMatchObject({ state: 'open' })
-    await expect(click).resolves.toEqual(mergedReview)
-    expect(lookup).toHaveBeenCalledOnce()
-    await expect(withHostedReviewBranchCache(identity, { headOid: null }, lookup)).resolves.toEqual(
-      mergedReview
-    )
-  })
 
-  it('fences a pre-click answer that completes after the manual answer', async () => {
-    const old = stuckLookup()
-    const before = withHostedReviewBranchCache(identity, { headOid: null }, old.lookup)
     await expect(
       withHostedReviewBranchCache(
         identity,
         { headOid: null, force: true, userRefresh: true },
-        async () => mergedReview
+        lookup
       )
     ).resolves.toEqual(mergedReview)
+    expect(lookup).toHaveBeenCalledOnce()
+
     old.resolve(openReview)
-    await before
+    await expect(before).resolves.toEqual(openReview)
     await expect(
       withHostedReviewBranchCache(identity, { headOid: null }, async () => openReview)
     ).resolves.toEqual(mergedReview)

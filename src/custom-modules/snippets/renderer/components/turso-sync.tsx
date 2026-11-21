@@ -1,6 +1,6 @@
 import { toast } from 'sonner'
 import { useAppStore } from '@/store/index'
-import { branchName } from '@/lib/git-utils'
+import { branchName } from '@/lib/source-control/branches/branch-name'
 import { encodeSnippetFileName, snippetTitle } from './snippet-encoding'
 
 export function useIsTursoConfigured(): boolean {

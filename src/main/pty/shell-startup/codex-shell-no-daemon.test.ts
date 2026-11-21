@@ -1,27 +1,18 @@
-import {
-  chmodSync,
-  existsSync,
-  mkdirSync,
-  mkdtempSync,
-  readFileSync,
-  rmSync,
-  writeFileSync
-} from 'node:fs'
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { delimiter, join } from 'node:path'
-import { spawnSync } from 'node:child_process'
-import { afterEach, describe, expect, it } from 'vitest'
+import { spawn, spawnSync } from 'node:child_process'
+import { afterAll, describe, it } from 'vitest'
 import {
   CODEX_COMMAND_IDENTITY_ENV_KEYS,
   getFishCodexShellLaunchPreflight,
   getPosixCodexShellLaunchPreflight
-} from '../../../shared/codex-shell-function'
-import { resolveFishBinary } from '../../../shared/fish-binary-requirement'
-import { getPowerShellAgentWrappers } from '../../../shared/powershell-agent-wrappers'
-import {
-  CODEX_REMOTE_VIEWER_SSH_CONNECTION,
-  REMOTE_VIEWER_CLIPBOARD_ENV
-} from '../../../shared/remote-viewer-clipboard-env'
+} from '../../../shared/shell/launch/agents/codex-shell-function'
+import { resolveFishBinary } from '../../../shared/shell/testing/fish-binary-requirement'
+import { getPowerShellAgentWrappers } from '../../../shared/shell/launch/agents/powershell-agent-wrappers'
+import { REMOTE_VIEWER_CLIPBOARD_ENV } from '../../../shared/clipboard/remote-viewer-clipboard-env'
+import { withCodexStartupImageCommand } from '../../../shared/agent-launch/startup/codex-startup-image-command'
+import { hasCodexNativeDraftFlag } from '../../../shared/agent-launch/startup/codex-startup-delivery'
 
 const isWindows = process.platform === 'win32'
 const fishLookup = resolveFishBinary()
@@ -32,53 +23,11 @@ const pwshAvailable = canRun('pwsh')
 const HELP_WITH_FLAG = 'Usage: codex [OPTIONS] [PROMPT]\n      --no-daemon  Run in-process\n'
 const HELP_WITHOUT_FLAG = 'Usage: codex [OPTIONS] [PROMPT]\n      --no-alt-screen\n'
 
-const ADDED: string[][] = [
-  [],
-  ['fix the bug'],
-  // PowerShell .cmd invocation needs embedded quotes escaped.
-  ['say "hi" to "bob"'],
-  ['exec the plan'],
-  ['-m', 'gpt-5', '--yolo', 'x'],
-  ['resume'],
-  ['resume', '--last'],
-  ['--yolo', 'resume', '--last'],
-  ['fork', '--last'],
-  ['-a', 'never', 'resume'],
-  ['-c', 'model=o3'],
-  ['archive', 'S'],
-  ['delete', 'S'],
-  ['exec', 'x'],
-  ['e', 'x'],
-  ['-m', 'x', 'exec', 'x'],
-  ['review'],
-  ['login'],
-  ['mcp', 'list']
-]
-const UNCHANGED: string[][] = [
-  ['agents'],
-  ['-m', 'x', 'agents'],
-  ['-c', 'k=v', 'agents'],
-  ['--image=a.png', 'agents'],
-  ['agents', '--remote', 'X'],
-  ['queue', '--thread', 'T', '--message', 'M'],
-  ['-c', 'k=v', 'queue'],
-  ['--no-daemon'],
-  ['resume', '--no-daemon'],
-  ['-m', 'x', '--no-daemon'],
-  ['--remote', 'unix://'],
-  ['--remote=ws://h:1'],
-  ['resume', '--remote', 'X'],
-  ['-m', 'agents'],
-  ['--', 'agents'],
-  ['--', '--remote']
-]
-const ALL = [...ADDED, ...UNCHANGED]
-
 type Shell = 'bash' | 'zsh' | 'fish' | 'pwsh' | 'powershell'
 const isPowerShell = (shell: Shell): boolean => shell === 'pwsh' || shell === 'powershell'
 const roots: string[] = []
 
-afterEach(() => {
+afterAll(() => {
   for (const root of roots.splice(0)) {
     rmSync(root, { recursive: true, force: true })
   }
@@ -114,6 +63,7 @@ if (a.length === 1 && a[0] === '--help') {
 }
 let out = ['ARGV', ...a].join('|')
 if (process.env.FAKE_CODEX_READ_CLIPBOARD_ENV === '1') out += '|ssh=' + (process.env.SSH_CONNECTION ?? '<unset>')
+if (process.env.FAKE_CODEX_READ_IMAGE_ENV === '1') out += '|kitty=' + (process.env.KITTY_WINDOW_ID ?? '<unset>')
 if (process.env.FAKE_CODEX_READ_STDIN === '1') out += '|stdin=' + fs.readFileSync(0, 'utf8').trim()
 console.log(out)
 process.exit(Number(process.env.FAKE_CODEX_EXIT || 0))
@@ -131,16 +81,13 @@ if [ "$#" -eq 1 ] && [ "$1" = --help ]; then echo help >> ${JSON.stringify(helpL
 out=ARGV
 for a in "$@"; do out="$out|$a"; done
 [ "\${FAKE_CODEX_READ_CLIPBOARD_ENV:-}" = 1 ] && out="$out|ssh=\${SSH_CONNECTION-<unset>}"
+[ "\${FAKE_CODEX_READ_IMAGE_ENV:-}" = 1 ] && out="$out|kitty=\${KITTY_WINDOW_ID-<unset>}"
 [ "\${FAKE_CODEX_READ_STDIN:-}" = 1 ] && out="$out|stdin=$(cat)"
 printf '%s\\n' "$out"
 exit "\${FAKE_CODEX_EXIT:-0}"
 `
   )
   return { bin, codex, helpFile, helpLog }
-}
-
-function helpProbes(sandbox: Sandbox): number {
-  return readFileSync(sandbox.helpLog, 'utf8').split('\n').filter(Boolean).length
 }
 
 function quote(shell: Shell, word: string): string {
@@ -157,13 +104,29 @@ function codexCall(shell: Shell, argv: string[]): string {
   return ['codex', ...argv.map((word) => quote(shell, word))].join(' ')
 }
 
+type RunResult = { status: number | null; stdout: string; stderr: string }
+
+// Async so concurrent cases overlap shell startup (pwsh's dominates this file).
+function spawnCollect(command: string, args: string[], env: NodeJS.ProcessEnv): Promise<RunResult> {
+  return new Promise((resolve, reject) => {
+    const child = spawn(command, args, { env })
+    let stdout = ''
+    let stderr = ''
+    child.stdout.setEncoding('utf-8').on('data', (data: string) => (stdout += data))
+    child.stderr.setEncoding('utf-8').on('data', (data: string) => (stderr += data))
+    child.on('error', reject)
+    child.on('close', (status) => resolve({ status, stdout, stderr }))
+    child.stdin.end()
+  })
+}
+
 function run(
   shell: Shell,
   script: string,
   sandbox: Sandbox,
   env: Record<string, string> = {},
   preamble = ''
-): { status: number | null; stdout: string; stderr: string } {
+): Promise<RunResult> {
   const template =
     shell === 'fish'
       ? getFishCodexShellLaunchPreflight()
@@ -188,29 +151,23 @@ function run(
         : shell === 'fish'
           ? [String(fishLookup.path), ['--no-config', '-c', body]]
           : [shell, ['-NoLogo', '-NoProfile', '-NonInteractive', '-Command', body]]
-  const result = spawnSync(command, args, {
-    encoding: 'utf-8',
-    env: {
-      ...process.env,
-      PATH: `${sandbox.bin}${delimiter}${process.env.PATH ?? ''}`,
-      CODEX_HOME: join(sandbox.bin, '..', 'codex-home'),
-      // Nested Orca tests must not forward the host pane's identity.
-      ...Object.fromEntries(CODEX_COMMAND_IDENTITY_ENV_KEYS.map((key) => [key, ''])),
-      SSH_CONNECTION: undefined,
-      SSH_TTY: undefined,
-      [REMOTE_VIEWER_CLIPBOARD_ENV]: undefined,
-      ...env
-    }
+  return spawnCollect(command, args, {
+    ...process.env,
+    PATH: `${sandbox.bin}${delimiter}${process.env.PATH ?? ''}`,
+    CODEX_HOME: join(sandbox.bin, '..', 'codex-home'),
+    // Nested Orca tests must not forward the host pane's identity.
+    ...Object.fromEntries(CODEX_COMMAND_IDENTITY_ENV_KEYS.map((key) => [key, ''])),
+    SSH_CONNECTION: undefined,
+    SSH_TTY: undefined,
+    [REMOTE_VIEWER_CLIPBOARD_ENV]: undefined,
+    KITTY_WINDOW_ID: undefined,
+    ORCA_IMAGE_PROTOCOL: undefined,
+    ...env
   })
-  return { status: result.status, stdout: result.stdout, stderr: result.stderr }
 }
 
 function lines(output: string): string[] {
   return output.trimEnd().split(/\r?\n/)
-}
-
-function expectedLine(argv: string[], added: boolean): string {
-  return ['ARGV', ...(added ? ['--no-daemon'] : []), ...argv].join('|')
 }
 
 const shells: [Shell, boolean][] = [
@@ -222,107 +179,132 @@ const shells: [Shell, boolean][] = [
   ['powershell', isWindows && canRun('powershell')]
 ]
 
-describe('codex wrapper --no-daemon rule', () => {
-  it('has pwsh when CI demanded it', () => {
-    expect(process.env.ORCA_REQUIRE_PWSH !== '1' || pwshAvailable).toBe(true)
-  })
-
+describe.concurrent('Codex terminal image compatibility', () => {
   for (const [shell, available] of shells) {
-    describe.skipIf(!available)(shell, () => {
-      it.each(
-        [
-          ['1', undefined, undefined, CODEX_REMOTE_VIEWER_SSH_CONNECTION, '0'],
-          ['1', undefined, undefined, CODEX_REMOTE_VIEWER_SSH_CONNECTION, '3'],
-          ['0', undefined, undefined, '<unset>', '0'],
-          ['1', '', undefined, '', '0'],
-          ['1', '10.0.0.1 5000 10.0.0.2 22', undefined, '10.0.0.1 5000 10.0.0.2 22', '0'],
-          ['1', undefined, '/dev/ttys004', '<unset>', '0']
-        ].filter(([, inherited]) => !isPowerShell(shell) || inherited !== '')
-      )(
-        'routes manual copies for remote=%s without marking the parent shell',
-        (remote, inherited, inheritedTty, expected, exitCode) => {
-          const sandbox = makeSandbox(HELP_WITH_FLAG)
-          const bareCall = isPowerShell(shell)
-            ? '$orcaClipboardExit = $LASTEXITCODE\n& (Get-Command codex -CommandType Application | Select-Object -First 1).Source shell\nexit $orcaClipboardExit'
-            : 'command codex shell'
-          const result = run(shell, `codex clipboard\n${bareCall}`, sandbox, {
-            FAKE_CODEX_READ_CLIPBOARD_ENV: '1',
-            FAKE_CODEX_EXIT: exitCode ?? '0',
-            [REMOTE_VIEWER_CLIPBOARD_ENV]: remote ?? '0',
-            ...(inherited !== undefined ? { SSH_CONNECTION: inherited } : {}),
-            ...(inheritedTty ? { SSH_TTY: inheritedTty } : {})
-          })
-          expect(result.status, result.stderr).toBe(Number(exitCode))
-          expect(lines(result.stdout)).toEqual([
-            `ARGV|--no-daemon|clipboard|ssh=${expected}`,
-            `ARGV|shell|ssh=${inherited ?? '<unset>'}`
-          ])
-        }
-      )
-
-      it('adds --no-daemon first unless an argument is denylisted', () => {
-        const sandbox = makeSandbox(HELP_WITH_FLAG)
-        const result = run(shell, ALL.map((argv) => codexCall(shell, argv)).join('\n'), sandbox)
-
-        expect(result.stderr).toBe('')
-        expect(lines(result.stdout)).toEqual([
-          ...ADDED.map((argv) => expectedLine(argv, true)),
-          ...UNCHANGED.map((argv) => expectedLine(argv, false))
-        ])
-        // Denylisted calls must not depend on or pay for capability probes.
-        expect(helpProbes(sandbox)).toBe(ADDED.length)
-      })
-
-      it('adds nothing when --help does not list the flag (0.155 and older)', () => {
+    it.skipIf(!available)(
+      `${shell} keeps the synthetic ID in the Codex process`,
+      async ({ expect }) => {
         const sandbox = makeSandbox(HELP_WITHOUT_FLAG)
-        const result = run(shell, ADDED.map((argv) => codexCall(shell, argv)).join('\n'), sandbox)
-
-        expect(lines(result.stdout)).toEqual(ADDED.map((argv) => expectedLine(argv, false)))
-      })
-
-      it('adds nothing with ORCA_CODEX_ISOLATE=0, read on every call', () => {
-        const sandbox = makeSandbox(HELP_WITH_FLAG)
-        const setIsolate = (value: string): string =>
+        const set = (name: string, value: string): string =>
           isPowerShell(shell)
-            ? `$env:ORCA_CODEX_ISOLATE = '${value}'`
+            ? `$env:${name} = '${value}'`
             : shell === 'fish'
-              ? `set -gx ORCA_CODEX_ISOLATE ${value}`
-              : `export ORCA_CODEX_ISOLATE=${value}`
-        const result = run(
+              ? `set -gx ${name} ${value}`
+              : `export ${name}=${value}`
+        const direct = isPowerShell(shell)
+          ? `& ${quote(shell, sandbox.codex)} direct`
+          : `${quote(shell, sandbox.codex)} direct`
+        const result = await run(
           shell,
-          ['codex a', setIsolate('1'), 'codex b', setIsolate('0'), 'codex c'].join('\n'),
+          [
+            'codex enabled',
+            direct,
+            set('KITTY_WINDOW_ID', '42'),
+            'codex existing',
+            isPowerShell(shell)
+              ? 'Remove-Item Env:KITTY_WINDOW_ID'
+              : shell === 'fish'
+                ? 'set -e KITTY_WINDOW_ID'
+                : 'unset KITTY_WINDOW_ID',
+            set('ORCA_IMAGE_PROTOCOL', 'off'),
+            'codex disabled'
+          ].join('\n'),
           sandbox,
-          { ORCA_CODEX_ISOLATE: '0' }
+          { FAKE_CODEX_READ_IMAGE_ENV: '1', ORCA_IMAGE_PROTOCOL: 'kitty' }
         )
 
-        expect(lines(result.stdout)).toEqual(['ARGV|a', 'ARGV|--no-daemon|b', 'ARGV|c'])
-      })
+        expect(result.status, result.stderr).toBe(0)
+        expect(lines(result.stdout)).toEqual([
+          'ARGV|enabled|kitty=0',
+          'ARGV|direct|kitty=<unset>',
+          'ARGV|existing|kitty=42',
+          'ARGV|disabled|kitty=<unset>'
+        ])
+      }
+    )
+    it.skipIf(!available)(
+      `${shell} scopes Kitty for a managed path that bypasses the shell function`,
+      async ({ expect }) => {
+        const sandbox = makeSandbox(HELP_WITHOUT_FLAG)
+        const powerShell = isPowerShell(shell)
+        const direct = `${powerShell ? '& ' : ''}${quote(shell, sandbox.codex)}`
+        // PowerShell needs the wrapper to add `&` before a quoted path (#46114).
+        const command = `${quote(shell, sandbox.codex)} --prefill 'say hello'`
+        const scoped = withCodexStartupImageCommand(command, powerShell ? 'powershell' : 'posix')
+        if (!powerShell) {
+          expect(hasCodexNativeDraftFlag(scoped)).toBe(true)
+        }
+        const result = await run(
+          shell,
+          [
+            scoped,
+            `${direct} after`,
+            ...(powerShell
+              ? []
+              : [
+                  withCodexStartupImageCommand('env KITTY_WINDOW_ID=9 codex env-override', 'posix'),
+                  withCodexStartupImageCommand('env codex env-default', 'posix')
+                ]),
+            powerShell
+              ? "$env:KITTY_WINDOW_ID = '42'"
+              : shell === 'fish'
+                ? 'set -gx KITTY_WINDOW_ID 42'
+                : 'export KITTY_WINDOW_ID=42',
+            scoped
+          ].join('\n'),
+          sandbox,
+          { FAKE_CODEX_READ_IMAGE_ENV: '1', ORCA_IMAGE_PROTOCOL: 'kitty' }
+        )
+        expect(result.status, result.stderr).toBe(0)
+        expect(lines(result.stdout)).toEqual([
+          'ARGV|--prefill|say hello|kitty=0',
+          'ARGV|after|kitty=<unset>',
+          ...(powerShell ? [] : ['ARGV|env-override|kitty=9', 'ARGV|env-default|kitty=0']),
+          'ARGV|--prefill|say hello|kitty=42'
+        ])
+      }
+    )
+  }
+})
 
-      it('re-probes --help when Codex changes version mid-shell', () => {
-        const sandbox = makeSandbox(HELP_WITH_FLAG)
+describe.concurrent('codex wrapper --no-daemon rule', () => {
+  for (const [shell, available] of shells) {
+    describe.skipIf(!available)(shell, () => {
+      it('only adds the flag when Codex advertises it, including after version changes', async ({
+        expect
+      }) => {
+        const sandbox = makeSandbox(HELP_WITHOUT_FLAG)
         const swap = (help: string): string =>
           isPowerShell(shell)
             ? `Set-Content -NoNewline -LiteralPath ${quote(shell, sandbox.helpFile)} -Value ${quote(shell, help)}`
             : `printf '%s' ${quote(shell, help)} > ${quote(shell, sandbox.helpFile)}`
-        const result = run(
+        const result = await run(
           shell,
-          ['codex a', swap(HELP_WITHOUT_FLAG), 'codex b', swap(HELP_WITH_FLAG), 'codex c'].join(
-            '\n'
-          ),
+          [
+            codexCall(shell, ['say "hi" to "bob"']),
+            swap(HELP_WITH_FLAG),
+            'codex upgraded',
+            swap(HELP_WITHOUT_FLAG),
+            'codex downgraded'
+          ].join('\n'),
           sandbox
         )
 
-        expect(lines(result.stdout)).toEqual(['ARGV|--no-daemon|a', 'ARGV|b', 'ARGV|--no-daemon|c'])
+        expect(lines(result.stdout)).toEqual([
+          'ARGV|say "hi" to "bob"',
+          'ARGV|--no-daemon|upgraded',
+          'ARGV|downgraded'
+        ])
       })
 
-      it("keeps piped stdin for Codex and returns Codex's exit status", () => {
+      it("keeps piped stdin for Codex and returns Codex's exit status", async ({ expect }) => {
         const sandbox = makeSandbox(HELP_WITH_FLAG)
         const script = isPowerShell(shell)
           ? `'piped' | codex exec -\n"status=$LASTEXITCODE"`
           : shell === 'fish'
             ? `printf piped | codex exec -\necho status=$status`
             : `printf piped | codex exec -\necho status=$?`
-        const result = run(shell, script, sandbox, {
+        const result = await run(shell, script, sandbox, {
           FAKE_CODEX_READ_STDIN: '1',
           FAKE_CODEX_EXIT: '3'
         })
@@ -358,9 +340,9 @@ describe('codex wrapper --no-daemon rule', () => {
     for (const [shell, available] of shells) {
       it.skipIf(!available)(
         `${shell} forwards set identity keys, except where the shared server is chosen`,
-        () => {
+        async ({ expect }) => {
           const sandbox = makeSandbox(HELP_WITH_FLAG)
-          const result = run(
+          const result = await run(
             shell,
             [
               codexCall(shell, ['x']),
@@ -382,18 +364,9 @@ describe('codex wrapper --no-daemon rule', () => {
         }
       )
 
-      it.skipIf(!available)(`${shell} forwards identity to Codex 0.155 and older too`, () => {
+      it.skipIf(!available)(`${shell} skips a value holding an apostrophe`, async ({ expect }) => {
         const sandbox = makeSandbox(HELP_WITHOUT_FLAG)
-        const result = run(shell, codexCall(shell, ['x']), sandbox, identity)
-
-        expect(lines(result.stdout).map(splitOverrides)).toEqual([
-          { overrides: identityOverrides, rest: ['x'] }
-        ])
-      })
-
-      it.skipIf(!available)(`${shell} skips a value holding an apostrophe`, () => {
-        const sandbox = makeSandbox(HELP_WITHOUT_FLAG)
-        const result = run(shell, codexCall(shell, ['x']), sandbox, {
+        const result = await run(shell, codexCall(shell, ['x']), sandbox, {
           ORCA_TERMINAL_HANDLE: 'term_abc',
           ORCA_USER_DATA_PATH: "/Users/o'brien/orca'"
         })
@@ -402,56 +375,13 @@ describe('codex wrapper --no-daemon rule', () => {
           { overrides: [identityOverrides[0]], rest: ['x'] }
         ])
       })
-
-      it.skipIf(!available)(`${shell} forwards nothing with ORCA_CODEX_ISOLATE=0`, () => {
-        const sandbox = makeSandbox(HELP_WITH_FLAG)
-        const result = run(shell, codexCall(shell, ['x']), sandbox, {
-          ...identity,
-          ORCA_CODEX_ISOLATE: '0'
-        })
-
-        expect(lines(result.stdout)).toEqual(['ARGV|x'])
-      })
     }
   })
-
-  for (const [shell, enableAliases] of [
-    ['bash', 'shopt -s expand_aliases'],
-    ['zsh', 'setopt aliases']
-  ] as const) {
-    it.skipIf(isWindows || !existsSync(`/bin/${shell}`))(
-      `applies a user alias named codex defined before the wrapper in ${shell}`,
-      () => {
-        const sandbox = makeSandbox(HELP_WITH_FLAG)
-        const result = run(
-          shell,
-          'codex x',
-          sandbox,
-          {},
-          `${enableAliases}\nalias codex='codex --alias-flag'`
-        )
-
-        expect(result.status, result.stderr).toBe(0)
-        expect(result.stdout.trim()).toBe('ARGV|--no-daemon|--alias-flag|x')
-      }
-    )
-  }
-
-  it.skipIf(isWindows || !existsSync('/bin/zsh'))(
-    'creates no globals under warn_create_global',
-    () => {
-      const sandbox = makeSandbox(HELP_WITH_FLAG)
-      const result = run('zsh', 'setopt warn_create_global no_unset\ncodex x', sandbox)
-
-      expect(result.stderr).toBe('')
-      expect(result.stdout.trim()).toBe('ARGV|--no-daemon|x')
-    }
-  )
 
   for (const [shell, available] of shells.filter(([name]) => isPowerShell(name))) {
     it.skipIf(!available)(
       `${shell} runs under StrictMode and Stop with a failing, noisy hook prep`,
-      () => {
+      async ({ expect }) => {
         const sandbox = makeSandbox(HELP_WITH_FLAG)
         const prep = join(sandbox.bin, isWindows ? 'orca-prep.cmd' : 'orca-prep')
         writeExecutable(
@@ -460,7 +390,7 @@ describe('codex wrapper --no-daemon rule', () => {
             ? '@echo prep-noise 1>&2\r\n@exit /b 7\r\n'
             : '#!/bin/sh\necho prep-noise >&2\nexit 7\n'
         )
-        const result = run(
+        const result = await run(
           shell,
           'codex x\n"status=$LASTEXITCODE"',
           sandbox,

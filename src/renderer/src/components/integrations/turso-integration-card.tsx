@@ -5,7 +5,7 @@ import { Input } from '@/components/ui/input'
 import { IntegrationCardDetails, IntegrationCardShell } from './presentation/integration-card-shell'
 import { useAppStore } from '@/store'
 import { translate } from '@/i18n/i18n'
-import { openAppHttpLink } from '@/lib/app-http-link-open'
+import { openAppHttpLink } from '@/lib/browser/navigation/app-http-link-open'
 
 export function TursoIntegrationCard(): React.JSX.Element {
   const settings = useAppStore((s) => s.settings)

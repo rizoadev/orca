@@ -1,6 +1,5 @@
-import { createGitHubWorkItemWorkspaceInBackground } from '@/lib/github-work-item-background-create'
-import { buildLinearIssueLinkedWorkItem } from '@/lib/linear-linked-work-item'
-import type { LinkedWorkItemSummary } from '@/lib/new-workspace'
+import { buildLinearIssueComposerData } from '@/lib/work-items/linear/linear-linked-work-item'
+import type { LinkedWorkItemSummary } from '@/lib/workspace/creation/new-workspace'
 import { useAppStore } from '@/store'
 import type {
   GitHubWorkItem,
@@ -8,7 +7,6 @@ import type {
   LinearIssue,
   Repo
 } from '../../../../../../shared/types'
-import { getLinearIssueWorkspaceName } from '../../../../../../shared/workspace-name'
 import { getRepoIssueSourceContext } from './issues-panel-rows'
 
 export function openGitHubIssueWorkspaceComposer(
@@ -37,13 +35,7 @@ export function startGitHubIssueFromPanel(
   item: GitHubWorkItem
 ): void {
   useAppStore.getState().recordFeatureInteraction?.('github-tasks')
-  void createGitHubWorkItemWorkspaceInBackground({
-    item,
-    repoId: item.repoId,
-    taskSourceContext: getRepoIssueSourceContext(repo, 'github'),
-    telemetrySource: 'sidebar',
-    openModalFallback: () => openGitHubIssueWorkspaceComposer(openModal, repo, item)
-  })
+  openGitHubIssueWorkspaceComposer(openModal, repo, item)
 }
 
 export function startGitLabIssueFromPanel(
@@ -75,11 +67,9 @@ export function startLinearIssueFromPanel(
   item: LinearIssue
 ): void {
   useAppStore.getState().recordFeatureInteraction?.('linear-tasks')
-  const linkedWorkItem = buildLinearIssueLinkedWorkItem(item)
+  const composer = buildLinearIssueComposerData(item, getRepoIssueSourceContext(repo, 'linear'))
   openModal('new-workspace-composer', {
-    linkedWorkItem,
-    taskSourceContext: getRepoIssueSourceContext(repo, 'linear'),
-    prefilledName: getLinearIssueWorkspaceName(item),
+    ...composer,
     initialRepoId: repo.id,
     telemetrySource: 'sidebar'
   })

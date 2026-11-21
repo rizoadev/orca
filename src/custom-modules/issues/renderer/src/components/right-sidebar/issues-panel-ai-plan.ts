@@ -1,5 +1,6 @@
 import { toast } from 'sonner'
-import { launchAgentBackgroundSession } from '@/lib/launch-agent-background-session'
+import { launchAgentInNewTabWithOutcome } from '@/lib/agent-session/launch/new-tab/launch-agent-in-new-tab'
+import { createNonSecureContextUuid } from '../../../../../../shared/identifiers/non-secure-context-uuid'
 import { pickSourceControlLaunchAgent } from '../../../../../../shared/source-control/ai/source-control-launch-agent-selection'
 import { useAppStore } from '@/store'
 import { translate } from '@/i18n/i18n'
@@ -106,18 +107,23 @@ export async function launchIssueAiPlanCommenter(args: {
   })
 
   try {
-    const result = await launchAgentBackgroundSession({
-      agent,
-      worktreeId: args.worktreeId,
-      prompt,
-      launchSource: 'sidebar',
-      title: translate(
-        'auto.components.right.sidebar.issuesPanel.aiPlanTabTitle',
-        'AI plan · {{value0}}',
-        { value0: issueRefLabel(args.issue) }
-      )
-    })
-    if (!result) {
+    const outcome = launchAgentInNewTabWithOutcome(
+      {
+        requestId: createNonSecureContextUuid(),
+        agent,
+        worktreeId: args.worktreeId,
+        prompt,
+        launchSource: 'sidebar',
+        promptDelivery: 'auto-submit',
+        quickCommandLabel: translate(
+          'auto.components.right.sidebar.issuesPanel.aiPlanTabTitle',
+          'AI plan · {{value0}}',
+          { value0: issueRefLabel(args.issue) }
+        )
+      },
+      false
+    )
+    if (!outcome || 'refused' in outcome || !outcome.surface) {
       toast.error(
         translate(
           'auto.components.right.sidebar.issuesPanel.agentLaunchFailed',

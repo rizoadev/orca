@@ -1,4 +1,4 @@
-import { getAgentCatalog } from '@/lib/agent-catalog'
+import { getAgentCatalog } from '@/lib/agent-catalog/agent-catalog'
 import type { TuiAgent } from '../../../../../../shared/types'
 
 export function orderAgents(

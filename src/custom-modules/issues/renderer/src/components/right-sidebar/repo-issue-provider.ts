@@ -1,4 +1,4 @@
-import type { Repo } from '../../../../../../shared/repo-types'
+import type { Repo } from '../../../../../../shared/repository/repo-types'
 
 export type RepoIssueProvider = 'github' | 'gitlab' | 'linear'
 

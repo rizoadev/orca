@@ -2,7 +2,7 @@
  * Custom right-sidebar tab registry.
  * Add new tab IDs here, then wire in custom-activity-items.ts and custom-panel-content.tsx.
  */
-import type { ActiveRightSidebarTab } from '@/store/slices/editor'
+import type { ActiveRightSidebarTab } from '@/store/slices/right-sidebar/right-sidebar-route'
 
 export const CUSTOM_SIDEBAR_TAB_IDS = ['issues'] as const
 // 'voice' disabled — Google Voice (Pi Standby) fitur dimatikan.

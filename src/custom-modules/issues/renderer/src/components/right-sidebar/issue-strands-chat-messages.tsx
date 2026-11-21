@@ -4,12 +4,9 @@
  * spinner. Extracted from issue-strands-chat-panel to keep that module within
  * the max-lines budget and to isolate the per-role rendering rules.
  */
-import CommentMarkdown from '@/components/sidebar/CommentMarkdown'
+import CommentMarkdown from '@/components/comment-markdown/CommentMarkdown'
 import { LoaderCircle, Terminal, Wrench } from 'lucide-react'
-import type {
-  PiIssueChatMessage,
-  PiIssueChatStatus
-} from '../../../../../../shared/pi-issue-chat-types'
+import type { PiIssueChatMessage, PiIssueChatStatus } from '../../../../shared/pi-issue-chat-types'
 import { ReasoningBubble } from './issue-strands-reasoning-bubble'
 
 export type ChatRenderItem =

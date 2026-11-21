@@ -4,7 +4,7 @@
  */
 import React, { Suspense } from 'react'
 import { LoaderCircle } from 'lucide-react'
-import { lazyWithRetry as lazy } from '@/lib/lazy-with-retry'
+import { lazyWithRetry as lazy } from '@/app-shell/startup/lazy-with-retry'
 import {
   Sheet,
   SheetContent,

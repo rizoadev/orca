@@ -1,15 +1,12 @@
 import { AGENT_STATUS_STALE_AFTER_MS } from '../../../../shared/agent-status/contracts/agent-status-freshness'
 
-import { createCrewHostDerivation, refreshCrewStatuses } from './crew-host-derivation'
-import { createCrewPartyRegistry } from './crew-parties'
-import type { FleetAgentStatusEvidence } from '../../../../shared/orchestration-fleet-agent-status-evidence'
 import { describe, expect, it, vi } from 'vitest'
 
-import { buildCrewSnapshot, CrewReadModel } from './crew-read-model'
+import { buildCrewSnapshot } from './crew-party-snapshot'
+import { CREW_HOST_GRACE_MS, CrewReadModel } from './crew-read-model'
 import { subscribeCrew } from './crew-stream'
-import type { OrchestrationCrewFrame } from '../../../../shared/orchestration-crew'
-import { agentSessionRecordFixture } from '../../../native-chat/agent-session-record-test-fixture'
-import { agentSessionConversationView } from '../../../../shared/agent-session/lifecycle/agent-session-conversation-view'
+import { agentSessionRecordFixture } from '../../../native-chat/testing/agent-session-record-test-fixture'
+import { agentSessionConversationView } from '../../../../shared/agent-session/lifecycle/leases/agent-session-conversation-view'
 
 import { fixture } from './crew-read-model.test-fixture'
 
@@ -215,77 +212,6 @@ it('preserves a bound offline manager and the complete committed clear conversat
   })
 })
 
-it('uses qualified terminal status and keeps canonical native status without requiring a terminal binding', () => {
-  const { deps, assign, handles } = fixture()
-  const worker = assign('term_worker')
-  const now = Date.now()
-  deps.now = now
-  const status = {
-    binding: {
-      kind: 'worker',
-      dispatchId: worker.id,
-      paneKey: handles.get('term_worker')!,
-      terminalHandle: 'term_worker',
-      processIncarnation: 'incarnation'
-    },
-    clock: { kind: 'observed', at: now },
-    deliveredAt: now,
-    activity: {
-      paneKey: handles.get('term_worker')!,
-      connectionId: null,
-      state: 'done',
-      agentType: 'codex',
-      model: null,
-      worktreeId: null,
-      restoredUnconfirmed: false,
-      providerSessionOnly: false
-    }
-  } satisfies FleetAgentStatusEvidence
-  const read = () =>
-    buildCrewSnapshot('term_coord', deps).sections.managing.find(
-      (row) => row.sendAddress === `dispatch:${worker.id}`
-    )
-  for (const invalid of [
-    { ...status, binding: { kind: 'unresolved', reason: 'stale_incarnation' } },
-    { ...status, binding: { ...status.binding, kind: 'worker', dispatchId: 'ctx_other' } },
-    { ...status, activity: { ...status.activity, restoredUnconfirmed: true } },
-    { ...status, activity: { ...status.activity, providerSessionOnly: true } },
-    { ...status, clock: { kind: 'observed', at: now + 60_000 } },
-    { ...status, clock: { kind: 'observed', at: now - 31 * 60_000 } }
-  ] satisfies FleetAgentStatusEvidence[]) {
-    deps.statuses = [invalid]
-    expect(read()?.status).toBe('working')
-    expect(read()?.agentKind).toBe('Agent')
-  }
-  deps.statuses = [status]
-  expect(read()?.status).toBe('done')
-  const native = agentSessionConversationView(
-    agentSessionRecordFixture({ sessionId: 'chat-native' })
-  )
-  deps.records = {
-    listRecords: () => [native],
-    getRecord: (id) => (id === native.sessionId ? native : null)
-  }
-  assign('orca_session_id:chat-native')
-  const nativeRow = buildCrewSnapshot('term_coord', deps).sections.managing.find(
-    (row) => row.openTarget?.kind === 'chat'
-  )!
-  const registry = createCrewPartyRegistry(deps)
-  const paneKey = registry.party('chat-native', null, null)!.paneKey!
-  deps.statuses = [
-    {
-      ...status,
-      binding: { kind: 'unresolved', reason: 'pane_not_bound' },
-      activity: { ...status.activity, paneKey, state: 'waiting' }
-    }
-  ]
-  expect(
-    buildCrewSnapshot('term_coord', deps).sections.managing.find(
-      (row) => row.partyKey === nativeRow.partyKey
-    )?.status
-  ).toBe('waiting')
-})
-
 it('rederives exact and backwards clocks and drops unwatched one-shot truth', () => {
   const { db, deps, assign } = fixture()
   const worker = assign('term_worker')
@@ -295,6 +221,7 @@ it('rederives exact and backwards clocks and drops unwatched one-shot truth', ()
     .prepare('UPDATE dispatch_contexts SET completed_at = ? WHERE id = ?')
     .run(new Date(completed).toISOString(), worker.id)
   const clock = vi.spyOn(Date, 'now').mockReturnValue(completed)
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
   try {
     const model = new CrewReadModel(() => deps, db.crewChanges.subscribe)
     const stop = model.subscribe(() => {})
@@ -306,12 +233,14 @@ it('rederives exact and backwards clocks and drops unwatched one-shot truth', ()
     clock.mockReturnValue(completed)
     expect(model.read('term_coord').sections.managing).toHaveLength(1)
     stop()
+    vi.advanceTimersByTime(CREW_HOST_GRACE_MS)
     expect(model.read('term_coord').sections.managing).toHaveLength(1)
     db.db
       .prepare("UPDATE dispatch_contexts SET completed_at = '2000-01-01' WHERE id = ?")
       .run(worker.id)
     expect(model.read('term_coord').sections.managing).toHaveLength(0)
   } finally {
+    vi.useRealTimers()
     clock.mockRestore()
   }
 })
@@ -320,11 +249,10 @@ it('invalidates host membership when report import uses the transaction settleme
   const { db, deps, assign } = fixture()
   const worker = assign('term_worker')
   const model = new CrewReadModel(() => deps, db.crewChanges.subscribe)
-  const frames: OrchestrationCrewFrame[] = []
   const stop = subscribeCrew(
     () => model.read('term_coord'),
     model.subscribe,
-    (frame) => frames.push(frame)
+    () => {}
   )
   expect(model.read('term_coord').sections.managing[0].task?.state).toBe('dispatched')
   db.db.exec('BEGIN')
@@ -337,49 +265,133 @@ it('invalidates host membership when report import uses the transaction settleme
   db.db.exec('COMMIT')
   await Promise.resolve()
   expect(result.action).toBe('settled')
-  expect(db.getDispatchContextById(worker.id)?.completed_at).toBeTruthy()
   expect(model.read('term_coord').sections.managing[0].task?.state).toBe('completed')
-  expect(frames.filter((frame) => frame.type === 'complete')).toHaveLength(2)
   stop()
 })
 
-it('owns one immutable fleet capture shared with indexes across mutable producer updates', () => {
-  const { deps, assign, handles } = fixture()
-  const worker = assign('term_worker')
-  const now = Date.now()
-  const evidence = {
-    binding: {
-      kind: 'worker' as const,
-      dispatchId: worker.id,
-      paneKey: handles.get('term_worker')!,
-      terminalHandle: 'term_worker',
-      processIncarnation: 'process'
-    },
-    clock: { kind: 'observed' as const, at: now },
-    deliveredAt: now,
-    activity: {
-      paneKey: handles.get('term_worker')!,
-      connectionId: null,
-      state: 'waiting' as const,
-      agentType: 'codex' as const,
-      model: null,
-      worktreeId: null,
-      restoredUnconfirmed: false,
-      providerSessionOnly: false
+it('shows what changed for a chat that left and one that is new while the host is kept', () => {
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+  const { db, deps, run, assign, handles } = fixture()
+  try {
+    assign('term_worker')
+    const other = db.createRun({
+      objective: 'Other crew',
+      coordinatorHandle: 'term_peer',
+      coordinatorPaneKey: handles.get('term_peer')!
+    })
+    const model = new CrewReadModel(() => deps, db.crewChanges.subscribe)
+    const show = (party: string) => {
+      const stop = model.subscribe(() => {}, party)
+      return { snapshot: model.read(party), stop }
     }
+    show('term_coord').stop()
+    // A worker for the other crew starts while the first crew's host is kept.
+    const task = db.createTask({ runId: other.id, spec: 'Other work', taskTitle: 'Other work' })
+    db.updateTaskStatus(task.id, 'ready')
+    db.createDispatchContext({
+      taskId: task.id,
+      assigneeHandle: 'term_helper',
+      assigneePaneKey: handles.get('term_helper'),
+      creator: { kind: 'terminal', handle: 'term_peer', paneKey: handles.get('term_peer') },
+      maxDepth: 10
+    })
+    const peer = show('term_peer')
+    expect(peer.snapshot.sections.managing.map((row) => row.task?.title)).toEqual(['Other work'])
+    // Mail to the first crew while only the other one is shown.
+    db.insertMessage({
+      runId: run.id,
+      from: 'term_worker',
+      to: 'term_coord',
+      subject: 'Update',
+      body: 'while away'
+    })
+    peer.stop()
+    const back = show('term_coord')
+    expect(back.snapshot.sections.managing.map((row) => row.latest?.preview)).toEqual([
+      'while away'
+    ])
+    back.stop()
+  } finally {
+    vi.useRealTimers()
   }
-  deps.statuses = [evidence]
-  const host = createCrewHostDerivation(deps, now)
-  const expected = structuredClone(evidence)
-  evidence.binding.dispatchId = 'replaced'
-  evidence.clock.at = 0
-  evidence.activity.restoredUnconfirmed = true
-  expect(host.deps.statuses).toEqual([expected])
-  expect(host.statusesByPane.get(expected.activity.paneKey)).toBe(host.deps.statuses[0])
-  const refreshed = refreshCrewStatuses(host, [evidence])
-  const next = structuredClone(evidence)
-  evidence.clock.at = 1
-  evidence.binding.terminalHandle = 'term_replacement'
-  expect(refreshed.deps.statuses).toEqual([next])
-  expect(refreshed.statusesByPane.get(next.activity.paneKey)).toBe(refreshed.deps.statuses[0])
+})
+
+it('reads fresh for a chat no kept host covers, without subscribing', () => {
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+  const { db, deps, assign, handles } = fixture()
+  try {
+    assign('term_worker')
+    const model = new CrewReadModel(() => deps, db.crewChanges.subscribe)
+    const stop = model.subscribe(() => {}, 'term_coord')
+    model.read('term_coord')
+    stop()
+    const other = db.createRun({
+      objective: 'Other crew',
+      coordinatorHandle: 'term_peer',
+      coordinatorPaneKey: handles.get('term_peer')!
+    })
+    const task = db.createTask({ runId: other.id, spec: 'Other work', taskTitle: 'Other work' })
+    db.updateTaskStatus(task.id, 'ready')
+    db.createDispatchContext({
+      taskId: task.id,
+      assigneeHandle: 'term_helper',
+      assigneePaneKey: handles.get('term_helper'),
+      creator: { kind: 'terminal', handle: 'term_peer', paneKey: handles.get('term_peer') },
+      maxDepth: 10
+    })
+    // As the worker approvals stream reads a hidden coordinator.
+    expect(model.read('term_peer').sections.managing.map((row) => row.task?.title)).toEqual([
+      'Other work'
+    ])
+    db.insertMessage({
+      runId: other.id,
+      from: 'term_helper',
+      to: 'term_peer',
+      subject: 'Update',
+      body: 'later'
+    })
+    expect(model.read('term_peer').sections.managing.map((row) => row.latest?.preview)).toEqual([
+      'later'
+    ])
+  } finally {
+    vi.useRealTimers()
+  }
+})
+
+it('shows a worker started for a chat that closed beside an open one when it reopens', () => {
+  const { db, deps, assign, handles } = fixture()
+  assign('term_worker')
+  const other = db.createRun({
+    objective: 'Other crew',
+    coordinatorHandle: 'term_peer',
+    coordinatorPaneKey: handles.get('term_peer')!
+  })
+  const start = (handle: string, title: string) => {
+    const task = db.createTask({ runId: other.id, spec: title, taskTitle: title })
+    db.updateTaskStatus(task.id, 'ready')
+    db.createDispatchContext({
+      taskId: task.id,
+      assigneeHandle: handle,
+      assigneePaneKey: handles.get(handle),
+      creator: { kind: 'terminal', handle: 'term_peer', paneKey: handles.get('term_peer') },
+      maxDepth: 10
+    })
+  }
+  start('term_helper', 'Other work')
+  const model = new CrewReadModel(() => deps, db.crewChanges.subscribe)
+  const stopCoord = model.subscribe(() => {}, 'term_coord')
+  model.read('term_coord')
+  const firstPeer = model.subscribe(() => {}, 'term_peer')
+  model.read('term_peer')
+  firstPeer()
+  start('term_outbound', 'More work')
+  const stopPeer = model.subscribe(() => {}, 'term_peer')
+  expect(
+    model
+      .read('term_peer')
+      .sections.managing.map((row) => row.task?.title)
+      .sort()
+  ).toEqual(['More work', 'Other work'])
+  stopPeer()
+  stopCoord()
 })

@@ -3,7 +3,7 @@
  * Each custom module registers its icon and title here.
  */
 import { ListTodo } from 'lucide-react'
-import type { ActivityBarItem } from '@/components/right-sidebar/activity-bar-buttons'
+import type { ActivityBarItem } from '@/components/right-sidebar/activity-bar/activity-bar-buttons'
 import { translate } from '@/i18n/i18n'
 
 export function getCustomActivityItems(): ActivityBarItem[] {

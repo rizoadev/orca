@@ -1,16 +1,16 @@
-import type { UpdateStatus } from '../../../shared/update-status-types'
+import type { UpdateStatus } from '../../../shared/updater/update-status-types'
 import {
   compareAppVersions,
   isPrereleaseAppVersion,
   isValidAppVersion
-} from '../../../shared/app-version'
+} from '../../../shared/app-lifecycle/identity/app-version'
 
 export const compareVersions = compareAppVersions
 export const isPrereleaseVersion = isPrereleaseAppVersion
 export const isValidVersion = isValidAppVersion
 
 export function statusesEqual(left: UpdateStatus, right: UpdateStatus): boolean {
-  if (left.source !== right.source) {
+  if (left.source !== right.source || left.automaticDownload !== right.automaticDownload) {
     return false
   }
   switch (left.state) {
@@ -25,7 +25,10 @@ export function statusesEqual(left: UpdateStatus, right: UpdateStatus): boolean 
         left.delayedUpdate?.version === right.delayedUpdate?.version &&
         left.delayedUpdate?.availableAt === right.delayedUpdate?.availableAt &&
         left.delayedUpdate?.releasedAt === right.delayedUpdate?.releasedAt &&
-        left.delayedUpdate?.delayDays === right.delayedUpdate?.delayDays
+        left.delayedUpdate?.delayDays === right.delayedUpdate?.delayDays &&
+        left.unsupportedSystemUpdate?.version === right.unsupportedSystemUpdate?.version &&
+        left.unsupportedSystemUpdate?.minimumMacosVersion ===
+          right.unsupportedSystemUpdate?.minimumMacosVersion
       )
     case 'available':
       return (

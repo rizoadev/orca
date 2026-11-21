@@ -4,7 +4,7 @@
  * Protected by ErrorBoundary so a custom panel failure never blanks the main Orca window.
  */
 import React, { Suspense } from 'react'
-import type { ActiveRightSidebarTab } from '@/store/slices/editor'
+import type { ActiveRightSidebarTab } from '@/store/slices/right-sidebar/right-sidebar-route'
 import { isCustomSidebarTab } from './custom-right-sidebar-tabs'
 
 const IssuesPanel = React.lazy(() => import('./issues/panel'))

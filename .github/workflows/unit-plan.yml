@@ -38,7 +38,7 @@ jobs:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 2
-          sparse-checkout: ${{ inputs.defer_shadow && '/config/scripts/ci-unit-matrix.mjs' || '' }}
+          sparse-checkout: ${{ inputs.defer_shadow && '/config/scripts/ci/unit-selection/ci-unit-matrix.mjs' || '' }}
           sparse-checkout-cone-mode: false
           persist-credentials: false
       - uses: ./.github/actions/install-node-dependencies
@@ -48,13 +48,13 @@ jobs:
         env:
           ORCA_UNIT_SELECTION_MODE: ${{ inputs.selection_mode }}
           ORCA_PULL_REQUEST_DRAFT: ${{ github.event.pull_request.draft }}
-          # Twelve 4-vCPU hosted shards match the old 8-vCPU wall time; the repository variable can request 2 to 16.
-          ORCA_UNIT_FULL_SHARD_COUNT: ${{ vars.ORCA_UNIT_FULL_SHARD_COUNT || '12' }}
+          # Free hosted shards: each adds ~40s setup but 12 shards ran ~230s of tests, so 24 nearly halves the wall time. The repository variable can request 2 to 32.
+          ORCA_UNIT_FULL_SHARD_COUNT: ${{ vars.ORCA_UNIT_FULL_SHARD_COUNT || '24' }}
         run: |
           if [ "$DEFER_SHADOW" = true ]; then
-            node config/scripts/ci-unit-matrix.mjs
+            node config/scripts/ci/unit-selection/ci-unit-matrix.mjs
           else
-            node config/scripts/ci-unit-plan.mjs
+            node config/scripts/ci/unit-selection/ci-unit-plan.mjs
           fi
       - uses: actions/upload-artifact@v7
         if: env.DEFER_SHADOW != 'true'

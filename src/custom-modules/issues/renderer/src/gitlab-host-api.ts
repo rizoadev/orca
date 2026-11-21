@@ -3,8 +3,8 @@
  * repo's GitLab credentials (same as the Tasks page). Raw `gl` IPC rejects
  * repos it cannot resolve locally, e.g. remote-host worktrees.
  */
-import { gitLabApiFor } from '@/runtime/gitlab-owner-api'
-import { getRepoExecutionHostId } from '../../../../shared/execution-host'
+import { gitLabApiFor } from '@/runtime/repository-gitlab/gitlab-owner-api'
+import { getRepoExecutionHostId } from '../../../../shared/execution-host/execution-host'
 import type { Repo } from '../../../../shared/types'
 import { getRepoIssueSourceContext } from './components/right-sidebar/issues-panel-rows'
 

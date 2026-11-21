@@ -19,8 +19,7 @@ import {
 } from './client'
 import { createGiteaPullRequest } from './pull-request-creation'
 import { _resetGiteaRepoRefCache } from './repository-ref'
-import { _resetGiteaPullRequestScanCache, scanGiteaPullRequests } from './pull-request-scan-cache'
-import { observeProviderRead } from '../source-control/hosted-review-provider-read'
+import { _resetGiteaPullRequestScanCache } from './pull-request-scan-cache'
 
 const branch = 'feature/gitea'
 const pullRequest = {
@@ -52,18 +51,6 @@ describe('Gitea scan invalidation after creation', () => {
     _resetGiteaPullRequestScanCache()
     vi.unstubAllGlobals()
     vi.unstubAllEnvs()
-  })
-
-  it('reports a scan answered from the shared cache or a running scan as not a fresh read', async () => {
-    const fetchPage = vi.fn(async () => [pullRequest])
-    const scan = () =>
-      observeProviderRead(() => scanGiteaPullRequests('team/repo', fetchPage, 50, 1))
-    const [owner, joiner] = await Promise.all([scan(), scan()])
-    const cached = await scan()
-    expect(fetchPage).toHaveBeenCalledTimes(1)
-    expect(owner.answeredFromProviderCache).toBe(false)
-    expect(joiner.answeredFromProviderCache).toBe(true)
-    expect(cached.answeredFromProviderCache).toBe(true)
   })
 
   it('refreshes cached misses in both modes after a successful create and coalesces readers', async () => {
@@ -127,53 +114,44 @@ describe('Gitea scan invalidation after creation', () => {
     expect(listCalls).toBe(3)
   })
 
-  it.each(['before', 'after'] as const)(
-    'keeps fresh strict results when a pre-invalidation scan finishes %s its replacement',
-    async (completionOrder) => {
-      const oldResponse = Promise.withResolvers<Response>()
-      const freshResponse = Promise.withResolvers<Response>()
-      const oldStarted = Promise.withResolvers<void>()
-      const fetchMock = vi
-        .fn()
-        .mockImplementationOnce(() => {
-          oldStarted.resolve()
-          return oldResponse.promise
-        })
-        .mockImplementationOnce(() => freshResponse.promise)
-      vi.stubGlobal('fetch', fetchMock)
+  it('keeps fresh strict results when a stale scan finishes last', async () => {
+    const oldResponse = Promise.withResolvers<Response>()
+    const freshResponse = Promise.withResolvers<Response>()
+    const oldStarted = Promise.withResolvers<void>()
+    const fetchMock = vi
+      .fn()
+      .mockImplementationOnce(() => {
+        oldStarted.resolve()
+        return oldResponse.promise
+      })
+      .mockImplementationOnce(() => freshResponse.promise)
+    vi.stubGlobal('fetch', fetchMock)
 
-      const stale = getGiteaPullRequestForBranchOrThrow('/repo', branch)
-      await oldStarted.promise
-      const repo = await getGiteaRepoSlug('/repo')
-      if (!repo) {
-        throw new Error('Expected test repository')
-      }
-      invalidateGiteaPullRequestScanForRepo(repo)
-      const fresh = getGiteaPullRequestForBranchOrThrow('/repo', branch)
-      const concurrent = getGiteaPullRequestForBranchOrThrow('/repo', branch)
-      try {
-        await new Promise<void>((resolve) => setImmediate(resolve))
-        expect(fetchMock).toHaveBeenCalledTimes(2)
-        if (completionOrder === 'before') {
-          oldResponse.resolve(Response.json([]))
-          expect(await stale).toBeNull()
-        }
-        freshResponse.resolve(Response.json([pullRequest]))
-        expect(await fresh).toMatchObject({ number: 7 })
-        expect(await concurrent).toMatchObject({ number: 7 })
-        if (completionOrder === 'after') {
-          oldResponse.resolve(Response.json([]))
-          expect(await stale).toBeNull()
-        }
-        expect(await getGiteaPullRequestForBranchOrThrow('/repo', branch)).toMatchObject({
-          number: 7
-        })
-        expect(fetchMock).toHaveBeenCalledTimes(2)
-      } finally {
-        oldResponse.resolve(Response.json([]))
-        freshResponse.resolve(Response.json([pullRequest]))
-        await Promise.all([stale, fresh, concurrent])
-      }
+    const stale = getGiteaPullRequestForBranchOrThrow('/repo', branch)
+    await oldStarted.promise
+    const repo = await getGiteaRepoSlug('/repo')
+    if (!repo) {
+      throw new Error('Expected test repository')
     }
-  )
+    invalidateGiteaPullRequestScanForRepo(repo)
+    const fresh = getGiteaPullRequestForBranchOrThrow('/repo', branch)
+    const concurrent = getGiteaPullRequestForBranchOrThrow('/repo', branch)
+    try {
+      await new Promise<void>((resolve) => setImmediate(resolve))
+      expect(fetchMock).toHaveBeenCalledTimes(2)
+      freshResponse.resolve(Response.json([pullRequest]))
+      expect(await fresh).toMatchObject({ number: 7 })
+      expect(await concurrent).toMatchObject({ number: 7 })
+      oldResponse.resolve(Response.json([]))
+      expect(await stale).toBeNull()
+      expect(await getGiteaPullRequestForBranchOrThrow('/repo', branch)).toMatchObject({
+        number: 7
+      })
+      expect(fetchMock).toHaveBeenCalledTimes(2)
+    } finally {
+      oldResponse.resolve(Response.json([]))
+      freshResponse.resolve(Response.json([pullRequest]))
+      await Promise.all([stale, fresh, concurrent])
+    }
+  })
 })

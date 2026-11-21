@@ -22,7 +22,7 @@ let attachHook: AttachHook | null = null
 vi.mock('electron', () => ({
   webContents: { fromId: (id: number) => ({ session: mocks.sessionByTabId.get(id) }) }
 }))
-vi.mock('../../sessions/browser-session-registry', () => ({
+vi.mock('../../sessions/profiles/browser-session-registry', () => ({
   browserSessionRegistry: {
     updateEnabledExtensionIds: mocks.updateEnabled,
     updatePinnedExtensionIds: mocks.updatePinned,
@@ -30,12 +30,13 @@ vi.mock('../../sessions/browser-session-registry', () => ({
     getPinnedExtensionIds: () => []
   }
 }))
-vi.mock('../../browser-manager', () => ({
+vi.mock('../../guest-lifecycle/manager/browser-manager', () => ({
   browserManager: { setUnownedDownloadOwnerResolver: vi.fn() }
 }))
 vi.mock('../api/cookies', () => ({ observeBrowserExtensionCookieChanges: vi.fn() }))
 vi.mock('../api-runtime/browser-extension-content-scripts', () => ({
   forgetBrowserExtensionContentScriptRestore: vi.fn(),
+  forgetBrowserExtensionSessionContentScripts: vi.fn(),
   restoreBrowserExtensionContentScripts: vi.fn()
 }))
 vi.mock('../api-runtime/browser-extension-api-host', () => ({
@@ -59,7 +60,7 @@ vi.mock('./browser-extension-session-loader', () => ({
     attachHook = hooks
   }
 }))
-vi.mock('../browser-extension-web-request', () => ({
+vi.mock('../requests/browser-extension-web-request-observer', () => ({
   installBrowserExtensionWebRequestForwarding: vi.fn(),
   observeBrowserExtensionWebRequests: vi.fn(),
   stopObservingBrowserExtensionWebRequests: vi.fn()

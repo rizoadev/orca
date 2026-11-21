@@ -1,6 +1,6 @@
-import type { GitHubWorkItem } from './github/work-item-types'
-import type { GitLabWorkItem } from './gitlab-types'
-import type { TaskSourceContext } from './task-source-context'
+import type { GitHubWorkItem } from './github/work-items/work-item-types'
+import type { GitLabWorkItem } from './gitlab/gitlab-types'
+import type { TaskSourceContext } from './work-items/task-source-context'
 
 /** State behind a virtual main-view issue-detail tab (no file on disk). */
 export type OpenIssueDetailsState = {

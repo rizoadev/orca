@@ -1,4 +1,4 @@
-import type { TuiAgent } from '../../../../../../shared/tui-agent'
+import type { TuiAgent } from '../../../../../../shared/agent-launch/catalog/tui-agent'
 
 export function resolveLaunchAgent(_agents: TuiAgent[]): TuiAgent | null {
   return _agents[0] ?? null

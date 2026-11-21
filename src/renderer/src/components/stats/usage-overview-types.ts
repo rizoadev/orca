@@ -2,29 +2,24 @@ import type {
   ClaudeUsageDailyPoint,
   ClaudeUsageScanState,
   ClaudeUsageSummary
-} from '../../../../shared/claude-usage-types'
+} from '../../../../shared/agent-usage/analytics/claude-usage-types'
 import type {
   CodexUsageDailyPoint,
   CodexUsageScanState,
   CodexUsageSummary
-} from '../../../../shared/codex-usage-types'
+} from '../../../../shared/agent-usage/analytics/codex-usage-types'
 import type {
   OpenCodeUsageDailyPoint,
   OpenCodeUsageScanState,
   OpenCodeUsageSummary
-} from '../../../../shared/opencode-usage-types'
+} from '../../../../shared/agent-usage/analytics/opencode-usage-types'
 import type {
   MuseUsageDailyPoint,
   MuseUsageScanState,
   MuseUsageSummary
-} from '../../../../shared/muse-usage-types'
-import type {
-  PiUsageDailyPoint,
-  PiUsageScanState,
-  PiUsageSummary
-} from '../../../../shared/pi-usage-types'
+} from '../../../../shared/agent-usage/analytics/muse-usage-types'
 
-export type UsageProviderId = 'claude' | 'codex' | 'opencode' | 'muse' | 'pi'
+export type UsageProviderId = 'claude' | 'codex' | 'opencode' | 'muse'
 
 export type UsageProviderOverview = {
   id: UsageProviderId
@@ -57,7 +52,6 @@ export type UsageOverviewDailyPoint = {
   codexTokens: number
   openCodeTokens: number
   museTokens: number
-  piTokens: number
   intensity: 0 | 1 | 2 | 3 | 4
 }
 
@@ -103,10 +97,5 @@ export type UsageOverviewInput = {
     scanState: MuseUsageScanState | null
     summary: MuseUsageSummary | null
     daily: MuseUsageDailyPoint[]
-  }
-  pi: {
-    scanState: PiUsageScanState | null
-    summary: PiUsageSummary | null
-    daily: PiUsageDailyPoint[]
   }
 }

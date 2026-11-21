@@ -6,10 +6,10 @@ import type {
   Repo
 } from '../../../../../../shared/types'
 import { translate } from '@/i18n/i18n'
-import { linearCreateIssue, linearUpdateIssue } from '@/runtime/runtime-linear-issue-mutations'
-import { linearListTeams, linearTeamStates } from '@/runtime/runtime-linear-project-client'
+import { linearCreateIssue, linearUpdateIssue } from '@/runtime/linear/runtime-linear-issue-client'
+import { linearListTeams, linearTeamStates } from '@/runtime/linear/runtime-linear-project-client'
 import type { CreateIssueSubmitInput } from './issues-panel-create-dialog'
-import type { TaskSourceContext } from '../../../../../../shared/task-source-context'
+import type { TaskSourceContext } from '../../../../../../shared/work-items/task-source-context'
 import { gitLabModuleApi, gitLabModuleSelector } from '../../gitlab-host-api'
 import { getRepoIssueSourceContext, type IssueRow } from './issues-panel-rows'
 import type { RepoIssueProvider } from './repo-issue-provider'

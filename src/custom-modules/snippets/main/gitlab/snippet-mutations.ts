@@ -1,4 +1,4 @@
-import type { IssueSourcePreference } from '../../../../shared/repo-types'
+import type { IssueSourcePreference } from '../../../../shared/repository/repo-types'
 import type { GitLabSnippetCreateInput, GitLabSnippetUpdateInput } from '../../shared/types'
 import {
   acquire,

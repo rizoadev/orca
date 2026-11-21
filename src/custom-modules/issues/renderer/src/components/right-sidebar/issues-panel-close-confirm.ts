@@ -1,13 +1,8 @@
 import { translate } from '@/i18n/i18n'
+import type { useConfirmationDialog } from '@/components/dismiss/confirmation/confirmation-dialog-context'
 import type { IssueRow } from './issues-panel-rows'
 
-type ConfirmFn = (options: {
-  title: string
-  description?: string
-  confirmLabel?: string
-  cancelLabel?: string
-  confirmVariant?: 'default' | 'destructive'
-}) => Promise<boolean>
+type ConfirmFn = ReturnType<typeof useConfirmationDialog>
 
 // Why: close is irreversible on the host forge; require an explicit confirm so
 // a stray click on the compact row action cannot close issues.

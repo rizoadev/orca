@@ -1,4 +1,4 @@
-import type { ClaudeUsageDailyPoint } from '../../../../shared/claude-usage-types'
+import type { ClaudeUsageDailyPoint } from '../../../../shared/agent-usage/analytics/claude-usage-types'
 import type { UsageOverviewDailyPoint, UsageOverviewInput } from './usage-overview-types'
 
 export function getClaudeDailyTotal(entry: ClaudeUsageDailyPoint): number {
@@ -33,8 +33,7 @@ function emptyDailyTotals(day: string): Omit<UsageOverviewDailyPoint, 'intensity
     claudeTokens: 0,
     codexTokens: 0,
     openCodeTokens: 0,
-    museTokens: 0,
-    piTokens: 0
+    museTokens: 0
   }
 }
 
@@ -67,13 +66,6 @@ export function buildDailyOverview(input: UsageOverviewInput): UsageOverviewDail
     const current = byDay.get(entry.day) ?? emptyDailyTotals(entry.day)
     current.totalTokens += entry.totalTokens
     current.museTokens += entry.totalTokens
-    byDay.set(entry.day, current)
-  }
-
-  for (const entry of input.pi.daily) {
-    const current = byDay.get(entry.day) ?? emptyDailyTotals(entry.day)
-    current.totalTokens += entry.totalTokens
-    current.piTokens += entry.totalTokens
     byDay.set(entry.day, current)
   }
 

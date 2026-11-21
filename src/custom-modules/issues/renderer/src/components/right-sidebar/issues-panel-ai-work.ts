@@ -1,8 +1,7 @@
 import { toast } from 'sonner'
-import { launchAgentBackgroundSession } from '@/lib/launch-agent-background-session'
-import { launchAgentInNewTabWithOutcome } from '@/lib/launch-agent-in-new-tab'
-import { newAgentLaunchRequestId } from '@/lib/agent-launch-request-id'
+import { launchAgentInNewTabWithOutcome } from '@/lib/agent-session/launch/new-tab/launch-agent-in-new-tab'
 import { pickSourceControlLaunchAgent } from '../../../../../../shared/source-control/ai/source-control-launch-agent-selection'
+import { createNonSecureContextUuid } from '../../../../../../shared/identifiers/non-secure-context-uuid'
 import { useAppStore } from '@/store'
 import { translate } from '@/i18n/i18n'
 import type { Repo, TuiAgent } from '../../../../../../shared/types'
@@ -109,44 +108,30 @@ export async function launchIssueAiWorker(args: {
   const refLabel = issueRefLabel(args.issue)
 
   try {
-    if (args.mode === 'watch' || args.mode === 'discuss') {
-      const outcome = launchAgentInNewTabWithOutcome({
-        requestId: newAgentLaunchRequestId(),
-        agent,
-        worktreeId: args.worktreeId,
-        prompt,
-        launchSource: 'sidebar'
-      })
-      if (!outcome || 'refused' in outcome || !outcome.surface) {
-        toast.error(
-          translate(
-            'auto.components.right.sidebar.issuesPanel.agentLaunchFailed',
-            'Failed to launch AI planner for this issue.'
-          )
-        )
-        return { ok: false }
-      }
-    } else {
-      const result = await launchAgentBackgroundSession({
+    const outcome = launchAgentInNewTabWithOutcome(
+      {
+        requestId: createNonSecureContextUuid(),
         agent,
         worktreeId: args.worktreeId,
         prompt,
         launchSource: 'sidebar',
-        title: translate(
+        promptDelivery: 'auto-submit',
+        quickCommandLabel: translate(
           'auto.components.right.sidebar.issuesPanel.aiWorkTabTitle',
           'AI work · {{value0}}',
           { value0: refLabel }
         )
-      })
-      if (!result) {
-        toast.error(
-          translate(
-            'auto.components.right.sidebar.issuesPanel.agentLaunchFailed',
-            'Failed to launch AI planner for this issue.'
-          )
+      },
+      false
+    )
+    if (!outcome || 'refused' in outcome || !outcome.surface) {
+      toast.error(
+        translate(
+          'auto.components.right.sidebar.issuesPanel.agentLaunchFailed',
+          'Failed to launch AI planner for this issue.'
         )
-        return { ok: false }
-      }
+      )
+      return { ok: false }
     }
   } catch (err) {
     toast.error(

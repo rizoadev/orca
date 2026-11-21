@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react'
 import { Bot, CheckCircle2, LoaderCircle, XCircle } from 'lucide-react'
-import { cn } from '@/lib/utils'
+import { cn } from '@/lib/class-names'
 import { useAppStore } from '@/store'
 import { translate } from '@/i18n/i18n'
 import type { AgentStatusEntry } from '../../../../../../shared/agent-status/contracts/agent-status-types'
@@ -28,20 +28,20 @@ function formatElapsed(startedAt: number): string {
  *  memoization needed because the map lookup is O(active panes) and callers
  *  already re-render on agentStatusByPaneKey changes. */
 export function findAgentStatusForTab(
-  byPaneKey: Record<string, AgentStatusEntry | undefined>,
+  byPaneKey: ReadonlyMap<string, AgentStatusEntry | undefined>,
   tabId: string,
   fallbackPaneKey?: string
 ): AgentStatusEntry | undefined {
   if (fallbackPaneKey) {
-    const direct = byPaneKey[fallbackPaneKey]
+    const direct = byPaneKey.get(fallbackPaneKey)
     if (direct) {
       return direct
     }
   }
   const prefix = `${tabId}:`
-  for (const key of Object.keys(byPaneKey)) {
+  for (const key of byPaneKey.keys()) {
     if (key.startsWith(prefix)) {
-      const entry = byPaneKey[key]
+      const entry = byPaneKey.get(key)
       if (entry) {
         return entry
       }
@@ -63,7 +63,7 @@ export function IssueAiWorkBadge({
   const activateTab = useAppStore((s) => s.activateTab)
   const paneStatus = useAppStore((s) =>
     entry
-      ? findAgentStatusForTab(s.agentStatusByPaneKey ?? {}, entry.tabId, entry.paneKey)
+      ? findAgentStatusForTab(s.agentStatusByPaneKey ?? new Map(), entry.tabId, entry.paneKey)
       : undefined
   )
 

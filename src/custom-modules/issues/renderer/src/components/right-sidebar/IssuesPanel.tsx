@@ -1,9 +1,10 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import { FolderKanban, Plus, RefreshCw, ExternalLink } from 'lucide-react'
-import { useConfirmationDialog } from '@/components/confirmation-dialog-context'
-import { useActiveWorktree, useRepoById } from '@/store/selectors'
+import { useConfirmationDialog } from '@/components/dismiss/confirmation/confirmation-dialog-context'
+import { useActiveWorktree } from '@/store/workspaces/selection/use-selected-worktree'
+import { useRepoById } from '@/store/repos/use-repository-catalog'
 import { useAppStore } from '@/store'
-import { cn } from '@/lib/utils'
+import { cn } from '@/lib/class-names'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import type { GitHubWorkItem, GitLabWorkItem, LinearIssue } from '../../../../../../shared/types'
@@ -18,8 +19,8 @@ import { useIssueRowActions } from './use-issue-row-actions'
 import { IssuesProviderTabs, providerLabel } from './issues-provider-tabs'
 // import { createOrchestrationTaskFromIssue } from '@/lib/issue-to-orchestration-task_DISABLED' // not available
 import { useIssueRowsFetch, type IssuesProviderTab } from './use-issue-rows-fetch'
-import { openHttpLink } from '@/lib/http-link-routing'
-import LinearIssueWorkspace from '@/components/LinearIssueWorkspace'
+import { openHttpLink } from '@/lib/browser/navigation/http-link-routing'
+import LinearIssueWorkspace from '@/components/task-page/linear/issue-workspace/LinearIssueWorkspace'
 
 export default function IssuesPanel({ isVisible }: { isVisible: boolean }): React.JSX.Element {
   const activeWorktree = useActiveWorktree()

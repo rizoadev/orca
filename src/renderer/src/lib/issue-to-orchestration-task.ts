@@ -1,7 +1,7 @@
 /**
  * Convert a GitHub/GitLab issue into an orchestration task scoped to the repo/worktree.
  */
-import { callRuntimeRpc } from '@/runtime/runtime-rpc-client'
+import { callRuntimeRpc } from '@/runtime/rpc/calls/runtime-rpc-call'
 export type IssueToOrchestrationTask = { id: string; title?: string }
 
 const LOCAL_RUNTIME_TARGET = { kind: 'local' as const }

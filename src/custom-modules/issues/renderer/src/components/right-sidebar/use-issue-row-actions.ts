@@ -23,7 +23,7 @@ import {
 } from './issues-panel-workspace-actions'
 import { launchIssueAiPlanCommenter } from './issues-panel-ai-plan'
 import { launchIssueAiWorker, type IssueAiWorkMode } from './issues-panel-ai-work'
-import type { useConfirmationDialog } from '@/components/confirmation-dialog-context'
+import type { useConfirmationDialog } from '@/components/dismiss/confirmation/confirmation-dialog-context'
 import type {
   GitHubWorkItem,
   GitLabWorkItem,
