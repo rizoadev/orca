@@ -3593,3 +3593,13 @@ html.native-shell .app-layout {
     animation: none;
   }
 }
+
+/* Indeterminate toast progress bar for single-step uploads (e.g. Turso sync). */
+@keyframes turso-toast-progress {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(250%);
+  }
+}

@@ -20,7 +20,7 @@ import { parseRemoteRepo } from '@/components/right-sidebar/source-control/revie
 import { branchName } from '@/lib/git-utils'
 import { useAppStore } from '@/store'
 import { useMottoStore } from './motto-store'
-import type { GitStatusEntry } from '../../shared/git-status-types'
+import type { GitStatusEntry } from '../../shared/git/status/git-status-types'
 import type { DocumentThemePreference } from '@/lib/document-theme'
 
 const HERO_PETS = [

@@ -436,6 +436,10 @@ vi.mock('../source-control/bitbucket', () => ({
   registerBitbucketHandlers: registerBitbucketHandlersMock
 }))
 
+vi.mock('../turso/turso-snippet-handlers', () => ({
+  registerTursoSnippetHandlers: vi.fn()
+}))
+
 vi.mock('../source-control/gitlab', () => ({
   registerGitLabHandlers: registerGitLabHandlersMock
 }))

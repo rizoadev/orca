@@ -1,8 +1,9 @@
 import { preventSecondaryMenuSelection } from '@/components/ui/prevent-secondary-menu-selection'
 import React, { useEffect } from 'react'
-import { FilePlus, FolderPlus, Code2 } from 'lucide-react'
+import { FilePlus, FolderPlus, Code2, Database } from 'lucide-react'
 import { CLOSE_ALL_CONTEXT_MENUS_EVENT } from '@/lib/close-all-context-menus'
 import { useRepoById, useActiveWorktree } from '@/store/selectors'
+import { useAppStore } from '@/store'
 import { branchName } from '@/lib/git-utils'
 import {
   DropdownMenu,
@@ -12,9 +13,9 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { translate } from '@/i18n/i18n'
 import { toast } from 'sonner'
-import { createProjectSnippet } from '../../../../custom-modules/snippets/main/gitlab/snippets'
-import type { GitLabSnippetCreateInput } from '../../../../custom-modules/snippets/shared/types'
-import type { IssueSourcePreference } from '../../../../shared/repo-types'
+import type { GitLabSnippetCreateInput } from '../../../../../../custom-modules/snippets/shared/types'
+import { gitLabApiFor } from '@/runtime/gitlab-owner-api'
+import { getRepoExecutionHostId } from '../../../../../../shared/execution-host'
 
 /** Targets creation and paste at the displayed directory while keeping workspace operations rooted at the worktree. */
 export function FileExplorerBackgroundMenu({
@@ -42,6 +43,9 @@ export function FileExplorerBackgroundMenu({
   const activeWorktree = useActiveWorktree()
   const activeRepo = useRepoById(activeWorktree?.repoId ?? null)
   const isGitLab = activeRepo?.gitRemoteIdentity?.remoteUrl?.toLowerCase().includes('gitlab')
+  const tursoUrl = useAppStore((s) => s.settings?.tursoDatabaseUrl?.trim() ?? '')
+  const tursoToken = useAppStore((s) => s.settings?.tursoAuthToken?.trim() ?? '')
+  const isTursoConfigured = tursoUrl !== '' && tursoToken !== ''
 
   const handleSnippetSync = async () => {
     if (!isGitLab || !activeRepo?.path || !activeRepo?.id) {
@@ -69,22 +73,50 @@ export function FileExplorerBackgroundMenu({
         description: 'Sync from Orca File Explorer'
       }
 
-      const preference: IssueSourcePreference = {
-        provider: 'gitlab',
-        remoteUrl: activeRepo.gitRemoteIdentity?.remoteUrl ?? '',
-        connectionId: activeRepo.connectionId ?? undefined,
-        branch: activeWorktree?.branch ?? 'main'
-      }
-
-      const snippetResult = await createProjectSnippet(
-        activeRepo.path,
-        input,
-        preference,
-        activeRepo.connectionId ?? null
-      )
+      const snippetResult = await gitLabApiFor({
+        repoPath: activeRepo.path,
+        repoOwnerExecutionHostId: getRepoExecutionHostId(activeRepo)
+      }).createProjectSnippet({ repoPath: activeRepo.path, repoId: activeRepo.id, ...input })
 
       if (snippetResult.ok) {
         toast.success('Synced to GitLab snippet')
+      } else {
+        toast.error(snippetResult.error || 'Failed to sync snippet')
+      }
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to sync snippet')
+    }
+  }
+
+  const handleTursoSync = async () => {
+    if (!isTursoConfigured || !activeRepo?.id || !activeWorktree) {
+      return
+    }
+
+    try {
+      const result = await window.api.fs
+        .readFile({ filePath: worktreePath })
+        .catch(() => ({ content: '' }))
+      const content = typeof result === 'string' ? result : (result?.content ?? '')
+      const fileName = worktreePath.split('/').pop() ?? 'snippet-file'
+
+      const isEnvFile = fileName.startsWith('.env')
+      const title = isEnvFile
+        ? `orca-sync:${branchName(activeWorktree.branch ?? 'main')}:${fileName}`
+        : fileName.replace(/\.[^.]+$/, '')
+
+      const snippetResult = await window.api.turso.createSnippet({
+        url: tursoUrl,
+        authToken: tursoToken,
+        repoId: activeRepo.id,
+        branch: branchName(activeWorktree.branch ?? 'main'),
+        title,
+        fileName,
+        content
+      })
+
+      if (snippetResult.ok) {
+        toast.success('Synced to Turso snippet')
       } else {
         toast.error(snippetResult.error || 'Failed to sync snippet')
       }
@@ -130,6 +162,15 @@ export function FileExplorerBackgroundMenu({
             {translate(
               'auto.components.right.sidebar.FileExplorerBackgroundMenu.snippetSync',
               'Sync to GitLab Snippet'
+            )}
+          </DropdownMenuItem>
+        )}
+        {isTursoConfigured && (
+          <DropdownMenuItem onSelect={handleTursoSync}>
+            <Database />
+            {translate(
+              'auto.components.right.sidebar.FileExplorerBackgroundMenu.tursoSync',
+              'Sync to Turso'
             )}
           </DropdownMenuItem>
         )}

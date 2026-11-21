@@ -27,8 +27,11 @@ import { joinPath } from '@/lib/path'
 import { branchName } from '@/lib/git-utils'
 import { translate } from '@/i18n/i18n'
 import type { GitLabSnippet } from '../../shared/types'
+import type { Worktree } from '../../../../shared/worktree/types'
 import { parseSnippetTitle, snippetMatchesBranch } from './snippet-encoding'
 import { SnippetPreviewModal } from './SnippetPreviewModal'
+
+const EMPTY_WORKTREES: Worktree[] = []
 
 type SnippetBlockProps = {
   worktreePath: string
@@ -48,12 +51,12 @@ export function SnippetBlock({ worktreePath, branch, repoId, connectionId }: Sni
   // Current branch name, normalised (strip refs/heads/)
   const currentBranch = branchName(branch)
 
+  // Why: selector must return a stable reference (the raw array) or zustand re-renders every tick.
+  const worktrees = useAppStore((s) => s.worktreesByRepo[repoId] ?? EMPTY_WORKTREES)
+
   // Collect all known branches for this repo from the store
-  const repoBranches = useAppStore((s) => {
-    const worktrees = s.worktreesByRepo[repoId] ?? []
-    const names = worktrees
-      .map((w) => branchName(w.branch ?? ''))
-      .filter((b) => b && b !== 'HEAD')
+  const repoBranches = useMemo(() => {
+    const names = worktrees.map((w) => branchName(w.branch ?? '')).filter((b) => b && b !== 'HEAD')
     // De-duplicate, keep current branch first
     const seen = new Set<string>()
     const result: string[] = []
@@ -64,7 +67,7 @@ export function SnippetBlock({ worktreePath, branch, repoId, connectionId }: Sni
       }
     }
     return result
-  })
+  }, [worktrees, currentBranch])
 
   // Selected branch — default to current branch
   const [selectedBranch, setSelectedBranch] = useState<string>(currentBranch)
@@ -170,7 +173,7 @@ export function SnippetBlock({ worktreePath, branch, repoId, connectionId }: Sni
           repoId,
           snippetId: snippet.id
         })
-        if (!detail.ok || !detail.snippet) {
+        if (!detail.ok) {
           toast.error('Failed to fetch snippet', { id: toastId, description: detail.error })
           return
         }
@@ -211,7 +214,7 @@ export function SnippetBlock({ worktreePath, branch, repoId, connectionId }: Sni
             <CollapsibleTrigger asChild>
               <button
                 type="button"
-                className="flex min-w-0 flex-1 items-center gap-1.5 px-3 py-2 text-left transition-colors hover:bg-sidebar-accent"
+                className="flex min-w-0 flex-1 items-center gap-1.5 px-3 py-1.5 text-left transition-colors hover:bg-sidebar-accent"
               >
                 {open ? (
                   <ChevronDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
@@ -242,17 +245,11 @@ export function SnippetBlock({ worktreePath, branch, repoId, connectionId }: Sni
 
           <CollapsibleContent>
             {/* ── Branch selector ── */}
-            <div className="flex items-center gap-1.5 px-2 pb-1 pt-0.5">
-              <GitBranch
-                className={cn(
-                  'h-3 w-3 shrink-0',
-                  isViewingOtherBranch ? 'text-amber-500' : 'text-muted-foreground'
-                )}
-              />
+            <div className="flex items-center gap-1.5 px-2 py-0.5">
               <Select value={selectedBranch} onValueChange={setSelectedBranch}>
                 <SelectTrigger
                   className={cn(
-                    'h-5 min-w-0 flex-1 border-0 bg-transparent px-0 py-0 text-[11px] shadow-none focus:ring-0',
+                    'h-4 min-w-0 flex-1 border-0 bg-transparent px-1.5 py-0 text-[11px] shadow-none focus:ring-0 [&_svg]:size-3',
                     isViewingOtherBranch ? 'text-amber-500' : 'text-muted-foreground'
                   )}
                 >
@@ -275,7 +272,7 @@ export function SnippetBlock({ worktreePath, branch, repoId, connectionId }: Sni
             </div>
 
             {/* ── Snippet list ── */}
-            <div className="max-h-48 overflow-y-auto scrollbar-sleek px-1 pb-2">
+            <div className="max-h-48 overflow-y-auto scrollbar-sleek px-2 pb-1.5">
               {loading && allSnippets.length === 0 ? (
                 <div className="px-3 py-3 text-center text-[11px] text-muted-foreground">
                   <LoaderCircle className="mx-auto mb-1 h-3.5 w-3.5 animate-spin" />
@@ -286,8 +283,8 @@ export function SnippetBlock({ worktreePath, branch, repoId, connectionId }: Sni
               ) : snippets.length === 0 ? (
                 <div className="px-3 py-3 text-center text-[11px] text-muted-foreground">
                   {isViewingOtherBranch
-                    ? `No snippets for branch "${selectedBranch}"`
-                    : translate('custom.noSnippets', 'No snippets found for this branch')}
+                    ? `No GitLab snippets for branch "${selectedBranch}"`
+                    : translate('custom.noSnippets', 'No GitLab snippets found for this branch')}
                 </div>
               ) : (
                 <div className="space-y-1">
@@ -297,7 +294,7 @@ export function SnippetBlock({ worktreePath, branch, repoId, connectionId }: Sni
                     return (
                       <div
                         key={snippet.id}
-                        className="group flex items-center gap-1.5 rounded px-2 py-1.5 hover:bg-sidebar-accent"
+                        className="group flex items-center gap-1.5 rounded px-2 py-1 hover:bg-sidebar-accent"
                       >
                         <KeyRound className="h-3 w-3 shrink-0 text-muted-foreground" />
                         <span className="min-w-0 flex-1 truncate text-[11px]" title={displayName}>

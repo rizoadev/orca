@@ -81,23 +81,23 @@ else
 fi
 
 # ─────────────────────────────────────────────────────────────
-# ── 3. cloudflare — global-settings-types.ts (CloudflareRelaySettings intersection)
+# ── 3. cloudflare + turso — global-settings-base.ts (custom settings intersection; base has max-lines headroom)
 # ─────────────────────────────────────────────────────────────
-SETTINGS="$ROOT/src/shared/global-settings-types.ts"
+SETTINGS="$ROOT/src/shared/global-settings-base.ts"
 if [ ! -f "$SETTINGS" ]; then
-  echo "✗ global-settings-types.ts not found"
+  echo "✗ global-settings-base.ts not found"
   FAIL=1
 else
   if grep -qF 'CloudflareRelaySettings' "$SETTINGS"; then
-    echo "✓ global-settings-types.ts — already injected"
+    echo "✓ global-settings-base.ts — already injected"
   else
-    # Insert import after AgentLaunchChoices import and intersection on GlobalSettings
     inject_import "$SETTINGS" "import type { CloudflareRelaySettings } from './cloudflare-relay-settings'"
-    if grep -qF 'GlobalSettings = GlobalSettingsBase &' "$SETTINGS"; then
-      sed -i 's/GlobalSettings = GlobalSettingsBase & {/GlobalSettings = GlobalSettingsBase \& CloudflareRelaySettings \& {/' "$SETTINGS"
-      echo "✓ global-settings-types.ts — injected"
+    inject_import "$SETTINGS" "import type { TursoSettings } from './turso/turso-settings'"
+    if grep -qE '^  EditorSaveSettings$' "$SETTINGS"; then
+      sed -i 's/^  EditorSaveSettings$/  EditorSaveSettings \&\n  CloudflareRelaySettings \&\n  TursoSettings/' "$SETTINGS"
+      echo "✓ global-settings-base.ts — injected"
     else
-      echo "✗ global-settings-types.ts — GlobalSettings anchor not found, add intersection manually"
+      echo "✗ global-settings-base.ts — EditorSaveSettings anchor not found, add intersection manually"
       FAIL=1
     fi
   fi

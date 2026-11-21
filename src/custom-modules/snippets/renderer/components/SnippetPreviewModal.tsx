@@ -2,17 +2,10 @@
  * Snippet preview modal — side-by-side diff of local file vs GitLab snippet.
  * Uses the existing DiffViewer component (Monaco-based) for proper diff coloring.
  */
-import React, { Suspense, useEffect, useState } from 'react'
-import { LoaderCircle, ExternalLink } from 'lucide-react'
-import { lazyWithRetry as lazy } from '@/lib/lazy-with-retry'
-import {
-  Sheet,
-  SheetContent,
-  SheetHeader,
-  SheetTitle,
-  SheetDescription
-} from '@/components/ui/sheet'
+import React, { useEffect, useState } from 'react'
+import { ExternalLink } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { detectLanguage } from '@/lib/language-detect'
 import { openHttpLink } from '@/lib/http-link-routing'
 import { joinPath } from '@/lib/path'
@@ -20,7 +13,7 @@ import { userNamedFileAccess } from '@/lib/local-file-access'
 import { translate } from '@/i18n/i18n'
 import type { GitLabSnippet, GitLabSnippetDetail } from '../../shared/types'
 import { relativePathFromSnippetTitle } from './snippet-encoding'
-const DiffViewer = lazy(() => import('@/components/editor/DiffViewer'))
+import { SnippetDiffSheet, isLocalFileMissing } from './snippet-diff-sheet'
 
 type LoadState =
   | { kind: 'idle' }
@@ -61,11 +54,19 @@ export function SnippetPreviewModal({
 
     const filePath = joinPath(worktreePath, relativePath)
 
-    const localPromise = window.api.fs.readFile({
-      filePath,
-      connectionId: connectionId ?? undefined,
-      access: userNamedFileAccess()
-    })
+    const localPromise = window.api.fs
+      .readFile({
+        filePath,
+        connectionId: connectionId ?? undefined,
+        access: userNamedFileAccess()
+      })
+      .catch((err: unknown) => {
+        if (isLocalFileMissing(err)) {
+          // Snippet has no counterpart on disk yet — diff against an empty local side.
+          return { isBinary: false, content: '' }
+        }
+        throw err
+      })
 
     const remotePromise = window.api.gl.getProjectSnippet({
       repoPath: worktreePath,
@@ -120,70 +121,61 @@ export function SnippetPreviewModal({
 
   const modelKey = `snippet-preview:${snippet?.id ?? 'none'}`
 
-  return (
-    <Sheet open={open} onOpenChange={(o) => !o && onClose()}>
-      <SheetContent side="right" className="w-full sm:max-w-5xl p-0 flex flex-col h-full">
-        {/* Header */}
-        <SheetHeader className="px-4 py-3 border-b border-border shrink-0">
-          <div className="flex items-center justify-between gap-2">
-            <div className="min-w-0">
-              <SheetTitle className="text-sm font-semibold truncate">
-                {relativePath || snippet?.title}
-              </SheetTitle>
-              <SheetDescription className="text-xs text-muted-foreground">
-                {translate('custom.snippetDiff', 'Local (left) vs GitLab Snippet (right)')}
-                {snippet?.updatedAt && ` · updated ${snippet.updatedAt}`}
-              </SheetDescription>
-            </div>
-            {snippet?.webUrl && (
-              <Button
-                variant="ghost"
-                size="sm"
-                className="shrink-0"
-                onClick={() => openHttpLink(snippet.webUrl)}
-              >
-                <ExternalLink className="h-3.5 w-3.5 mr-1" />
-                Open in GitLab
-              </Button>
+  if (!snippet || state.kind !== 'ready') {
+    return (
+      <Sheet
+        open={open}
+        onOpenChange={(o) => {
+          if (!o) {
+            onClose()
+          }
+        }}
+      >
+        <SheetContent side="right" className="w-full sm:max-w-5xl p-0 flex flex-col h-full">
+          <SheetHeader className="px-4 py-3 border-b border-border shrink-0">
+            <SheetTitle className="text-sm font-semibold truncate">
+              {relativePath || snippet?.title}
+            </SheetTitle>
+          </SheetHeader>
+          <div className="flex flex-1 items-center justify-center text-xs text-muted-foreground">
+            {state.kind === 'error' ? (
+              <span className="p-6 text-center text-destructive">{state.message}</span>
+            ) : (
+              <>
+                <span className="mr-2 h-3.5 w-3.5 animate-spin rounded-full border-2 border-current border-t-transparent" />
+                {state.kind === 'loading' ? 'Loading diff…' : 'Opening…'}
+              </>
             )}
           </div>
-        </SheetHeader>
+        </SheetContent>
+      </Sheet>
+    )
+  }
 
-        {/* Content */}
-        <div className="flex flex-col flex-1 min-h-0 overflow-hidden">
-          {state.kind === 'idle' || state.kind === 'loading' ? (
-            <div className="flex h-full items-center justify-center text-xs text-muted-foreground">
-              <LoaderCircle className="mr-2 h-3.5 w-3.5 animate-spin" />
-              {state.kind === 'loading' ? 'Loading diff…' : 'Opening…'}
-            </div>
-          ) : state.kind === 'error' ? (
-            <div className="flex h-full items-center justify-center p-6 text-center text-xs text-destructive">
-              {state.message}
-            </div>
-          ) : (
-            <Suspense
-              fallback={
-                <div className="flex h-full items-center justify-center text-xs text-muted-foreground">
-                  <LoaderCircle className="mr-2 h-3.5 w-3.5 animate-spin" />
-                  Loading editor…
-                </div>
-              }
-            >
-              <div className="flex flex-col flex-1 min-h-0 h-full">
-                <DiffViewer
-                  modelKey={modelKey}
-                  originalContent={state.local}
-                  modifiedContent={state.remote}
-                  language={language}
-                  filePath={relativePath}
-                  relativePath={relativePath}
-                  sideBySide
-                />
-              </div>
-            </Suspense>
-          )}
-        </div>
-      </SheetContent>
-    </Sheet>
+  return (
+    <SnippetDiffSheet
+      open={open}
+      title={relativePath || snippet.title}
+      description={translate('custom.snippetDiff', 'Local (left) vs GitLab Snippet (right)')}
+      language={language}
+      relativePath={relativePath}
+      modelKey={modelKey}
+      local={state.local}
+      remote={state.remote}
+      onClose={onClose}
+      headerActions={
+        snippet.webUrl ? (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="shrink-0"
+            onClick={() => openHttpLink(snippet.webUrl)}
+          >
+            <ExternalLink className="h-3.5 w-3.5 mr-1" />
+            Open in GitLab
+          </Button>
+        ) : undefined
+      }
+    />
   )
 }

@@ -1,6 +1,6 @@
 import { toast } from 'sonner'
 import { launchAgentBackgroundSession } from '@/lib/launch-agent-background-session'
-import { pickSourceControlLaunchAgent } from '../../../../../../shared/source-control-launch-agent-selection'
+import { pickSourceControlLaunchAgent } from '../../../../../../shared/source-control/ai/source-control-launch-agent-selection'
 import { useAppStore } from '@/store'
 import { translate } from '@/i18n/i18n'
 import type { Repo, TuiAgent } from '../../../../../../shared/types'

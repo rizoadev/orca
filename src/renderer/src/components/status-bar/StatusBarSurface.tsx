@@ -297,6 +297,15 @@ export function StatusBarSurface({
         data-overflowing={overflowing}
       >
         <div ref={segmentsRef} className="flex w-max items-center gap-3">
+          {import.meta.env.DEV ? (
+            <span
+              data-dev-badge
+              className="rounded bg-amber-500/15 px-1.5 py-px text-[10px] font-medium uppercase tracking-wide text-amber-500"
+              title="Running in dev mode"
+            >
+              dev
+            </span>
+          ) : null}
           {!isPairedWebClientWindow() ? (
             <>
               <PluginsStatusSegment />

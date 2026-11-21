@@ -235,6 +235,8 @@ export function buildDefaultSettings(args: {
     minimaxGroupId: '',
     minimaxUsageModels: 'general',
     minimaxEndpoint: 'overseas',
+    tursoDatabaseUrl: '',
+    tursoAuthToken: '',
     zcodePlanSite: 'zai',
     geminiCliOAuthEnabled: false,
     agentCmdOverrides: {},

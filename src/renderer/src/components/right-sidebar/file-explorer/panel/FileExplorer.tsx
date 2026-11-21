@@ -44,7 +44,8 @@ import { useStoppedWslHost } from '../../../wsl-host-stopped/use-stopped-wsl-hos
 import { translate } from '@/i18n/i18n'
 import { useUiLanguageRevision } from '@/i18n/use-ui-language-revision'
 import { branchName } from '@/lib/git-utils'
-import { SnippetBlock } from '../../../../custom-modules/snippets/renderer/components/SnippetBlock'
+import { SnippetBlock } from '../../../../../../custom-modules/snippets/renderer/components/SnippetBlock'
+import { TursoSnippetBlock } from '../../../../../../custom-modules/snippets/renderer/components/TursoSnippetBlock'
 
 /** Coordinates scoped navigation while retaining the actual worktree root for file operations and runtime routing. */
 function FileExplorerFiles(): React.JSX.Element {
@@ -60,6 +61,8 @@ function FileExplorerFiles(): React.JSX.Element {
   const stoppedWslHost = useStoppedWslHost(activeWorktreeId)
   const activeWorktree = useActiveWorktree()
   const activeRepo = useRepoById(activeWorktree?.repoId ?? null)
+  const isGitLabRepo =
+    activeRepo?.gitRemoteIdentity?.remoteUrl?.toLowerCase().includes('gitlab') ?? false
   // Why: a folder workspace has no repo row, so only the catalog owner names its SSH host.
   const openInOwner = useAppStore((s) =>
     getWorkspaceFileRevealOwner(s, activeWorktreeId, {
@@ -363,9 +366,18 @@ function FileExplorerFiles(): React.JSX.Element {
         displayDepth={displayDepth}
         onStartNew={inlineInputState.startNew}
       />
-      {/* GitLab Snippets Block - shown for all repos with a Git remote identity */}
-      {activeRepo?.gitRemoteIdentity && isFilesViewActive && (
+      {/* GitLab Snippets Block - only for GitLab-hosted repos */}
+      {activeRepo && isGitLabRepo && isFilesViewActive && (
         <SnippetBlock
+          worktreePath={worktreePath}
+          branch={branchName(activeWorktree?.branch ?? '')}
+          repoId={activeRepo.id}
+          connectionId={activeRepo.connectionId ?? null}
+        />
+      )}
+      {/* Turso Snippets Block - shown whenever Turso credentials are configured */}
+      {activeRepo && isFilesViewActive && (
+        <TursoSnippetBlock
           worktreePath={worktreePath}
           branch={branchName(activeWorktree?.branch ?? '')}
           repoId={activeRepo.id}

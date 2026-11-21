@@ -222,7 +222,7 @@ export const electronViteConfig: UserConfig = {
         input: MAIN_BUILD_ENTRY_POINTS,
         // CLI builds replace exported entries; keep their internals separate without moving startup paths.
         preserveEntrySignatures: 'exports-only',
-        // Electron and sidecar launchers require stable CommonJS paths despite Rolldown’s SSR ESM default.
+        // Electron and sidecar launchers require stable CommonJS paths despite Rolldown's SSR ESM default.
         output: {
           // V8 stores a whole script as UTF-16 when any char is above U+00FF; escaping keeps sources one-byte (half the memory).
           charset: 'ascii',

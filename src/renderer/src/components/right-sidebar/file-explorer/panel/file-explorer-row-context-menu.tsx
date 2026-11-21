@@ -56,6 +56,10 @@ import {
   snippetTitle,
   encodeSnippetFileName
 } from '../../../../../../custom-modules/snippets/renderer/components/snippet-encoding'
+import {
+  syncFileToTurso,
+  useIsTursoConfigured
+} from '../../../../../../custom-modules/snippets/renderer/components/turso-sync'
 
 const isMac = navigator.userAgent.includes('Mac')
 
@@ -152,6 +156,8 @@ export function FileExplorerRowContextMenu({
 
   const activeWorktree = useActiveWorktree()
   const activeRepo = useRepoById(activeWorktree?.repoId ?? null)
+  const isGitLabRepo =
+    activeRepo?.gitRemoteIdentity?.remoteUrl?.toLowerCase().includes('gitlab') ?? false
   const handleSyncToSnippet = useCallback(async () => {
     if (!activeWorktree || !activeRepo) {
       return
@@ -205,6 +211,8 @@ export function FileExplorerRowContextMenu({
       toast.error('Failed to sync snippet', { id: toastId, description: msg })
     }
   }, [activeWorktree, activeRepo, node.path, node.relativePath, node.name])
+
+  const isTursoConfigured = useIsTursoConfigured()
 
   return (
     <ContextMenuContent
@@ -325,11 +333,27 @@ export function FileExplorerRowContextMenu({
             : translate('auto.components.right.sidebar.FileExplorerRow.c2112579f6', 'Download')}
         </ContextMenuItem>
       )}
-      {/* Sync file to GitLab Snippet — only for files, not directories */}
-      {!node.isDirectory && activeWorktree && activeRepo?.gitRemoteIdentity && (
+      {/* Sync file to GitLab Snippet — GitLab repos only, files not directories */}
+      {!node.isDirectory && activeWorktree && isGitLabRepo && (
         <ContextMenuItem onSelect={() => void handleSyncToSnippet()}>
           <Upload />
           {translate('custom.syncToSnippet', 'Sync to GitLab Snippet')}
+        </ContextMenuItem>
+      )}
+      {!node.isDirectory && activeWorktree && activeRepo && isTursoConfigured && (
+        <ContextMenuItem
+          onSelect={() =>
+            void syncFileToTurso({
+              repoId: activeRepo.id,
+              branch: activeWorktree.branch ?? '',
+              filePath: node.path,
+              relativePath: node.relativePath || node.name,
+              connectionId: activeRepo.connectionId ?? null
+            })
+          }
+        >
+          <Upload />
+          {translate('custom.syncToTurso', 'Sync to Turso')}
         </ContextMenuItem>
       )}
       {canCollapseFolderSubtree && shouldShowCollapseFolderAction(node, isExpanded) && (
