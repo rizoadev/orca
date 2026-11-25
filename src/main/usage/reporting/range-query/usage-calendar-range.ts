@@ -4,6 +4,17 @@ type UsageCalendarRange = '7d' | '30d' | '90d' | 'all'
 
 export { getLocalUsageDay } from '../../../../shared/usage-local-day'
 
+export function formatLocalDay(date: Date): string {
+  return formatUsageLocalDay(date)
+}
+
+/** Moves a YYYY-MM-DD day by whole calendar days. */
+export function shiftDay(day: string, days: number): string {
+  const date = new Date(`${day}T00:00:00Z`)
+  date.setUTCDate(date.getUTCDate() + days)
+  return date.toISOString().slice(0, 10)
+}
+
 export function getUsageRangeCutoff(range: UsageCalendarRange): string | null {
   if (range === 'all') {
     return null

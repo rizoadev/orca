@@ -12,7 +12,7 @@ import type { PairingNetworkInterface } from '../../../../../shared/remote-runti
 import { MachineNameField } from '../../machine-identity/MachineNameField'
 import { MobilePairingQrSection } from './pairing/MobilePairingQrSection'
 import { MobilePairedDevicesSection } from './pairing/MobilePairedDevicesSection'
-import { MobileAutoRestoreFitSection } from './MobileAutoRestoreFitSection'
+import { MobileAutoRestoreFitRow } from './MobileAutoRestoreFitRow'
 import { CloudflareRelaySection } from '../../../../../custom-modules/cloudflare/CloudflareRelaySection'
 import { MobilePairingConnectionOptions } from '../../mobile/pairing/MobilePairingConnectionOptions'
 import { MobilePairingSetupSection } from './pairing/MobilePairingSetupSection'
@@ -28,11 +28,11 @@ import type { MobileRelayMintFailure } from '../../../../../shared/remote-runtim
 import { useMobilePairingConnectionMode } from '../../mobile/use-mobile-pairing-connection-mode'
 import { useMobilePairingAddressPreference } from '../../mobile/use-mobile-pairing-address-preference'
 import { usePairingOfferExpiry } from '../../mobile/use-pairing-offer-expiry'
+import { useMobileRelayMintRecovery } from '../../mobile/use-mobile-relay-status'
 import { MOBILE_SETTING_ANCHORS, shouldOpenMobilePairingAddress } from './mobile-pane-search'
 
 export function MobilePane(): React.JSX.Element {
   const t = useTranslate()
-  const autoRestoreFitMs = useAppStore((s) => s.settings?.mobileAutoRestoreFitMs ?? null)
   const updateSettings = useAppStore((s) => s.updateSettings)
   const [qrDataUrl, setQrDataUrl] = useState<string | null>(null)
   const [qrSize, setQrSize] = useState<number | null>(null)
@@ -334,6 +334,12 @@ export function MobilePane(): React.JSX.Element {
     }
   }, [devicesLoaded, loadDevices])
 
+  useMobileRelayMintRecovery({
+    failure: connectionMode === 'automatic' ? relayMintFailure : null,
+    busy: loading,
+    onRecover: () => void generateQR({ rotate: true })
+  })
+
   // Refresh ahead of expiry; the old code stays valid for a phone mid-scan.
   usePairingOfferExpiry(pairingUrl != null ? qrExpiresAt : null, () => void generateQR())
 
@@ -427,12 +433,7 @@ export function MobilePane(): React.JSX.Element {
 
       <CloudflareRelaySection />
 
-      <div data-settings-row="" className="py-4">
-        <MobileAutoRestoreFitSection
-          autoRestoreFitMs={autoRestoreFitMs}
-          onAutoRestoreFitChange={(ms) => void updateSettings({ mobileAutoRestoreFitMs: ms })}
-        />
-      </div>
+      <MobileAutoRestoreFitRow />
     </>
   )
 }
