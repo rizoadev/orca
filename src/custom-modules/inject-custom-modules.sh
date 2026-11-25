@@ -81,18 +81,18 @@ else
 fi
 
 # ─────────────────────────────────────────────────────────────
-# ── 3. cloudflare + turso — global-settings-base.ts (custom settings intersection; base has max-lines headroom)
+# ── 3. cloudflare + turso — settings/global-settings-base.ts (custom settings intersection; base has max-lines headroom)
 # ─────────────────────────────────────────────────────────────
-SETTINGS="$ROOT/src/shared/global-settings-base.ts"
+SETTINGS="$ROOT/src/shared/settings/global-settings-base.ts"
 if [ ! -f "$SETTINGS" ]; then
-  echo "✗ global-settings-base.ts not found"
+  echo "✗ settings/global-settings-base.ts not found"
   FAIL=1
 else
   if grep -qF 'CloudflareRelaySettings' "$SETTINGS"; then
     echo "✓ global-settings-base.ts — already injected"
   else
-    inject_import "$SETTINGS" "import type { CloudflareRelaySettings } from './cloudflare-relay-settings'"
-    inject_import "$SETTINGS" "import type { TursoSettings } from './turso/turso-settings'"
+    inject_import "$SETTINGS" "import type { CloudflareRelaySettings } from '../cloudflare-relay-settings'"
+    inject_import "$SETTINGS" "import type { TursoSettings } from '../turso/turso-settings'"
     if grep -qE '^  EditorSaveSettings$' "$SETTINGS"; then
       sed -i 's/^  EditorSaveSettings$/  EditorSaveSettings \&\n  CloudflareRelaySettings \&\n  TursoSettings/' "$SETTINGS"
       echo "✓ global-settings-base.ts — injected"
@@ -130,17 +130,17 @@ EOF
 fi
 
 # ─────────────────────────────────────────────────────────────
-# ── 5. cloudflare — preload/api/mobile-api.ts (import + 3 methods)
+# ── 5. cloudflare — preload/api/mobile/mobile-api.ts (import + 3 methods)
 # ─────────────────────────────────────────────────────────────
-MOBILE_API="$ROOT/src/preload/api/mobile-api.ts"
+MOBILE_API="$ROOT/src/preload/api/mobile/mobile-api.ts"
 if [ ! -f "$MOBILE_API" ]; then
-  echo "✗ mobile-api.ts not found"
+  echo "✗ preload/api/mobile/mobile-api.ts not found"
   FAIL=1
 else
   if grep -qF 'cloudflare-relay-status' "$MOBILE_API"; then
     echo "✓ mobile-api.ts — already injected"
   else
-    inject_import "$MOBILE_API" "import type { CloudflareRelayStatusPayload } from '../../shared/cloudflare-relay-status'"
+    inject_import "$MOBILE_API" "import type { CloudflareRelayStatusPayload } from '../../../shared/cloudflare-relay-status'"
     # Add 3 methods before closing brace of MobileApi type
     sed -i "/onUnpairedDeviceAuthFailure/a\\  getCloudflareRelayStatus?: () => Promise<CloudflareRelayStatusPayload>\\n  restartCloudflareRelay?: () => Promise<{ ok: boolean; error?: string }>\\n  setCloudflareRelay?: (enabled: boolean) => Promise<{ ok: boolean; error?: string }>" "$MOBILE_API"
     echo "✓ mobile-api.ts — injected"
@@ -186,16 +186,17 @@ fi
 # ─────────────────────────────────────────────────────────────
 # ── 8. right sidebar — custom activity items
 # ─────────────────────────────────────────────────────────────
-ACT_ITEMS="$ROOT/src/renderer/src/components/right-sidebar/use-right-sidebar-activity-items.ts"
+ACT_ITEMS="$ROOT/src/renderer/src/components/right-sidebar/activity-bar/use-right-sidebar-activity-items.ts"
 if [ ! -f "$ACT_ITEMS" ]; then
-  echo "✗ use-right-sidebar-activity-items.ts not found"
+  echo "✗ activity-bar/use-right-sidebar-activity-items.ts not found"
   FAIL=1
 else
   if grep -qF 'getCustomActivityItems' "$ACT_ITEMS"; then
     echo "✓ use-right-sidebar-activity-items.ts — already injected"
   else
-    inject_import "$ACT_ITEMS" "import { getCustomActivityItems } from '../../../../custom-modules/custom-activity-items'"
-    sed -i '/const activityItems = useMemo/,/]/ { /]/i\      ...getCustomActivityItems(),\n }' "$ACT_ITEMS"
+    inject_import "$ACT_ITEMS" "import { getCustomActivityItems } from '../../../../../custom-modules/custom-activity-items'"
+    # Insert before the plugin-tabs spread inside the returned array.
+    sed -i '/Append plugin tabs to preserve built-in navigation positions./i\      ...getCustomActivityItems(),' "$ACT_ITEMS"
     echo "✓ use-right-sidebar-activity-items.ts — injected"
   fi
 fi
@@ -263,12 +264,12 @@ if [ $FAIL -eq 0 ]; then
   echo "Upstream files touched:"
   echo "  1. src/renderer/src/components/tab-group/TabGroupSplitLayout.tsx  — hero banner"
   echo "  2. src/renderer/src/assets/main.css                               — hero CSS"
-  echo "  3. src/shared/global-settings-types.ts                            — cloudflare fields"
+  echo "  3. src/shared/settings/global-settings-base.ts                   — cloudflare fields"
   echo "  4. src/shared/cloudflare-relay-status.ts                          — new shared type"
-  echo "  5. src/preload/api/mobile-api.ts                                  — cloudflare methods"
+  echo "  5. src/preload/api/mobile/mobile-api.ts                           — cloudflare methods"
   echo "  6. src/main/ipc/mobile.ts                                         — cloudflare handlers"
   echo "  7. src/renderer/src/components/settings/mobile/MobilePane.tsx          — cloudflare UI"
-  echo "  8. src/renderer/src/components/right-sidebar/use-right-sidebar-activity-items.ts — sidebar tab buttons"
+  echo "  8. src/renderer/src/components/right-sidebar/activity-bar/use-right-sidebar-activity-items.ts — sidebar tab buttons"
   echo "  9. src/renderer/src/components/right-sidebar/right-sidebar-panel-content.tsx    — sidebar panel router"
   echo " 10. src/preload/index.ts                                           — voice preload bridge"
   echo " 11. src/main/ipc/speech.ts                                         — voice IPC handlers"

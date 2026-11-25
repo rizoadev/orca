@@ -3,8 +3,10 @@
 Dokumen ini mencatat **tepat di mana dan apa** yang di-inject ke file upstream.
 Update dokumen ini setiap kali ada injection baru / setelah upstream pull.
 
-**Last verified:** setelah merge `upstream/main` @ 2026-11-21 (4494 commit; merge-base `2724b03`).
-`pnpm tc` = 0 error. Pipeline lint-staged (oxlint default / js-plugins / react-doctor / ast-grep / oxfmt) lolos.
+**Last verified:** setelah merge `upstream/main` @ 2026-12-12 (6,484 commit sejak fork;
+merge-base kini = tip upstream `386d36cb411`; fork di-depan 46 commit).
+`pnpm tc:web` / `tc:node` / `tc:cli` = 0 error. Build electron-vite sukses.
+Ratchet max-lines OK. Lint file tersentuh OK. Test custom modules (13) hijau.
 
 Legend: `(C)` = file custom yang kita buat di luar `src/custom-modules/`, bukan edit upstream.
 
@@ -120,6 +122,36 @@ Panel & activity item juga dikomentari di `custom-panel-content.tsx`, `custom-ac
 `custom-right-sidebar-tabs.ts`. **Jangan re-enable** kecuali diminta.
 
 ---
+
+## Merge 2026-12-12 — apa yang berubah
+
+**5 konflik merge, resolusinya:**
+
+1. `src/main/usage/reporting/range-query/usage-calendar-range.ts` — keep `export { getLocalUsageDay }`
+   (punya kita) + tambah `formatLocalDay()` upstream yang sekarang re-export `formatUsageLocalDay`.
+2. `src/shared/settings/global-settings-base.ts` — keep semua: `ChatDeleteSettings` (upstream baru)
+   - `CloudflareRelaySettings & TursoSettings` (kita) di import & intersection.
+3. `src/renderer/src/store/slices/right-sidebar/right-sidebar-state.ts` — ambil signature upstream
+   `setRightSidebarTab(tab, options?: { focusVaultSearch?: boolean })` + keep `openOrchestrationBoardPage()`
+   (dipakai `issue-detail-action-bar.tsx`).
+4. `src/renderer/src/components/right-sidebar/activity-bar/use-right-sidebar-activity-items.ts` —
+   ambil versi upstream (built-in items dipindah ke `right-sidebar-default-activity-items.ts`,
+   `builtInTabNames()`, `withDistinctPluginPanelNames()`) lalu re-inject `...getCustomActivityItems()`
+   sebelum plugin tabs.
+5. `…/pairing/runtime-share-computer-button.tsx` — **dihapus upstream**; fungsinya digabung ke
+   `runtime-share-computer-section.tsx` (baru). `<CloudflareRuntimeHint />` di-re-inject di section itu
+   (setelah `<RuntimePairingUrlGenerator>`).
+
+**Perbaikan terkait merge:**
+
+- `MobilePane.tsx` jadi 402 baris efektif (>400 max-lines). Extract row auto-restore-fit ke
+  `MobileAutoRestoreFitRow.tsx` (file baru, 16 baris) alih-alih suppress — ratchet minta split.
+- `MobilePane.test.tsx` dihapus upstream (bukan kita). Test penggantinya di upstream.
+- `inject-custom-modules.sh` di-update ke path post-merge (`settings/global-settings-base.ts`,
+  `preload/api/mobile/mobile-api.ts`, `activity-bar/use-right-sidebar-activity-items.ts`) + anchor baru.
+- Stale build artifacts di path lama (`mobile/src/terminal/*.generated.ts`,
+  `mobile/src/components/pr-sidebar/mermaid-page-engine.generated.ts`) dihapus — generated files
+  kini hidup di `mobile/src/terminal/document/` dan `mobile/src/components/mermaid/` (gitignored).
 
 ## Merge 2026-11-21 — apa yang berubah
 
